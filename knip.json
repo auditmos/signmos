@@ -1,0 +1,17 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": [
+		"src/start.tsx",
+		"src/routes/**/*.{ts,tsx}",
+		"taze.config.ts",
+		"scripts/*.ts",
+		"drizzle-*.config.ts"
+	],
+	"ignoreDependencies": [
+		"@tanstack/react-form",
+		"@testing-library/dom",
+		"@testing-library/react",
+		"web-vitals"
+	],
+	"ignore": ["src/components/ui/**", "src/core/errors.ts", "src/db/**"]
+}

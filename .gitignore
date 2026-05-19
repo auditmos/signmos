@@ -1,0 +1,22 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+count.txt
+.nitro
+.tanstack
+.output
+.vinxi
+.vscode
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
+
+# wrangler vars
+.dev.vars
+.staging.vars
+.production.vars
+.wrangler/
