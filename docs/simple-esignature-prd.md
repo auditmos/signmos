@@ -110,6 +110,67 @@ The legal posture is "basic e-signature intent": the system captures signer inte
 
 Done means `pnpm types`, `pnpm test`, and `pnpm lint` pass, and the core happy path can be exercised from draft envelope to completed PDF through both UI and API-supported preparation paths.
 
+## Lifecycle API Contract
+
+All JSON endpoints respond with `{ "data": ... }` on success and `{ "error": { "code": string, "message": string, ... } }` on known failures. Mutating internal endpoints require `x-internal-user-id` unless explicitly noted. Retriable mutating endpoints accept `Idempotency-Key` where listed.
+
+| Endpoint | Purpose | Request schema | Response schema | Idempotency-Key | Errors |
+|---|---|---|---|---|---|
+| `POST /api/envelopes` | Create draft envelope | Headers: `x-internal-user-id`, optional `Idempotency-Key` | Envelope `{ id, status, createdBy, createdAt }` | Yes | `UNAUTHORIZED` |
+| `POST /api/envelopes/{id}/source-pdf` | Upload source PDF to R2 | `application/pdf` body under 10 MB; headers: `x-internal-user-id`, optional `Idempotency-Key` | Source document `{ id, envelopeId, r2Key, sha256, byteSize, contentType, uploadedBy, uploadedAt }` | Yes | `UNAUTHORIZED`, `INVALID_SOURCE_PDF`, `SOURCE_PDF_TOO_LARGE` |
+| `POST /api/envelopes/{id}/recipients` | Add recipients to draft envelope | `{ recipients: [{ name, email }] }`, 1-10 entries | Recipient array `{ id, envelopeId, name, email, status, createdAt }` | No | `UNAUTHORIZED`, `INVALID_RECIPIENTS` |
+| `POST /api/envelopes/{id}/fields` | Add signature/date field coordinates | `{ fields: [{ recipientId, type, page, x, y, width, height }] }` | Field array `{ id, envelopeId, recipientId, type, page, x, y, width, height, createdAt }` | No | `UNAUTHORIZED`, `INVALID_FIELDS`, `ENVELOPE_NOT_DRAFT` |
+| `POST /api/envelopes/{id}/actions` | Send a draft envelope | `{ action: "send" }`; header: `x-internal-user-id` | `{ envelopeId, status, sentBy, tokenCount, emailSendCount }` | No | `UNAUTHORIZED`, `INVALID_ACTION` with valid values |
+| `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Resend one invitation | Header: `x-internal-user-id` | `{ recipientId, email, emailSendCount }` | No | `UNAUTHORIZED`, `EXPIRED_TOKEN` when the new link is later used after expiry |
+| `GET /api/envelopes/{id}/status` | Poll envelope lifecycle state | Path envelope ID | `{ envelopeId, status, finalPdfAvailable }` | Not applicable | `FINAL_PDF_NOT_FOUND` only applies to download |
+| `GET /api/envelopes/{id}/final-pdf` | Download completed PDF artifact | Path envelope ID | `application/pdf` body | Not applicable | `FINAL_PDF_NOT_FOUND` |
+| `GET /api/signing/{token}` | Resolve signer magic-link session | Path token; optional `x-now` for tests | `{ envelopeId, recipientId, fields }` | Not applicable | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN` |
+| `POST /api/signing/{token}/complete` | Complete typed signature/date values | `{ signatureName, date }` | `{ envelopeId, recipientId, recipientStatus, envelopeStatus }` | No | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN`, `INVALID_SIGNING_COMPLETION` |
+| `POST /api/signing/{token}/decline` | Decline with reason/comment | `{ reason, comment? }` | `{ envelopeId, recipientId, recipientStatus, envelopeStatus }` | No | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN`, `INVALID_SIGNING_DECLINE` |
+
+Stable enum values exposed to agents are envelope statuses `draft`, `sent`, `completed`, `declined`, `expired`; recipient statuses `pending`, `sent`, `completed`, `declined`; field types `signature`, `date`; and lifecycle actions `send`.
+
+## Validation Checklist
+
+| # | PRD validation item | Current mapped evidence |
+|---|---|---|
+| 1 | Create draft envelope | `src/hono/api/envelopes.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 2 | Upload source PDF | `src/hono/api/envelopes.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 3 | Add recipients | `src/hono/api/envelope-recipients.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 4 | Visual field placement | `src/components/envelopes/field-editor.test.tsx`; HITL evidence tracked on issue #9 |
+| 5 | Coordinate/API field placement | `src/hono/api/envelope-fields.test.ts` |
+| 6 | Send parallel envelope | `src/hono/api/envelope-recipients.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 7 | Magic-link signing access | `src/hono/api/signing-flow.test.ts` |
+| 8 | Typed signature capture | `src/hono/api/signing-flow.test.ts`, `src/components/signing/signer-page.test.tsx`, and `src/hono/api/lifecycle-smoke.test.ts` |
+| 9 | Date field completion | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 10 | Decline with reason | `src/hono/api/signing-flow.test.ts` |
+| 11 | Signer comments | `src/hono/api/signing-flow.test.ts` |
+| 12 | Envelope status | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 13 | Expiring links | `src/hono/api/envelope-recipients.test.ts` |
+| 14 | Manual resend | `src/hono/api/envelope-recipients.test.ts` |
+| 15 | Flattened completed PDF | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
+| 16 | Audit summary page | `src/hono/api/pdf-finalization.test.ts` |
+| 17 | Internal accountability | `src/hono/api/envelopes.test.ts` and `src/hono/api/envelope-recipients.test.ts` |
+| 18 | Lifecycle API | `src/hono/api/lifecycle-smoke.test.ts` and this Lifecycle API Contract |
+| 19 | Machine-readable errors | `src/hono/api/envelopes.test.ts`, `src/hono/api/envelope-fields.test.ts`, `src/hono/api/envelope-recipients.test.ts`, `src/hono/api/signing-flow.test.ts` |
+| 20 | Idempotency | `src/hono/api/envelopes.test.ts` |
+
+## Manual Human UI Smoke Checklist
+
+Use this checklist for the issue #12 human browser review. Start the local app with `pnpm dev`, open `http://localhost:3000`, and record the browser paths/screenshots you verified.
+
+| Step | What to test | Expected result |
+|---|---|---|
+| 1 | Open `/envelope-fields` | The field placement screen renders without layout overlap or runtime errors. |
+| 2 | Place a signature field for Ada Lovelace with page `1`, x `72`, y `144`, width `180`, height `48` | The UI reports `Field saved`, and the request targets `POST /api/envelopes/{id}/fields`. |
+| 3 | Change field type to date and place page `1`, x `300`, y `144`, width `120`, height `32` | The UI reports `Field saved`, using the same shared field model. |
+| 4 | Open `/signing/demo-token` or the signer link produced by a local seeded/API-created envelope | The signer page renders assigned fields and does not require internal login. |
+| 5 | Type signer name `Ada Lovelace` and signing date `2026-05-20`, then submit | The UI reports `Signing complete`. |
+| 6 | Verify final PDF availability through the API status endpoint for the same envelope | `GET /api/envelopes/{id}/status` returns `status: "completed"` and `finalPdfAvailable: true`. |
+| 7 | Download the final PDF through the API | `GET /api/envelopes/{id}/final-pdf` returns `application/pdf`; the PDF contains the typed name/date and audit summary. |
+
+Known manual review note: the current UI exposes field placement and signer completion screens. Upload, send, status, and final PDF download are exercised through the API contract and lifecycle smoke test unless a full internal workflow page is added later.
+
 ## Out of Scope
 
 - Certified/trust-service signing, qualified signatures, and advanced identity verification.
