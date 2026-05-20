@@ -1,10 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
 import {
+	type AddFieldsRequest,
 	type AddRecipientsRequest,
 	type AttachSourceDocumentInput,
 	type CreateEnvelopeInput,
 	type Envelope,
+	type EnvelopeField,
+	EnvelopeFieldSchema,
 	EnvelopeSchema,
 	type Recipient,
 	RecipientSchema,
@@ -17,6 +20,7 @@ import {
 } from "./schema";
 import {
 	emailSendRecords,
+	envelopeFields,
 	envelopeRecipients,
 	envelopes,
 	idempotencyRecords,
@@ -299,4 +303,33 @@ export async function resolveSignerToken(token: string): Promise<SignerToken | n
 	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
 	const found = tokens[0];
 	return found ? SignerTokenSchema.parse(found) : null;
+}
+
+export async function addFields(
+	envelopeId: string,
+	input: AddFieldsRequest,
+): Promise<EnvelopeField[]> {
+	const db = getDb();
+	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope) throw new Error("Envelope not found");
+	if (parsedEnvelope.status !== "draft") throw new Error("Envelope must be draft");
+
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, envelopeId))
+			.limit(10)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const recipientIds = new Set(recipients.map((recipient) => recipient.id));
+	if (input.fields.some((field) => !recipientIds.has(field.recipientId))) {
+		throw new Error("Field recipient not found");
+	}
+
+	const rows = await db
+		.insert(envelopeFields)
+		.values(input.fields.map((field) => ({ ...field, envelopeId })))
+		.returning();
+	return rows.map((field) => EnvelopeFieldSchema.parse(field));
 }

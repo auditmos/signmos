@@ -9,9 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as IndexRouteImport } from './routes/index'
 
+const EnvelopeFieldsRoute = EnvelopeFieldsRouteImport.update({
+  id: '/envelope-fields',
+  path: '/envelope-fields',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClientsRoute = ClientsRouteImport.update({
   id: '/clients',
   path: '/clients',
@@ -26,31 +32,42 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
+  '/envelope-fields': typeof EnvelopeFieldsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
+  '/envelope-fields': typeof EnvelopeFieldsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
+  '/envelope-fields': typeof EnvelopeFieldsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/clients'
+  fullPaths: '/' | '/clients' | '/envelope-fields'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/clients'
-  id: '__root__' | '/' | '/clients'
+  to: '/' | '/clients' | '/envelope-fields'
+  id: '__root__' | '/' | '/clients' | '/envelope-fields'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ClientsRoute: typeof ClientsRoute
+  EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/envelope-fields': {
+      id: '/envelope-fields'
+      path: '/envelope-fields'
+      fullPath: '/envelope-fields'
+      preLoaderRoute: typeof EnvelopeFieldsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/clients': {
       id: '/clients'
       path: '/clients'
@@ -71,6 +88,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ClientsRoute: ClientsRoute,
+  EnvelopeFieldsRoute: EnvelopeFieldsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

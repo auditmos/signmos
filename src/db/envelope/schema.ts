@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { envelopeStatuses, recipientStatuses } from "./table";
+import { envelopeStatuses, fieldTypes, recipientStatuses } from "./table";
 
 export const envelopeLifecycleActions = ["send"] as const;
 
@@ -8,6 +8,9 @@ export type EnvelopeStatus = z.infer<typeof EnvelopeStatusSchema>;
 
 export const RecipientStatusSchema = z.enum(recipientStatuses);
 export type RecipientStatus = z.infer<typeof RecipientStatusSchema>;
+
+export const FieldTypeSchema = z.enum(fieldTypes);
+export type FieldType = z.infer<typeof FieldTypeSchema>;
 
 export const EnvelopeLifecycleActionSchema = z.enum(envelopeLifecycleActions);
 export type EnvelopeLifecycleAction = z.infer<typeof EnvelopeLifecycleActionSchema>;
@@ -134,6 +137,41 @@ export const SignerTokenSchema = z.object({
 });
 export type SignerToken = z.infer<typeof SignerTokenSchema>;
 
+export const EnvelopeFieldSchema = z.object({
+	id: z.string().uuid(),
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	type: FieldTypeSchema,
+	page: z.coerce.number().int().min(1),
+	x: z.coerce.number().int().min(0),
+	y: z.coerce.number().int().min(0),
+	width: z.coerce.number().int().positive(),
+	height: z.coerce.number().int().positive(),
+	createdAt: z.date(),
+});
+export type EnvelopeField = z.infer<typeof EnvelopeFieldSchema>;
+
+export const FieldCreateSchema = z.object({
+	recipientId: z.string().uuid(),
+	type: FieldTypeSchema,
+	page: z.number().int().min(1),
+	x: z.number().int().min(0),
+	y: z.number().int().min(0),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+});
+export type FieldCreateInput = z.infer<typeof FieldCreateSchema>;
+
+export const AddFieldsRequestSchema = z.object({
+	fields: z.array(FieldCreateSchema).min(1),
+});
+export type AddFieldsRequest = z.infer<typeof AddFieldsRequestSchema>;
+
+export const EnvelopeFieldResponseSchema = EnvelopeFieldSchema.extend({
+	createdAt: z.string(),
+});
+export type EnvelopeFieldResponse = z.infer<typeof EnvelopeFieldResponseSchema>;
+
 export function toEnvelopeResponse(envelope: Envelope): EnvelopeResponse {
 	return {
 		id: envelope.id,
@@ -164,5 +202,20 @@ export function toRecipientResponse(recipient: Recipient): RecipientResponse {
 		email: recipient.email,
 		status: recipient.status,
 		createdAt: recipient.createdAt.toISOString(),
+	};
+}
+
+export function toEnvelopeFieldResponse(field: EnvelopeField): EnvelopeFieldResponse {
+	return {
+		id: field.id,
+		envelopeId: field.envelopeId,
+		recipientId: field.recipientId,
+		type: field.type,
+		page: field.page,
+		x: field.x,
+		y: field.y,
+		width: field.width,
+		height: field.height,
+		createdAt: field.createdAt.toISOString(),
 	};
 }

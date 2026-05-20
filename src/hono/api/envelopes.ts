@@ -1,5 +1,7 @@
 import {
+	AddFieldsRequestSchema,
 	AddRecipientsRequestSchema,
+	addFields,
 	addRecipients,
 	attachSourceDocument,
 	createEnvelope,
@@ -7,6 +9,7 @@ import {
 	envelopeLifecycleActions,
 	resendInvitation,
 	sendEnvelope,
+	toEnvelopeFieldResponse,
 	toEnvelopeResponse,
 	toRecipientResponse,
 	toSourceDocumentResponse,
@@ -180,6 +183,67 @@ envelopesEndpoint.post("/:id/recipients/:recipientId/resend", async (c) => {
 
 	const result = await resendInvitation(c.req.param("id"), c.req.param("recipientId"));
 	return c.json({ data: result }, 201);
+});
+
+envelopesEndpoint.post("/:id/fields", async (c) => {
+	const userId = c.req.header("x-internal-user-id");
+	if (!userId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const parsed = AddFieldsRequestSchema.safeParse(await c.req.json());
+	if (!parsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "INVALID_FIELDS",
+					message: "Fields must use valid type, page, geometry, and recipient values",
+					validFieldTypes: ["signature", "date"],
+				},
+			},
+			400,
+		);
+	}
+
+	let fields: Awaited<ReturnType<typeof addFields>>;
+	try {
+		fields = await addFields(c.req.param("id"), parsed.data);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unable to create fields";
+		if (message === "Envelope must be draft") {
+			return c.json(
+				{
+					error: {
+						code: "ENVELOPE_NOT_DRAFT",
+						message: "Fields can only be changed while the envelope is draft",
+					},
+				},
+				409,
+			);
+		}
+		if (message === "Field recipient not found") {
+			return c.json(
+				{
+					error: {
+						code: "INVALID_FIELDS",
+						message: "Fields must use valid type, page, geometry, and recipient values",
+						validFieldTypes: ["signature", "date"],
+					},
+				},
+				400,
+			);
+		}
+		throw error;
+	}
+	return c.json({ data: fields.map(toEnvelopeFieldResponse) }, 201);
 });
 
 function isPdf(bytes: Uint8Array): boolean {

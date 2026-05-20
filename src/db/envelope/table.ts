@@ -2,6 +2,7 @@ import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-or
 
 export const envelopeStatuses = ["draft", "sent", "completed", "declined", "expired"] as const;
 export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
+export const fieldTypes = ["signature", "date"] as const;
 
 export const envelopes = pgTable("envelopes", {
 	id: uuid("id").defaultRandom().primaryKey(),
@@ -85,4 +86,21 @@ export const emailSendRecords = pgTable("email_send_records", {
 	email: text("email").notNull(),
 	kind: text("kind").notNull(),
 	sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const envelopeFields = pgTable("envelope_fields", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	recipientId: uuid("recipient_id")
+		.notNull()
+		.references(() => envelopeRecipients.id),
+	type: text("type").notNull(),
+	page: integer("page").notNull(),
+	x: integer("x").notNull(),
+	y: integer("y").notNull(),
+	width: integer("width").notNull(),
+	height: integer("height").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
