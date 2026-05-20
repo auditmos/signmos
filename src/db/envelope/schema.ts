@@ -137,6 +137,51 @@ export const SignerTokenSchema = z.object({
 });
 export type SignerToken = z.infer<typeof SignerTokenSchema>;
 
+export const SignerSessionSchema = z.object({
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	fields: z.array(
+		z.object({
+			id: z.string().uuid(),
+			type: FieldTypeSchema,
+			page: z.number(),
+			x: z.number(),
+			y: z.number(),
+			width: z.number(),
+			height: z.number(),
+		}),
+	),
+});
+export type SignerSession = z.infer<typeof SignerSessionSchema>;
+
+export const CompleteSigningRequestSchema = z.object({
+	signatureName: z.string().min(1),
+	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+export type CompleteSigningRequest = z.infer<typeof CompleteSigningRequestSchema>;
+
+export const CompleteSigningResultSchema = z.object({
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	recipientStatus: z.literal("completed"),
+	envelopeStatus: EnvelopeStatusSchema,
+});
+export type CompleteSigningResult = z.infer<typeof CompleteSigningResultSchema>;
+
+export const DeclineSigningRequestSchema = z.object({
+	reason: z.string().min(1),
+	comment: z.string().min(1).optional(),
+});
+export type DeclineSigningRequest = z.infer<typeof DeclineSigningRequestSchema>;
+
+export const DeclineSigningResultSchema = z.object({
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	recipientStatus: z.literal("declined"),
+	envelopeStatus: z.literal("declined"),
+});
+export type DeclineSigningResult = z.infer<typeof DeclineSigningResultSchema>;
+
 export const EnvelopeFieldSchema = z.object({
 	id: z.string().uuid(),
 	envelopeId: z.string().uuid(),

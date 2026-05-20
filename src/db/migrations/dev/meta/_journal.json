@@ -36,6 +36,13 @@
       "when": 1779263659848,
       "tag": "0004_watery_yellow_claw",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779264566198,
+      "tag": "0005_glorious_namorita",
+      "breakpoints": true
     }
   ]
 }

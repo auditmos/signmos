@@ -104,3 +104,29 @@ export const envelopeFields = pgTable("envelope_fields", {
 	height: integer("height").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const fieldValues = pgTable("field_values", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	recipientId: uuid("recipient_id")
+		.notNull()
+		.references(() => envelopeRecipients.id),
+	fieldId: uuid("field_id")
+		.notNull()
+		.references(() => envelopeFields.id),
+	value: text("value").notNull(),
+	completedAt: timestamp("completed_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const auditEvents = pgTable("audit_events", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	recipientId: uuid("recipient_id").references(() => envelopeRecipients.id),
+	eventType: text("event_type").notNull(),
+	message: text("message"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

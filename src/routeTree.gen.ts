@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SigningTokenRouteImport } from './routes/signing.$token'
 
 const EnvelopeFieldsRoute = EnvelopeFieldsRouteImport.update({
   id: '/envelope-fields',
@@ -28,35 +29,44 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SigningTokenRoute = SigningTokenRouteImport.update({
+  id: '/signing/$token',
+  path: '/signing/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/clients' | '/envelope-fields'
+  fullPaths: '/' | '/clients' | '/envelope-fields' | '/signing/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/clients' | '/envelope-fields'
-  id: '__root__' | '/' | '/clients' | '/envelope-fields'
+  to: '/' | '/clients' | '/envelope-fields' | '/signing/$token'
+  id: '__root__' | '/' | '/clients' | '/envelope-fields' | '/signing/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ClientsRoute: typeof ClientsRoute
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
+  SigningTokenRoute: typeof SigningTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signing/$token': {
+      id: '/signing/$token'
+      path: '/signing/$token'
+      fullPath: '/signing/$token'
+      preLoaderRoute: typeof SigningTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ClientsRoute: ClientsRoute,
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
+  SigningTokenRoute: SigningTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

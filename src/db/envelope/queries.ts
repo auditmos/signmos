@@ -4,7 +4,11 @@ import {
 	type AddFieldsRequest,
 	type AddRecipientsRequest,
 	type AttachSourceDocumentInput,
+	type CompleteSigningRequest,
+	type CompleteSigningResult,
 	type CreateEnvelopeInput,
+	type DeclineSigningRequest,
+	type DeclineSigningResult,
 	type Envelope,
 	type EnvelopeField,
 	EnvelopeFieldSchema,
@@ -13,16 +17,19 @@ import {
 	RecipientSchema,
 	type ResendInvitationResult,
 	type SendEnvelopeResult,
+	type SignerSession,
 	type SignerToken,
 	SignerTokenSchema,
 	type SourceDocument,
 	SourceDocumentSchema,
 } from "./schema";
 import {
+	auditEvents,
 	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
+	fieldValues,
 	idempotencyRecords,
 	signerTokens,
 	sourceDocuments,
@@ -303,6 +310,140 @@ export async function resolveSignerToken(token: string): Promise<SignerToken | n
 	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
 	const found = tokens[0];
 	return found ? SignerTokenSchema.parse(found) : null;
+}
+
+export async function getSignerSession(token: SignerToken): Promise<SignerSession> {
+	const db = getDb();
+	const fields = (
+		await db
+			.select()
+			.from(envelopeFields)
+			.where(eq(envelopeFields.recipientId, token.recipientId))
+			.limit(100)
+	).map((field) => EnvelopeFieldSchema.parse(field));
+
+	return {
+		envelopeId: token.envelopeId,
+		recipientId: token.recipientId,
+		fields: fields.map((field) => ({
+			id: field.id,
+			type: field.type,
+			page: field.page,
+			x: field.x,
+			y: field.y,
+			width: field.width,
+			height: field.height,
+		})),
+	};
+}
+
+export async function completeSigning(
+	token: SignerToken,
+	input: CompleteSigningRequest,
+): Promise<CompleteSigningResult> {
+	const db = getDb();
+	const fields = (
+		await db
+			.select()
+			.from(envelopeFields)
+			.where(eq(envelopeFields.recipientId, token.recipientId))
+			.limit(100)
+	).map((field) => EnvelopeFieldSchema.parse(field));
+
+	await db
+		.insert(fieldValues)
+		.values(
+			fields.map((field) => ({
+				envelopeId: token.envelopeId,
+				recipientId: token.recipientId,
+				fieldId: field.id,
+				value: field.type === "signature" ? input.signatureName : input.date,
+			})),
+		)
+		.returning();
+	await db
+		.insert(auditEvents)
+		.values([
+			{
+				envelopeId: token.envelopeId,
+				recipientId: token.recipientId,
+				eventType: "field.value.completed",
+				message: input.signatureName,
+			},
+			{
+				envelopeId: token.envelopeId,
+				recipientId: token.recipientId,
+				eventType: "recipient.completed",
+				message: null,
+			},
+		])
+		.returning();
+	await db
+		.update(envelopeRecipients)
+		.set({ status: "completed" })
+		.where(eq(envelopeRecipients.id, token.recipientId));
+
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, token.envelopeId))
+			.limit(10)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const envelopeStatus = recipients.every(
+		(recipient) => recipient.id === token.recipientId || recipient.status === "completed",
+	)
+		? "completed"
+		: "sent";
+	if (envelopeStatus === "completed") {
+		await db
+			.update(envelopes)
+			.set({ status: "completed" })
+			.where(eq(envelopes.id, token.envelopeId));
+	}
+
+	return {
+		envelopeId: token.envelopeId,
+		recipientId: token.recipientId,
+		recipientStatus: "completed",
+		envelopeStatus,
+	};
+}
+
+export async function declineSigning(
+	token: SignerToken,
+	input: DeclineSigningRequest,
+): Promise<DeclineSigningResult> {
+	const db = getDb();
+	const events = [
+		{
+			envelopeId: token.envelopeId,
+			recipientId: token.recipientId,
+			eventType: "recipient.declined",
+			message: input.reason,
+		},
+	];
+	if (input.comment) {
+		events.push({
+			envelopeId: token.envelopeId,
+			recipientId: token.recipientId,
+			eventType: "recipient.comment",
+			message: input.comment,
+		});
+	}
+	await db.insert(auditEvents).values(events).returning();
+	await db
+		.update(envelopeRecipients)
+		.set({ status: "declined" })
+		.where(eq(envelopeRecipients.id, token.recipientId));
+	await db.update(envelopes).set({ status: "declined" }).where(eq(envelopes.id, token.envelopeId));
+
+	return {
+		envelopeId: token.envelopeId,
+		recipientId: token.recipientId,
+		recipientStatus: "declined",
+		envelopeStatus: "declined",
+	};
 }
 
 export async function addFields(
