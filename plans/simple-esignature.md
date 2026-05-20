@@ -1,208 +1,256 @@
-# Plan: Simple E-Signature Workflow
+# Plan: No-Account E-Signature Pilot
 
 > Source PRD: `docs/simple-esignature-prd.md`
 
 ## Architectural decisions
 
 - **Architecture style**: TanStack Start frontend with Hono API on Cloudflare Workers.
-- **Data model**: Neon Postgres/Drizzle owns relational metadata and immutable audit events; R2 owns source and completed PDF artifacts.
-- **Key entities**: internal user, envelope, document, recipient, field, signer token, signature value, audit event, idempotency record, email send record.
-- **Integrations**: Cloudflare R2 for PDFs, Resend for invitation emails, existing auth foundation if present.
-- **Agent contract**: REST/JSON lifecycle endpoints with stable IDs, idempotency keys on mutating operations, bounded responses, and machine-readable errors.
-- **Legal posture**: basic e-signature intent only; no certified trust-service claims.
-- **Scale target**: PDFs under 10 MB, fewer than 10 recipients per envelope, fewer than 100 envelopes per month.
+- **Identity model**: no password accounts in v1; sender and partner use verified email magic links.
+- **Data model**: Neon Postgres/Drizzle owns envelopes, verification sessions, recipients, fields, signature profiles, audit events, idempotency records, email send records, rate-limit records, and retention/deletion state.
+- **Document storage**: Cloudflare R2 owns source PDFs and completed PDF artifacts; database rows own metadata, hashes, deletion state, and retention eligibility.
+- **Email**: Resend sends transactional email when configured; local/dev/recovery paths expose fallback links.
+- **Abuse controls**: Cloudflare Turnstile protects public initiation; rate limits apply by IP and email.
+- **Agent foundation**: REST/JSON endpoints expose stable schemas, explicit allowed actions, idempotency on mutations, and bounded machine-readable errors.
+- **Future public API**: design for customer API keys and a standalone agent CLI later, but do not ship API-key auth in the pilot.
+- **Final artifact**: completed PDFs include flattened signatures/dates plus an appended audit/certificate page with checksum/hash.
+- **Retention**: terminal envelopes are retained for 90 days after completion or expiry unless the sender deletes earlier.
 
 ---
 
-## Phase 1: Envelope Foundation And Agent Contract
+## Phase 1: Verified Sender Envelope Start
 
-**User stories**: 1, 17, 18, 19, 20
+**User stories**: 1, 2, 16, 25, 27, 29, 31, 32
 
 ### What to build
 
-Create the authenticated envelope foundation: internal users can create draft envelopes through the API, every envelope records creator identity, and mutating API calls establish the idempotency/error conventions that later slices reuse.
+Create the no-account sender start path. A sender enters name/email, passes Turnstile/rate-limit checks, receives a verification email or fallback link, verifies through a magic link, and gets a draft/awaiting-verification envelope session with audit events and agent-readable state.
 
 ### Assumptions carried in
 
-- Neon/Drizzle is reachable in local test configuration.
-- Internal auth foundation is either present or this phase adds the smallest viable internal-user identity needed for authenticated envelope creation.
+- The app can send or record email through the configured email abstraction.
+- Turnstile can be mocked or bypassed in test with an explicit test configuration.
 
 ### Out of scope for this phase
 
-- PDF upload, recipients, fields, sending, signer links, and final PDFs.
-- Role-based permissions.
+- PDF upload, partner recipients, signatures, field placement, sending, and final PDF generation.
+- Public API keys or password accounts.
 
 ### Acceptance criteria
 
-- [ ] Authenticated API client can create a draft envelope with stable JSON response including envelope ID and status `draft` — [test: API integration test]
-- [ ] Created envelope persists `created_by` identity and creation timestamp — [observable: database row]
-- [ ] Repeating create with the same idempotency key returns the original result without duplicate rows — [test: idempotency integration test]
-- [ ] Invalid status/action inputs return machine-readable error JSON with code, message, and valid values — [test: error contract test]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Sender can start an envelope with name/email and no password account — [test: API/UI integration test]
+- [ ] Sender start rejects missing/invalid Turnstile and rate-limited IP/email attempts — [test: abuse-control integration test]
+- [ ] Verification email send record or fallback link is produced — [observable: email send row or test response]
+- [ ] Valid sender magic link verifies the session; expired/invalid links return stable machine-readable errors — [test: verification token test]
+- [ ] Envelope status exposes draft/awaiting-verification and allowed next actions — [test: status contract test]
+- [ ] Sender start and verification append immutable audit events — [observable: audit event rows]
+- [ ] Repeating idempotent start requests does not duplicate envelopes or verification sends — [test: idempotency test]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 2: PDF Upload And R2 Document Storage
+## Phase 2: PDF Upload, Storage, And Revision Slot
 
-**User stories**: 2, 18, 19, 20
+**User stories**: 3, 4, 14, 15, 25, 28, 29, 31, 32
 
 ### What to build
 
-Allow internal users and API clients to attach one source PDF to a draft envelope, store it in R2, enforce the 10 MB/PDF-only limits, and persist document metadata and hash.
+Let a verified sender upload one source PDF to the envelope, store it in R2, persist metadata/hash, expose clear upload errors, and establish the same document slot for future revised uploads after change requests.
 
 ### Assumptions carried in
 
-- Phase 1 envelope creation, auth, idempotency, and error contracts exist.
-- R2 binding and local test strategy are available.
+- Phase 1 verified sender sessions and idempotency conventions exist.
+- R2 has a local/test binding or mock that can verify put/get/delete behavior.
 
 ### Out of scope for this phase
 
-- PDF preview UI, field placement, signer access, and final PDF generation.
+- PDF field placement, partner sending, change-request UI, completed PDF generation, and retention deletion jobs.
 
 ### Acceptance criteria
 
-- [ ] Valid PDF under 10 MB uploads to R2 and links to the draft envelope — [test: API/storage integration test]
-- [ ] Non-PDF and over-limit uploads are rejected with stable machine-readable errors — [test: validation test]
-- [ ] Source PDF hash and R2 object key are persisted — [observable: database row plus R2 object]
-- [ ] Repeating upload with the same idempotency key does not create duplicate document records — [test: idempotency integration test]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Verified sender can upload one valid PDF and see document metadata — [test: API/UI upload test]
+- [ ] Non-PDF, empty, duplicate, and over-limit uploads are rejected with actionable UI and stable JSON errors — [test: validation test]
+- [ ] Source PDF object key, byte size, content type, and checksum/hash are persisted — [observable: document row and R2 object]
+- [ ] Upload appends audit events and structured errors for rejected attempts — [observable: audit/log evidence]
+- [ ] Repeating upload with the same idempotency key does not duplicate document records or objects — [test: idempotency test]
+- [ ] The document model can mark later revision upload as a new source version and clear dependent fields when invoked by a supported state — [test: revision-slot unit/integration test]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 3: Recipients And Parallel Sending Via Resend
+## Phase 3: Signature Profiles And Field Placement
 
-**User stories**: 3, 6, 13, 14, 18, 19, 20
+**User stories**: 5, 6, 7, 15, 29, 30, 31, 32
 
 ### What to build
 
-Add recipient management for draft envelopes, parallel send behavior, expiring signer tokens, invitation emails through Resend, and manual resend.
+Give the sender a professional field-preparation surface. The sender can draw a signature or generate a signature-like mark from typed text, place signature/date fields for both parties, and agents can use the same field model plus default bottom-right placement.
 
 ### Assumptions carried in
 
-- Phase 1 and 2 are complete.
-- Resend configuration is available in the target environment.
+- Phase 2 provides a verified sender with an uploaded source PDF.
+- Recipient identity can be represented before send as sender plus one partner draft recipient.
 
 ### Out of scope for this phase
 
-- Signer UI completion, decline/comments, field placement, and final PDF generation.
-- Automatic reminders.
+- Partner email verification, actual send, signer completion, and final PDF rendering.
+- Uploaded signature images, templates, text fields, checkboxes, and initials.
 
 ### Acceptance criteria
 
-- [ ] API can add up to 10 recipients with valid name/email fields — [test: recipient API test]
-- [ ] Recipient count above 10 and invalid emails are rejected with stable errors — [test: validation test]
-- [ ] Sending a ready envelope creates active tokens for all recipients in parallel and records `sent_by` identity — [test: integration test]
-- [ ] Invitation email send records are persisted for each recipient — [observable: database rows]
-- [ ] Manual resend creates a new email send record without duplicating recipients — [test: resend integration test]
-- [ ] Expired tokens cannot be used and return an expired-token error — [test: time-controlled token test]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Sender can create and select a drawn signature profile — [test: component/API persistence test]
+- [ ] Sender can type a name and generate/select a signature-like mark — [test: component/API persistence test]
+- [ ] Sender can place signature/date fields for sender and partner on PDF pages — [test: UI integration test]
+- [ ] API can create equivalent explicit fields with recipient assignment, page, geometry, and type — [test: API field contract test]
+- [ ] API can create default bottom-right signature/date fields without explicit coordinates — [test: default placement contract test]
+- [ ] Invalid field types, recipients, pages, or geometry return valid values/allowed actions in error JSON — [test: machine-readable error test]
+- [ ] Revised source PDF upload clears previous fields when the envelope is in changes requested — [test: revision field-clearing test]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 4: Shared Field Model And Visual/API Placement
+## Phase 4: Resend Delivery And Partner Verification
 
-**User stories**: 4, 5, 18, 19, 20
+**User stories**: 8, 9, 16, 17, 23, 24, 25, 29, 31, 32
 
 ### What to build
 
-Add signature/date field placement using one shared coordinate model. Internal users can place fields visually on PDF pages, and agents can create the same fields through JSON.
+Send prepared envelopes through Resend or fallback links, create partner verification links, enforce 7-day expiry, and expose sent-state visibility for both humans and agents.
 
 ### Assumptions carried in
 
-- Envelopes can hold a source PDF.
-- Recipients exist before fields are assigned.
+- Phase 3 can prepare a ready envelope with sender and partner fields.
+- Resend can be mocked in automated tests and configured in pilot environments.
 
 ### Out of scope for this phase
 
-- Text, checkbox, initials, autofill, templates, signer completion, and final PDF rendering.
+- Partner signing completion, change requests, final PDF generation, cancel/delete, and retention cleanup.
 
 ### Acceptance criteria
 
-- [ ] API can create signature and date fields with page/x/y/width/height and recipient assignment — [test: field API test]
-- [ ] Visual editor can create and persist the same field records — [test: UI integration test]
-- [ ] Invalid field types, page numbers, geometry, and recipient IDs return machine-readable errors with valid field types listed — [test: validation test]
-- [ ] Fields cannot be changed after an envelope is sent unless the envelope returns to draft through an explicit supported action — [test: state guard test]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Verified sender can send a prepared envelope to partner email — [test: send integration test]
+- [ ] Resend payloads or fallback links are recorded with delivery metadata — [observable: email send rows]
+- [ ] Partner must verify email before signing access is granted — [test: partner verification flow test]
+- [ ] Sent envelope status exposes allowed next actions and final PDF unavailable state — [test: status contract test]
+- [ ] Signing/verification links expire after 7 days and return stable expired-link errors — [test: time-controlled expiry test]
+- [ ] Send, verification, view, and expiry actions append audit events — [observable: audit event rows]
+- [ ] Repeated send/resend attempts are idempotent or explicitly rejected with allowed actions — [test: retry/state transition test]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 5: Magic-Link Signing, Decline, And Comments
+## Phase 5: Partner Review, Signing, And Change Request Loop
 
-**User stories**: 7, 8, 9, 10, 11, 12, 13
+**User stories**: 10, 11, 12, 13, 14, 15, 16, 23, 25, 29, 31, 32
 
 ### What to build
 
-Build the no-account signer experience. External recipients open a magic link, review assigned signature/date fields, type a signature, complete signing, or decline with a reason/comment. Internal users and agents can observe status changes.
+Complete the partner decision path. A verified partner can review the PDF, sign assigned fields, or request changes with a comment. Change requests pause completion, notify the sender, allow revised PDF upload, clear fields, and support resending through the same envelope flow.
 
 ### Assumptions carried in
 
-- Envelopes, documents, recipients, tokens, and fields are implemented.
-- Tokens expire according to the Phase 3 model.
+- Phase 4 can send an envelope and verify partner identity.
+- Phase 2 revision slot and Phase 3 field clearing behavior are available.
 
 ### Out of scope for this phase
 
-- Completed PDF generation and audit summary page.
-- Delegation and signer accounts.
+- Completed PDF finalization, audit certificate page, deletion, and retention cleanup.
+- Text discussion threads beyond the change-request comment.
 
 ### Acceptance criteria
 
-- [ ] Signer can open a valid magic link without internal login and only access their assigned envelope view — [test: signer access integration test]
-- [ ] Signer can type a signature and complete required signature/date fields — [test: signer completion test]
-- [ ] Completing one recipient updates recipient status while envelope remains sent until all required recipients complete — [test: status transition test]
-- [ ] Signer can decline with a reason and optional comment, causing envelope declined status — [test: decline flow test]
-- [ ] Comments and signer actions append immutable audit events — [observable: audit event rows]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Verified partner can review the PDF and assigned fields without password account login — [test: signer UI integration test]
+- [ ] Partner can complete required signature/date fields and recipient status updates — [test: signing integration test]
+- [ ] Partner can request changes with a comment; envelope moves to changes requested — [test: change-request integration test]
+- [ ] Changes requested blocks completion and exposes sender next action to upload revised PDF — [test: state transition test]
+- [ ] Sender can upload revised PDF, old fields are cleared, and envelope can be prepared/sent again — [test: revision loop integration test]
+- [ ] Change request and resend produce email notifications or fallback links — [observable: email send rows]
+- [ ] Review, sign, comment, revision, and resend append audit events — [observable: audit event rows]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 6: PDF Finalization And Audit Summary
+## Phase 6: Completion, Final PDF, And Audit Certificate
 
-**User stories**: 12, 15, 16, 18
+**User stories**: 16, 21, 22, 23, 25, 29, 32
 
 ### What to build
 
-When all required recipients complete, generate a flattened completed PDF with typed signatures and dates embedded, append an audit summary page derived from immutable audit events, store the final artifact in R2, and expose status/download through the lifecycle API.
+When every required party has signed, finalize the envelope. Generate a completed PDF in R2 with flattened signatures/dates and an appended audit/certificate page containing event summary and checksum/hash, then notify both parties and expose final access through verified process links.
 
 ### Assumptions carried in
 
-- All signing events and field values are persisted before finalization.
-- R2 storage and source PDF retrieval are reliable for launch scale.
+- Phase 5 persists all field values, signature assets, dates, recipient statuses, and audit events.
+- PDF generation can run within the selected Worker/runtime constraints for pilot PDF size.
 
 ### Out of scope for this phase
 
-- Advanced evidence packages, certified signing, webhooks, and automatic reminders.
+- Certified signing, notarization, advanced evidence packages, and webhooks.
+- New field types or templates.
 
 ### Acceptance criteria
 
-- [ ] Completing all required recipients triggers completed envelope status and final PDF generation — [test: end-to-end integration test]
-- [ ] Final PDF in R2 includes flattened typed signatures and date values at the saved coordinates — [test: PDF content/visual regression or deterministic PDF assertion]
-- [ ] Final PDF includes an appended audit summary page generated from immutable audit events — [test: PDF/audit summary assertion]
-- [ ] API status indicates final PDF availability and download endpoint returns the completed artifact — [test: lifecycle API test]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Envelope reaches completed only after all required parties complete assigned fields — [test: completion state test]
+- [ ] Completed PDF is stored in R2 with metadata/hash and final availability status — [observable: final document row and R2 object]
+- [ ] Final PDF visibly contains flattened signatures and dates at saved fields — [test: deterministic PDF assertion or visual regression]
+- [ ] Final PDF includes appended audit/certificate page with checksum/hash and signing event summary — [test: PDF certificate assertion]
+- [ ] Both parties receive completion email records or fallback notifications — [observable: email send rows]
+- [ ] Verified process links can download final PDF; unverified/expired/deleted access cannot — [test: access-control download test]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
 
 ---
 
-## Phase 7: End-To-End Agent And Human Smoke Path
+## Phase 7: Cancel, Delete, And Retention Controls
 
-**User stories**: 1-20
+**User stories**: 17, 18, 19, 20, 23, 25, 28, 29, 32
 
 ### What to build
 
-Tighten the whole workflow into a repeatable smoke path for both human UI preparation and agent/API preparation. Document the lifecycle contract enough that an agent can operate without guessing.
+Give the sender control over in-flight and stored documents. The sender can cancel/expire active envelopes, delete envelopes and revoke/remove PDF access, recipients see a clear deleted-document message, and terminal envelopes become eligible for deletion after 90 days.
 
 ### Assumptions carried in
 
-- Phases 1-6 are complete.
-- No new product capabilities are added in this phase.
+- Phases 1-6 define sender ownership, partner access, R2 document records, and final artifacts.
+- A background retention execution mechanism can be represented as a callable command/action or scheduled Worker binding.
 
 ### Out of scope for this phase
 
-- Webhooks, templates, advanced auth roles, additional field types, and in-app AI assistant.
+- Partner-initiated deletion requests.
+- Enterprise legal holds, custom retention policies, or admin restore.
 
 ### Acceptance criteria
 
-- [ ] Agent-style API smoke test creates, uploads, adds recipients/fields, sends, polls, signs via test helper, and downloads final PDF — [test or runnable command]
-- [ ] Human UI smoke test covers upload, field placement, send, signer completion, and final PDF availability — [test: browser/UI integration test]
-- [ ] API documentation or OpenAPI-like contract lists lifecycle endpoints, schemas, idempotency keys, and error codes — [observable: documentation artifact]
-- [ ] All PRD validation strategy items are mapped to tests, observable artifacts, or commands — [observable: validation checklist]
-- [ ] `pnpm types`, `pnpm test`, and `pnpm lint` pass — [command]
+- [ ] Sender can manually cancel/expire an active envelope and block further signing — [test: cancel/expire flow test]
+- [ ] Sender can delete an envelope and revoke/remove source/final PDF access — [test: delete/storage integration test]
+- [ ] Partner opening a deleted envelope link sees "This document was deleted by the sender" with no PDF access — [test: signer deleted-state UI test]
+- [ ] Completed/expired envelopes become retention-eligible 90 days after terminal state — [test: time-controlled retention test]
+- [ ] Delete, cancel, expire, and retention eligibility append audit events and structured logs — [observable: audit/log evidence]
+- [ ] Email notifications or fallback records are produced for relevant cancel/delete events — [observable: email send rows]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]
+
+---
+
+## Phase 8: Agent-Ready Contract And Pilot Smoke Hardening
+
+**User stories**: 1-32
+
+### What to build
+
+Make the pilot operable end to end by humans and future agents. Document the lifecycle contract, ensure every mutating action has idempotent/retry-safe behavior, polish loading/error/empty states, and provide repeatable smoke paths for human browser use and agent/API use.
+
+### Assumptions carried in
+
+- Phases 1-7 are complete.
+- No new major product capability is introduced in this phase.
+
+### Out of scope for this phase
+
+- Public API keys, standalone CLI, webhooks, billing, templates, and additional field types.
+
+### Acceptance criteria
+
+- [ ] API contract documentation lists endpoints, request/response schemas, statuses, idempotency keys, allowed actions, and error codes — [observable: docs artifact]
+- [ ] Agent-style smoke creates/verifies sender, uploads PDF, prepares/default-places fields, sends, verifies partner, signs, polls, and downloads final PDF — [test or runnable command]
+- [ ] Human browser smoke covers upload, sender verification, field preparation, send, partner verification, sign/change request, revision, completion, and final download — [test: browser/UI smoke or HITL checklist]
+- [ ] Professional UI states exist for loading, empty, validation error, expired, changes requested, completed, and deleted states — [test: component/browser state coverage]
+- [ ] All PRD validation items are mapped to tests, observable artifacts, or runnable commands — [observable: validation checklist]
+- [ ] `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass — [command]

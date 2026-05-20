@@ -1,182 +1,166 @@
-# PRD: Simple E-Signature Workflow
+# PRD: No-Account E-Signature Pilot
 
 ## Problem Statement
 
-The company needs a lightweight DocuSign-like workflow for sending PDFs to business partners for signature without adopting the legal and operational overhead of a certified e-signature platform. Internal users need to prepare documents, send signing links, track status, and retrieve a completed PDF with a clear audit summary. External partners need a no-account signing experience.
+People need a simple way to sign a PDF with a partner without creating accounts or learning a heavyweight e-signature product. The current product has useful lifecycle pieces, but the flow still feels fragmented and not ready for external customer pilots with real documents.
 
-The product must also be friendly to AI agents and automation. Agents should be able to create envelopes, upload PDFs, add recipients and fields, send envelopes, poll status, and download final PDFs through stable REST/JSON endpoints.
+The first pilot must make the core workflow understandable and trustworthy: upload a PDF, verify identity by email, define a signature, place signature/date fields, send a partner link, allow the partner to sign or request changes, and give both parties access to the completed signed PDF. It must also establish foundations for future agentic workflows: stable structured APIs, explicit state transitions, idempotent mutations, audit events, and errors that agents can recover from without guessing.
 
 ## Solution
 
-Build a company-initiated signing system with internal user accounts, external magic-link signing, PDF upload/storage in Cloudflare R2, metadata in the existing Neon Postgres/Drizzle stack, invitation emails through Resend, and a Hono REST API designed around stable JSON schemas.
+Build a production-pilot signing workflow on the existing TanStack Start, Hono, Cloudflare Workers, Neon Postgres, Drizzle, R2, and Resend architecture.
 
-The legal posture is "basic e-signature intent": the system captures signer intent, timestamps, IP/user-agent, document hashes, and immutable audit events, but it does not claim to be a certified trust-service product or a full legal evidence platform.
+The v1 pilot uses no password accounts. A sender starts with name/email, verifies ownership through an email magic link, uploads a PDF, prepares fields for both parties, and sends the envelope. The partner verifies by email before signing. Either party can complete assigned fields, while the partner can request changes instead of signing. A change request pauses the envelope, lets the sender upload a revised PDF, clears previous fields, and supports resending.
+
+When every required party signs, the system generates a completed PDF with flattened signatures/dates plus an appended audit certificate page containing signing events and a document checksum/hash. Both parties access the final PDF through their verified process links and receive email notifications.
+
+The legal posture is basic e-signature intent for general business documents that may contain PII. The pilot does not claim certified trust-service signing, regulated-industry compliance, or enterprise-grade identity verification.
 
 ## User Stories
 
-1. As an internal user, I want to create a draft envelope, so that I can prepare a document for partner signature.
-2. As an internal user, I want to upload a source PDF under 10 MB, so that it can become the document to sign.
-3. As an internal user, I want to add up to 10 external recipients by name and email, so that each partner receives a signing request.
-4. As an internal user, I want to place signature and date fields visually on PDF pages, so that signers know exactly where to complete the document.
-5. As an API client, I want to create the same signature and date fields using page coordinates, so that AI agents can prepare envelopes without browser interaction.
-6. As an internal user, I want to send an envelope to all recipients in parallel, so that every signer can act as soon as the envelope is ready.
-7. As an external recipient, I want to open a magic link without creating an account, so that I can review and sign quickly.
-8. As an external recipient, I want to type my signature name, so that the system can render it into each required signature field.
-9. As an external recipient, I want required date fields to be completed during signing, so that the final PDF records the signing date.
-10. As an external recipient, I want to decline a signing request with a reason, so that the sender knows why the envelope did not complete.
-11. As an external recipient, I want to leave a comment or message, so that I can communicate context or requested changes.
-12. As an internal user, I want to see envelope status, so that I know whether the document is draft, sent, completed, declined, or expired.
-13. As an internal user, I want signing links to expire, so that old requests cannot be used indefinitely.
-14. As an internal user, I want to manually resend a signing invitation, so that I can follow up without creating a new envelope.
-15. As an internal user, I want a completed flattened PDF after all required signers finish, so that I can store or share a single final artifact.
-16. As an internal user, I want the completed PDF to include an appended audit summary page, so that signer actions are visible with the document.
-17. As an internal user, I want every envelope to record who created and sent it, so that internal accountability is preserved.
-18. As an API client, I want lifecycle endpoints for create, upload, add recipients, add fields, send, get status, and download final PDF, so that agents can operate the workflow end to end.
-19. As an API client, I want stable JSON errors that enumerate valid statuses, field types, and allowed next actions, so that agents can recover without guessing.
-20. As an API client, I want mutating endpoints to support idempotency keys, so that retries do not duplicate envelopes, recipients, fields, or sends.
+1. As a sender, I want to start an envelope with only my name and email, so that I do not need to create an account.
+2. As a sender, I want to verify my email through a magic link before sending, so that the system can identify me without passwords.
+3. As a sender, I want to upload one PDF, so that it becomes the document to sign.
+4. As a sender, I want clear upload validation, so that I understand when a file is not a usable PDF or is too large.
+5. As a sender, I want to define my signature by drawing it, so that the signature represents my hand-drawn intent.
+6. As a sender, I want to type my name and generate a signature-like mark, so that I can create a professional signature without drawing.
+7. As a sender, I want to place signature and date fields on the PDF for both parties, so that each person knows where to sign.
+8. As a sender, I want to send the prepared envelope to my partner, so that they can review and act on it.
+9. As a partner, I want to verify my email before signing, so that my signature is attributable to a confirmed email address.
+10. As a partner, I want to review the PDF before signing, so that I can confirm the content is acceptable.
+11. As a partner, I want to complete assigned signature/date fields, so that I can sign the document.
+12. As a partner, I want to request changes with a comment instead of signing, so that the sender can fix the PDF content.
+13. As a sender, I want change requests to put the envelope into a clear changes-requested state, so that I know the current document should not be completed.
+14. As a sender, I want to upload a revised PDF after a change request, so that the same envelope flow can continue with corrected content.
+15. As a sender, I want revised PDF upload to clear existing fields, so that old coordinates or values are not accidentally applied to changed content.
+16. As either party, I want to see clear status such as draft, awaiting verification, sent, changes requested, completed, declined, expired, or deleted, so that I understand what can happen next.
+17. As a sender, I want signing links to expire after 7 days, so that old links cannot be used indefinitely.
+18. As a sender, I want to manually cancel or expire an envelope, so that I can stop an in-flight signing process.
+19. As a sender, I want to delete an envelope and remove stored PDFs before retention expiry, so that I control sensitive uploaded documents.
+20. As a partner, I want a deleted-envelope message if the sender deletes the document, so that I know why my link no longer shows the PDF.
+21. As either party, I want the completed PDF to contain all signatures and dates, so that the signed artifact is self-contained.
+22. As either party, I want the completed PDF to include an audit/certificate page with a checksum/hash, so that the document has a simple tamper-evidence control.
+23. As either party, I want email notifications for verification, sending, change requests, completion, expiry, and deletion where relevant, so that I do not have to poll manually.
+24. As an operator, I want email sending to use Resend when configured and expose fallback links in development/recovery flows, so that pilot operations do not block on local email delivery.
+25. As an operator, I want audit events stored in the database for key lifecycle actions, so that I can answer who did what and when.
+26. As an operator, I want structured server logs/errors, so that pilot issues can be diagnosed without full observability tooling.
+27. As an operator, I want Cloudflare Turnstile and rate limits by IP and email, so that no-account flows are protected from basic abuse.
+28. As an operator, I want uploaded and completed documents retained for 90 days after completion or expiry unless manually deleted earlier, so that retention is predictable.
+29. As an API client, I want stable JSON lifecycle endpoints, so that future agents can create, upload, prepare, send, and monitor envelopes.
+30. As an API client, I want a default field-placement mode, so that an agent can place common signature/date fields without brittle PDF coordinate manipulation.
+31. As an API client, I want mutating operations to be idempotent, so that retries do not duplicate envelopes, recipients, fields, sends, or revision actions.
+32. As an API client, I want machine-readable errors that enumerate valid states/actions, so that agents can recover safely.
 
 ## Implementation Decisions
 
-- **Architecture style**: extend the existing TanStack Start frontend and Hono API on Cloudflare Workers.
-- **Database**: use the existing Neon Postgres and Drizzle setup for envelope metadata, recipients, fields, signing events, idempotency records, and audit events.
-- **Object storage**: use Cloudflare R2 for uploaded source PDFs and completed flattened PDFs.
-- **Email**: use Resend for signing invitations and manual resends.
-- **External signer access**: magic-link only; no partner accounts in v1.
-- **Internal access**: internal company user accounts are required; the implementation should use the repo's auth foundation if present, or add a minimal internal auth slice before envelope work.
-- **Routing**: parallel only; all recipients receive signing links when an envelope is sent.
-- **Fields**: v1 supports only signature and date fields.
-- **Signature capture**: typed signatures only.
-- **Finalization**: after all required signers complete, generate a flattened PDF with visual signatures/dates and append an audit summary page.
-- **Agent-friendly API**: REST/JSON lifecycle endpoints with stable IDs, validation schemas, idempotency on mutating operations, machine-readable errors, and bounded responses where listing is introduced.
-- **Outward integrations**: no webhooks in v1; agents poll status.
-- **Templates**: no reusable templates in v1.
+- **Architecture style**: harden the existing TanStack Start frontend and Hono API on Cloudflare Workers.
+- **Runtime and storage**: Cloudflare Workers remains the production runtime, Neon Postgres/Drizzle owns relational state, and Cloudflare R2 stores source and completed PDF artifacts.
+- **Identity model**: no password accounts in v1. Sender and partner identity is email-based and verified through magic links.
+- **Sender authorization**: the verified sender session is the authority for envelope preparation, send, cancel/expire, revision upload, and deletion.
+- **Partner authorization**: the partner verifies email before viewing/signing and can only access the assigned envelope experience.
+- **Email provider**: Resend is the transactional email provider for pilot; local/dev can expose links as fallback.
+- **Signature capture**: support drawn signatures and typed-name generated signature marks; no uploaded signature images in v1.
+- **Routing**: sender prepares fields for both parties before sending. The sender is not required to sign before partner review.
+- **Change requests**: partner comments can move an envelope to changes requested. Revised PDF upload clears all existing fields and requires placement again.
+- **Status model**: user-facing states include draft, awaiting verification, sent, changes requested, completed, declined, expired, and deleted.
+- **Expiration**: signing links/envelopes expire after 7 days by default, with manual cancel/expire available to the sender.
+- **Retention**: PDFs and envelope data are retained for 90 days after completion or expiry unless manually deleted earlier by the sender.
+- **Final artifact**: completed PDFs include flattened signatures/dates plus an appended audit/certificate page with checksum/hash and event summary.
+- **Audit model**: immutable audit events are persisted for upload, verification, send, view, sign, comment/change request, revision, cancel, expire, delete, and final PDF download.
+- **Abuse controls**: Cloudflare Turnstile protects public no-account initiation; rate limits apply by IP and email.
+- **Agent foundation**: APIs should be structured, idempotent, explicit about allowed transitions, and future-ready for customer API keys and a standalone agent-friendly CLI.
+- **Public API keys**: design for future customer-facing API keys, but do not expose API-key auth in the v1 pilot.
+- **Billing**: no payment or billing in v1.
 
 ## Deep Modules
 
-- **Envelope Lifecycle**: exposes a narrow state-transition interface for draft, sent, completed, declined, and expired envelopes while hiding persistence and validation details.
-- **Document Storage**: owns R2 object keys, upload/download constraints, source/final PDF metadata, and hashes.
-- **Field Model**: owns signer-assigned PDF coordinates for signature/date fields and is shared by the visual editor and API.
-- **Signer Access**: owns magic-link token creation, expiry, recipient session resolution, and resend behavior.
-- **Audit Log**: appends immutable domain events and provides the source for the audit summary page.
-- **PDF Finalizer**: consumes source PDF, field values, and audit events to produce the completed PDF artifact.
-- **Agent API Contract**: owns lifecycle endpoint schemas, idempotency behavior, and machine-readable error shape.
+- **Identity And Verification**: owns sender/partner email verification, magic-link sessions, expiry, and access checks behind a small verified-identity interface.
+- **Envelope Lifecycle**: owns allowed state transitions for draft, awaiting verification, sent, changes requested, completed, declined, expired, and deleted.
+- **Document Storage**: owns R2 object keys, upload/download constraints, source/final PDF metadata, deletion, retention eligibility, and hashes.
+- **Signature Profile**: owns drawn signatures, typed-name generated signature marks, and the renderable signature asset used by PDF finalization.
+- **Field Placement**: owns signer-assigned PDF coordinates and default placement rules shared by UI and APIs.
+- **Email Delivery**: owns Resend integration, template selection, send records, and fallback link exposure.
+- **Audit Log**: appends immutable domain events and provides inputs for the final audit/certificate page.
+- **PDF Finalizer**: consumes source PDF, fields, signature values, dates, document hash, and audit events to produce the completed artifact.
+- **Agent API Contract**: owns stable JSON schemas, idempotency behavior, machine-readable error shape, and future API-key compatibility.
+- **Abuse And Retention Controls**: owns Turnstile verification, rate limits, expiry jobs/actions, manual deletion, and retention eligibility.
 
 ## Assumptions
 
-- Launch scale is light: PDFs under 10 MB, fewer than 10 recipients per envelope, and fewer than 100 envelopes per month.
-- Business partners will tolerate magic-link signing without account creation or email-code verification.
-- The company accepts "basic e-signature intent" and does not require certified trust-service signing, advanced identity verification, or regulated retention controls in v1.
-- The existing Neon/Drizzle database setup remains the source of truth for relational metadata.
-- Cloudflare R2 is available in the target deployment environment and can be bound to the Worker.
-- Resend is approved for transactional email sending.
-- Internal authentication either exists in the repo or can be added as a prerequisite slice without changing the product scope.
-- Agents can poll for status; no webhook delivery is required for v1.
-- Typed signatures are acceptable for the intended business-partner workflows.
+- The first external pilot targets real users and real general-business PDFs, not regulated HIPAA/PCI workflows.
+- Documents may contain PII, so access control, auditability, deletion, and retention matter even without formal compliance claims.
+- Pilot scale fits the existing architecture: low document volume, one PDF per envelope, and simple two-party signing as the primary workflow.
+- Users will accept email magic links instead of passwords when the flow is visibly simpler.
+- Requiring email verification for both parties is acceptable despite the extra click because signature attribution matters.
+- Resend is approved for transactional pilot email.
+- Cloudflare Turnstile is available for the public initiation surface.
+- A 7-day expiry and 90-day retention default are acceptable for pilot users.
+- Sender-controlled deletion is enough for v1; partner deletion requests can be handled operationally outside the product.
+- Public API keys and a standalone agent CLI are future work, but v1 API choices must not conflict with them.
+- A moderate professional UI is sufficient for the pilot; a single polished guided flow is not required yet.
 
 ## Tradeoffs Considered
 
-- **Certified e-signature platform** — rejected for v1 because it adds legal/compliance overhead the company explicitly wants to avoid.
-- **Partner accounts** — rejected because magic links are faster for business partners and reduce support burden.
-- **Sequential routing** — rejected because parallel signing is sufficient for v1 and simpler to model.
-- **Templates** — rejected because each document can be prepared from scratch at launch and template permissions/versioning would add complexity.
-- **Drawn signatures** — rejected because typed signatures are simpler, more reliable across devices, and enough for the desired legal posture.
-- **Webhooks** — rejected because polling is enough for the initial agent lifecycle API.
-- **Text, checkbox, initials, and autofill fields** — rejected because signature/date fields cover the first workflow and keep PDF rendering smaller.
-- **Database blob storage** — rejected because R2 is a better fit for larger PDF artifacts.
-- **Full in-app AI assistant** — rejected because external-agent-friendly API operations are the v1 priority.
+- **Password accounts** — rejected for v1 because simplicity and no-account initiation are the main product promise.
+- **No partner verification** — rejected because possession of a link alone is weaker attribution for real documents.
+- **Uploaded signature images** — rejected because cropping, transparency, storage, and abuse handling add scope without being necessary for the pilot.
+- **Sender must sign before sending** — rejected because the partner may need to request document changes before anyone signs.
+- **Preserving fields across revised PDFs** — rejected because revised content can shift and make old coordinates misleading.
+- **Separate final-download links** — rejected because the same verified process links are simpler and easier to reason about.
+- **Manual-only email sending** — rejected because verification and notifications are core to the pilot; fallback links remain for dev/recovery.
+- **Full public API keys in v1** — rejected because they expand the security surface before the human pilot workflow is ready.
+- **Single guided flow before pilot** — rejected because separate professional screens are acceptable if the workflow is understandable.
+- **Indefinite retention** — rejected because no-account PII workflows need predictable deletion boundaries.
+- **Full observability platform** — rejected for v1 because audit events plus structured logs are sufficient for the first pilot.
+- **Billing** — rejected because payment would distract from validating the signing workflow.
 
 ## Validation Strategy
 
-1. **Create draft envelope**: automated API test creates a draft envelope for an authenticated internal user and verifies persisted creator identity.
-2. **Upload source PDF**: automated API/storage test uploads a valid PDF under 10 MB, rejects non-PDF and over-limit files, persists R2 object metadata, and records a source document hash.
-3. **Add recipients**: automated API test adds up to 10 recipients, rejects invalid emails, and rejects recipient counts above 10.
-4. **Visual field placement**: UI test places signature/date fields on a PDF page and verifies saved page/x/y/width/height/recipient assignments.
-5. **Coordinate/API field placement**: API test creates equivalent fields through JSON and verifies the same field model is persisted.
-6. **Send parallel envelope**: integration test sends an envelope and verifies all recipients receive active signing tokens and invitation email send records.
-7. **Magic-link signing access**: integration test opens a signer token without account login and resolves only the intended recipient/envelope.
-8. **Typed signature capture**: signer flow test completes a signature field with typed name and persists the signature value and timestamp.
-9. **Date field completion**: signer flow test completes date fields and verifies values are rendered into the final PDF.
-10. **Decline with reason**: signer flow test declines with a reason and verifies envelope status and audit event.
-11. **Signer comments**: signer flow test submits a comment and verifies it is visible to internal users and recorded in the audit log.
-12. **Envelope status**: API test verifies valid status transitions and rejects invalid transitions with enumerated machine-readable errors.
-13. **Expiring links**: time-controlled test verifies expired tokens cannot sign and return a stable expired-token error.
-14. **Manual resend**: API/UI test resends an invitation and verifies a new email send record without duplicating recipients.
-15. **Flattened completed PDF**: integration test completes all recipients and verifies a final PDF object exists in R2.
-16. **Audit summary page**: PDF finalization test verifies the completed PDF includes an appended audit summary derived from immutable audit events.
-17. **Internal accountability**: database/API test verifies created_by and sent_by identities are stored for each envelope lifecycle action.
-18. **Lifecycle API**: contract tests cover create, upload, recipients, fields, send, status, and final PDF download endpoints.
-19. **Machine-readable errors**: API tests verify validation errors include code, message, field/path where applicable, and valid values for enum failures.
-20. **Idempotency**: API tests repeat mutating requests with the same idempotency key and verify no duplicate envelope, recipient, field, or send side effects.
+1. **No-account sender start**: automated API/UI test starts an envelope with name/email and no password account.
+2. **Sender email verification**: time-controlled test verifies a sender magic link activates the sender session and rejects expired/invalid links.
+3. **PDF upload**: upload tests accept one valid PDF and reject invalid type, missing content, and over-limit payloads with stable errors.
+4. **Upload validation UX**: UI test shows actionable upload error states without raw server traces.
+5. **Drawn signature**: component test captures a drawn signature and persists a renderable representation.
+6. **Typed signature generation**: component test generates a signature-like mark from typed text and persists the selected mark.
+7. **Field placement**: UI/API tests persist signature/date fields with page, geometry, recipient assignment, and field type.
+8. **Send envelope**: integration test sends a prepared envelope after sender verification and records send/audit/email events.
+9. **Partner email verification**: integration test requires partner email verification before signing access is granted.
+10. **Partner PDF review**: signer UI test renders the PDF and assigned fields for the verified partner.
+11. **Partner signing**: signer flow test completes required signature/date fields and records attribution.
+12. **Change request**: signer flow test submits a comment/change request and moves the envelope to changes requested.
+13. **Changes-requested state**: API/status test exposes changes requested and blocks completion until revision/resend.
+14. **Revised upload**: integration test uploads a revised PDF in the same envelope flow after changes requested.
+15. **Field clearing on revision**: test verifies revised PDF upload clears old fields and requires new placement.
+16. **Status visibility**: API/UI tests expose draft, awaiting verification, sent, changes requested, completed, declined, expired, and deleted states with allowed next actions.
+17. **Seven-day expiry**: time-controlled test verifies links/envelopes expire after 7 days and signing is blocked.
+18. **Manual cancel/expire**: API/UI test lets sender cancel/expire and blocks further signing.
+19. **Manual delete**: API/UI/storage test lets sender delete an envelope and removes or revokes PDF access.
+20. **Deleted recipient message**: signer-link test shows "This document was deleted by the sender" with no PDF access.
+21. **Flattened signatures/dates**: PDF finalization test asserts the final artifact contains visible signature/date values at saved fields.
+22. **Audit certificate/checksum**: PDF test asserts an appended audit/certificate page includes event summary and checksum/hash.
+23. **Email notifications**: email integration tests verify Resend payloads or fallback send records for verification, send, change request, completion, expiry, and deletion.
+24. **Email fallback**: dev/test mode returns or records recovery links without requiring Resend network calls.
+25. **Audit events**: database tests assert immutable audit rows for all required lifecycle events.
+26. **Structured logs/errors**: API tests assert known failures return structured error JSON; log tests or observability hooks cover server-side error metadata.
+27. **Turnstile/rate limits**: tests verify Turnstile validation hooks and IP/email rate-limit rejection paths on public initiation and email-triggering actions.
+28. **Retention eligibility**: time-controlled test marks completed/expired documents eligible for deletion 90 days after terminal state.
+29. **Stable lifecycle API**: contract tests cover create, upload, verify, prepare, send, status, change request, revise, complete, cancel, delete, and download flows.
+30. **Default field placement**: API test creates default bottom-right signature/date fields without explicit coordinates.
+31. **Idempotency**: retry tests confirm idempotency keys prevent duplicate side effects for mutating operations.
+32. **Machine-readable errors**: validation tests assert errors include code, message, field/path where applicable, and valid values/allowed actions for state failures.
 
-Done means `pnpm types`, `pnpm test`, and `pnpm lint` pass, and the core happy path can be exercised from draft envelope to completed PDF through both UI and API-supported preparation paths.
-
-## Lifecycle API Contract
-
-All JSON endpoints respond with `{ "data": ... }` on success and `{ "error": { "code": string, "message": string, ... } }` on known failures. Mutating internal endpoints require `x-internal-user-id` unless explicitly noted. Retriable mutating endpoints accept `Idempotency-Key` where listed.
-
-| Endpoint | Purpose | Request schema | Response schema | Idempotency-Key | Errors |
-|---|---|---|---|---|---|
-| `POST /api/envelopes` | Create draft envelope | Headers: `x-internal-user-id`, optional `Idempotency-Key` | Envelope `{ id, status, createdBy, createdAt }` | Yes | `UNAUTHORIZED` |
-| `POST /api/envelopes/{id}/source-pdf` | Upload source PDF to R2 | `application/pdf` body under 10 MB; headers: `x-internal-user-id`, optional `Idempotency-Key` | Source document `{ id, envelopeId, r2Key, sha256, byteSize, contentType, uploadedBy, uploadedAt }` | Yes | `UNAUTHORIZED`, `INVALID_SOURCE_PDF`, `SOURCE_PDF_TOO_LARGE` |
-| `POST /api/envelopes/{id}/recipients` | Add recipients to draft envelope | `{ recipients: [{ name, email }] }`, 1-10 entries | Recipient array `{ id, envelopeId, name, email, status, createdAt }` | No | `UNAUTHORIZED`, `INVALID_RECIPIENTS` |
-| `POST /api/envelopes/{id}/fields` | Add signature/date field coordinates | `{ fields: [{ recipientId, type, page, x, y, width, height }] }` | Field array `{ id, envelopeId, recipientId, type, page, x, y, width, height, createdAt }` | No | `UNAUTHORIZED`, `INVALID_FIELDS`, `ENVELOPE_NOT_DRAFT` |
-| `POST /api/envelopes/{id}/actions` | Send a draft envelope | `{ action: "send" }`; header: `x-internal-user-id` | `{ envelopeId, status, sentBy, tokenCount, emailSendCount, signingLinks }` | No | `UNAUTHORIZED`, `INVALID_ACTION` with valid values |
-| `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Resend one invitation | Header: `x-internal-user-id` | `{ recipientId, email, emailSendCount }` | No | `UNAUTHORIZED`, `EXPIRED_TOKEN` when the new link is later used after expiry |
-| `GET /api/envelopes/{id}/status` | Poll envelope lifecycle state | Path envelope ID | `{ envelopeId, status, finalPdfAvailable }` | Not applicable | `FINAL_PDF_NOT_FOUND` only applies to download |
-| `GET /api/envelopes/{id}/final-pdf` | Download completed PDF artifact | Path envelope ID | `application/pdf` body | Not applicable | `FINAL_PDF_NOT_FOUND` |
-| `GET /api/signing/{token}` | Resolve signer magic-link session | Path token; optional `x-now` for tests | `{ envelopeId, recipientId, fields }` | Not applicable | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN` |
-| `POST /api/signing/{token}/complete` | Complete typed signature/date values | `{ signatureName, date }` | `{ envelopeId, recipientId, recipientStatus, envelopeStatus }` | No | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN`, `INVALID_SIGNING_COMPLETION` |
-| `POST /api/signing/{token}/decline` | Decline with reason/comment | `{ reason, comment? }` | `{ envelopeId, recipientId, recipientStatus, envelopeStatus }` | No | `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN`, `INVALID_SIGNING_DECLINE` |
-
-Stable enum values exposed to agents are envelope statuses `draft`, `sent`, `completed`, `declined`, `expired`; recipient statuses `pending`, `sent`, `completed`, `declined`; field types `signature`, `date`; and lifecycle actions `send`.
-
-## Validation Checklist
-
-| # | PRD validation item | Current mapped evidence |
-|---|---|---|
-| 1 | Create draft envelope | `src/hono/api/envelopes.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 2 | Upload source PDF | `src/hono/api/envelopes.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 3 | Add recipients | `src/hono/api/envelope-recipients.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 4 | Visual field placement | `src/components/envelopes/field-editor.test.tsx`; HITL evidence tracked on issue #9 |
-| 5 | Coordinate/API field placement | `src/hono/api/envelope-fields.test.ts` |
-| 6 | Send parallel envelope | `src/hono/api/envelope-recipients.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 7 | Magic-link signing access | `src/hono/api/signing-flow.test.ts` |
-| 8 | Typed signature capture | `src/hono/api/signing-flow.test.ts`, `src/components/signing/signer-page.test.tsx`, and `src/hono/api/lifecycle-smoke.test.ts` |
-| 9 | Date field completion | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 10 | Decline with reason | `src/hono/api/signing-flow.test.ts` |
-| 11 | Signer comments | `src/hono/api/signing-flow.test.ts` |
-| 12 | Envelope status | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 13 | Expiring links | `src/hono/api/envelope-recipients.test.ts` |
-| 14 | Manual resend | `src/hono/api/envelope-recipients.test.ts` |
-| 15 | Flattened completed PDF | `src/hono/api/pdf-finalization.test.ts` and `src/hono/api/lifecycle-smoke.test.ts` |
-| 16 | Audit summary page | `src/hono/api/pdf-finalization.test.ts` |
-| 17 | Internal accountability | `src/hono/api/envelopes.test.ts` and `src/hono/api/envelope-recipients.test.ts` |
-| 18 | Lifecycle API | `src/hono/api/lifecycle-smoke.test.ts` and this Lifecycle API Contract |
-| 19 | Machine-readable errors | `src/hono/api/envelopes.test.ts`, `src/hono/api/envelope-fields.test.ts`, `src/hono/api/envelope-recipients.test.ts`, `src/hono/api/signing-flow.test.ts` |
-| 20 | Idempotency | `src/hono/api/envelopes.test.ts` |
-
-## Manual Human UI Smoke Checklist
-
-Use this checklist for the issue #12 human browser review. Start the local app with `pnpm dev`, open `http://localhost:3000/manual-signing-smoke`, and record the browser paths/screenshots you verified.
-
-| Step | What to test | Expected result |
-|---|---|---|
-| 1 | Open `/manual-signing-smoke` | The manual smoke page renders without layout overlap or runtime errors. |
-| 2 | Click `Run setup` | The browser creates an envelope, uploads a source PDF, adds Ada Lovelace, adds signature/date fields, sends the envelope, and displays a `/signing/{token}` link. |
-| 3 | Open the displayed signer link in another tab | The signer page renders assigned fields and does not require internal login. |
-| 4 | Return to `/manual-signing-smoke`, type signer name `Ada Lovelace` and signing date `2026-05-20`, then click `Complete in page` | The page reports `Final PDF is available`. |
-| 5 | Click `Download final PDF` | The browser downloads an `application/pdf` final artifact containing the typed name/date and audit summary. |
+Done for the pilot means all acceptance tests for the implemented slices pass, `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass before declaring the implementation ready, and a manual browser smoke can complete upload -> verify sender -> prepare fields -> verify partner -> sign/request changes -> revise -> complete -> download final PDF.
 
 ## Out of Scope
 
-- Certified/trust-service signing, qualified signatures, and advanced identity verification.
-- Partner workspaces, partner accounts, or partner-initiated envelopes.
-- Role-based internal permissions beyond authenticated internal users.
-- Sequential routing, delegation, automatic reminders, and webhooks.
-- Templates, conditional fields, text fields, checkbox fields, initials, and signer autofill.
-- High-volume search, analytics, billing, tenant customization, or enterprise administration.
-- Native in-app AI assistant.
+- Password accounts, organizations, workspaces, and role-based access control.
+- Public API keys and standalone agent CLI.
+- Certified/trust-service signatures, qualified signatures, notarization, and regulated-data compliance guarantees.
+- Uploaded signature image files.
+- Multi-document envelopes, templates, reusable recipient groups, automatic reminders, webhooks, billing, and analytics.
+- Partner-initiated deletion controls beyond loss of access after sender deletion.
+- A single end-to-end polished guided wizard; separate professional screens are acceptable for the pilot.
 
 ## Further Notes
 
-The repo currently shows Hono, Neon/Drizzle, and Cloudflare Worker foundations. Internal auth and R2 bindings were not visible during discovery inspection, so those should be treated as implementation prerequisites to confirm in the first phase.
+The first build window target is 4-6 weeks. The highest-risk gaps are the fragmented user flow, identity verification, real email delivery, audit/final PDF trust signals, deletion/retention controls, and agent-friendly API foundations.
