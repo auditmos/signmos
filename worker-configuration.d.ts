@@ -10,6 +10,7 @@ declare namespace Cloudflare {
 		DATABASE_HOST: string;
 		DATABASE_USERNAME: string;
 		DATABASE_PASSWORD: string;
+		DOCUMENTS_BUCKET: R2Bucket;
 	}
 }
 interface BaseEnv extends Cloudflare.Env {}

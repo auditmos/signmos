@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const envelopeStatuses = ["draft", "sent", "completed", "declined", "expired"] as const;
 
@@ -29,3 +29,16 @@ export const idempotencyRecords = pgTable(
 		),
 	],
 );
+
+export const sourceDocuments = pgTable("source_documents", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	r2Key: text("r2_key").notNull().unique(),
+	sha256: text("sha256").notNull(),
+	byteSize: integer("byte_size").notNull(),
+	contentType: text("content_type").notNull(),
+	uploadedBy: text("uploaded_by").notNull(),
+	uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
+});

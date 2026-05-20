@@ -15,6 +15,13 @@
       "when": 1779262145216,
       "tag": "0001_deep_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779262562303,
+      "tag": "0002_right_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

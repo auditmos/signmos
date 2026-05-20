@@ -4,6 +4,12 @@
 	"compatibility_date": "2025-09-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/server.ts",
+	"r2_buckets": [
+		{
+			"binding": "DOCUMENTS_BUCKET",
+			"bucket_name": "signmos-documents-dev"
+		}
+	],
 	"vars": {
 		"CLOUDFLARE_ENV": "dev",
 		"DATABASE_HOST": "",
