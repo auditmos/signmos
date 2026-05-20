@@ -7,6 +7,8 @@ import {
 	createEnvelope,
 	EnvelopeActionRequestSchema,
 	envelopeLifecycleActions,
+	getEnvelopeFinalizationStatus,
+	getFinalDocument,
 	resendInvitation,
 	sendEnvelope,
 	toEnvelopeFieldResponse,
@@ -71,6 +73,44 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 	}
 	const result = await sendEnvelope(c.req.param("id"), sentBy);
 	return c.json({ data: result });
+});
+
+envelopesEndpoint.get("/:id/status", async (c) => {
+	const result = await getEnvelopeFinalizationStatus(c.req.param("id"));
+	return c.json({ data: result });
+});
+
+envelopesEndpoint.get("/:id/final-pdf", async (c) => {
+	const document = await getFinalDocument(c.req.param("id"));
+	if (!document) {
+		return c.json(
+			{
+				error: {
+					code: "FINAL_PDF_NOT_FOUND",
+					message: "Completed PDF is not available",
+				},
+			},
+			404,
+		);
+	}
+
+	const bucket = (c.env as Env & { DOCUMENTS_BUCKET: R2Bucket }).DOCUMENTS_BUCKET;
+	const object = await bucket.get(document.r2Key);
+	if (!object) {
+		return c.json(
+			{
+				error: {
+					code: "FINAL_PDF_NOT_FOUND",
+					message: "Completed PDF is not available",
+				},
+			},
+			404,
+		);
+	}
+
+	return new Response(await object.arrayBuffer(), {
+		headers: { "content-type": document.contentType },
+	});
 });
 
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {

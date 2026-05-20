@@ -47,6 +47,18 @@ export const sourceDocuments = pgTable("source_documents", {
 	uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const finalDocuments = pgTable("final_documents", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	r2Key: text("r2_key").notNull().unique(),
+	sha256: text("sha256").notNull(),
+	byteSize: integer("byte_size").notNull(),
+	contentType: text("content_type").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const envelopeRecipients = pgTable("envelope_recipients", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	envelopeId: uuid("envelope_id")

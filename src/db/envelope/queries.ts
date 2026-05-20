@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
+import { finalizeCompletedEnvelope } from "./finalization";
 import {
 	type AddFieldsRequest,
 	type AddRecipientsRequest,
@@ -340,6 +341,7 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 export async function completeSigning(
 	token: SignerToken,
 	input: CompleteSigningRequest,
+	options: { documentsBucket?: R2Bucket } = {},
 ): Promise<CompleteSigningResult> {
 	const db = getDb();
 	const fields = (
@@ -400,6 +402,7 @@ export async function completeSigning(
 			.update(envelopes)
 			.set({ status: "completed" })
 			.where(eq(envelopes.id, token.envelopeId));
+		await finalizeCompletedEnvelope(token.envelopeId, options);
 	}
 
 	return {

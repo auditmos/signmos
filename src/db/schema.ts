@@ -6,6 +6,7 @@ export {
 	envelopeRecipients,
 	envelopes,
 	fieldValues,
+	finalDocuments,
 	idempotencyRecords,
 	signerTokens,
 	sourceDocuments,

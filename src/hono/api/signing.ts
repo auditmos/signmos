@@ -34,7 +34,8 @@ signingEndpoint.post("/:token/complete", async (c) => {
 		);
 	}
 
-	return c.json({ data: await completeSigning(token, parsed.data) });
+	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
+	return c.json({ data: await completeSigning(token, parsed.data, { documentsBucket: bucket }) });
 });
 
 signingEndpoint.post("/:token/decline", async (c) => {

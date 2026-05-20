@@ -79,6 +79,17 @@ export const SourceDocumentResponseSchema = z.object({
 });
 export type SourceDocumentResponse = z.infer<typeof SourceDocumentResponseSchema>;
 
+export const FinalDocumentSchema = z.object({
+	id: z.string().uuid().optional(),
+	envelopeId: z.string().uuid(),
+	r2Key: z.string().min(1),
+	sha256: z.string().regex(/^[a-f0-9]{64}$/),
+	byteSize: z.coerce.number().int().nonnegative(),
+	contentType: z.literal("application/pdf"),
+	createdAt: z.date().optional(),
+});
+export type FinalDocument = z.infer<typeof FinalDocumentSchema>;
+
 export const RecipientSchema = z.object({
 	id: z.string().uuid(),
 	envelopeId: z.string().uuid(),

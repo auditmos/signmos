@@ -43,6 +43,13 @@
       "when": 1779264566198,
       "tag": "0005_glorious_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779265408101,
+      "tag": "0006_swift_war_machine",
+      "breakpoints": true
     }
   ]
 }
