@@ -1,9 +1,14 @@
 import {
+	AddRecipientsRequestSchema,
+	addRecipients,
 	attachSourceDocument,
 	createEnvelope,
 	EnvelopeActionRequestSchema,
 	envelopeLifecycleActions,
+	resendInvitation,
+	sendEnvelope,
 	toEnvelopeResponse,
+	toRecipientResponse,
 	toSourceDocumentResponse,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
@@ -49,16 +54,20 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 		);
 	}
 
-	return c.json(
-		{
-			error: {
-				code: "ACTION_NOT_IMPLEMENTED",
-				message: "Envelope lifecycle action is not implemented in this slice",
-				validValues: [...envelopeLifecycleActions],
+	const sentBy = c.req.header("x-internal-user-id");
+	if (!sentBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
 			},
-		},
-		501,
-	);
+			401,
+		);
+	}
+	const result = await sendEnvelope(c.req.param("id"), sentBy);
+	return c.json({ data: result });
 });
 
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {
@@ -121,6 +130,56 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	});
 
 	return c.json({ data: toSourceDocumentResponse(result.document) }, result.reused ? 200 : 201);
+});
+
+envelopesEndpoint.post("/:id/recipients", async (c) => {
+	const createdBy = c.req.header("x-internal-user-id");
+	if (!createdBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const parsed = AddRecipientsRequestSchema.safeParse(await c.req.json());
+	if (!parsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "INVALID_RECIPIENTS",
+					message: "Recipients must include 1 to 10 valid name and email entries",
+					limit: 10,
+				},
+			},
+			400,
+		);
+	}
+
+	const recipients = await addRecipients(c.req.param("id"), parsed.data);
+	return c.json({ data: recipients.map(toRecipientResponse) }, 201);
+});
+
+envelopesEndpoint.post("/:id/recipients/:recipientId/resend", async (c) => {
+	const senderId = c.req.header("x-internal-user-id");
+	if (!senderId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const result = await resendInvitation(c.req.param("id"), c.req.param("recipientId"));
+	return c.json({ data: result }, 201);
 });
 
 function isPdf(bytes: Uint8Array): boolean {

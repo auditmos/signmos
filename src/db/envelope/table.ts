@@ -1,12 +1,15 @@
 import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const envelopeStatuses = ["draft", "sent", "completed", "declined", "expired"] as const;
+export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
 
 export const envelopes = pgTable("envelopes", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	status: text("status").notNull().default("draft"),
 	createdBy: text("created_by").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	sentBy: text("sent_by"),
+	sentAt: timestamp("sent_at", { withTimezone: true }),
 });
 
 export const idempotencyRecords = pgTable(
@@ -41,4 +44,45 @@ export const sourceDocuments = pgTable("source_documents", {
 	contentType: text("content_type").notNull(),
 	uploadedBy: text("uploaded_by").notNull(),
 	uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const envelopeRecipients = pgTable("envelope_recipients", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	name: text("name").notNull(),
+	email: text("email").notNull(),
+	status: text("status").notNull().default("pending"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const signerTokens = pgTable("signer_tokens", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	recipientId: uuid("recipient_id")
+		.notNull()
+		.references(() => envelopeRecipients.id),
+	token: text("token").notNull().unique(),
+	status: text("status").notNull().default("active"),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const emailSendRecords = pgTable("email_send_records", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	recipientId: uuid("recipient_id")
+		.notNull()
+		.references(() => envelopeRecipients.id),
+	tokenId: uuid("token_id")
+		.notNull()
+		.references(() => signerTokens.id),
+	email: text("email").notNull(),
+	kind: text("kind").notNull(),
+	sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
 });

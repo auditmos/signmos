@@ -1,2 +1,9 @@
 export { clients } from "./client/table";
-export { envelopes, idempotencyRecords, sourceDocuments } from "./envelope/table";
+export {
+	emailSendRecords,
+	envelopeRecipients,
+	envelopes,
+	idempotencyRecords,
+	signerTokens,
+	sourceDocuments,
+} from "./envelope/table";
