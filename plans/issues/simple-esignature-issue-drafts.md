@@ -1,6 +1,6 @@
 # Dispatch Drafts: No-Account E-Signature Pilot
 
-> Parent PRD: `docs/simple-esignature-prd.md`
+> Parent PRD: `plans/simple-esignature-prd.md`
 >
 > GitHub issues created on 2026-05-20.
 >

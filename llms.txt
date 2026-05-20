@@ -6,7 +6,9 @@
 
 - [README.md](README.md): Current app overview, setup, manual smoke flow, lifecycle API, routes, scripts, verification.
 - [AGENTS.md](AGENTS.md): Agent-specific architecture, commands, workflow rules, verification requirements.
-- [docs/simple-esignature-prd.md](docs/simple-esignature-prd.md): Product requirements, lifecycle API contract, validation checklist, manual human UI smoke checklist.
+- [ARCHITECTURE.md](ARCHITECTURE.md): Stable physical codemap, module boundaries, invariants, and cross-cutting concerns.
+- [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md): Detailed agent operating rules distilled from `.claude/rules`.
+- [plans/simple-esignature-prd.md](plans/simple-esignature-prd.md): Product requirements, lifecycle API contract, validation checklist, manual human UI smoke checklist.
 - [plans/simple-esignature.md](plans/simple-esignature.md): Original phase plan for the e-signature workflow.
 
 ## Implemented Workflow
@@ -92,4 +94,5 @@ Use this to exercise envelope creation, PDF upload, recipient/field creation, se
 - Route files are excluded from test discovery.
 - Do not manually edit `src/routeTree.gen.ts`; TanStack Router regenerates it.
 - Do not edit `src/components/ui/*` manually.
-- `/docs/simple-esignature-prd.md` is the source of truth for product requirements and lifecycle API contract.
+- Use `AGENTS.md` as the compact context map; load `ARCHITECTURE.md` and `docs/AGENT_GUIDE.md` only when relevant.
+- `/plans/simple-esignature-prd.md` is the source of truth for product requirements and lifecycle API contract.

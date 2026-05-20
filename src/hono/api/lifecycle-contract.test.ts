@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 describe("lifecycle API contract documentation", () => {
 	it("documents endpoints, schemas, idempotency, errors, and validation mapping", () => {
-		const prd = readFileSync("docs/simple-esignature-prd.md", "utf8");
+		const prd = readFileSync("plans/simple-esignature-prd.md", "utf8");
 
 		for (const text of [
 			"## Lifecycle API Contract",

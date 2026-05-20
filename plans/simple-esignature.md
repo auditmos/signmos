@@ -1,6 +1,6 @@
 # Plan: No-Account E-Signature Pilot
 
-> Source PRD: `docs/simple-esignature-prd.md`
+> Source PRD: `plans/simple-esignature-prd.md`
 
 ## Architectural decisions
 

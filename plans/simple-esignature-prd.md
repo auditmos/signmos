@@ -151,6 +151,62 @@ The legal posture is basic e-signature intent for general business documents tha
 
 Done for the pilot means all acceptance tests for the implemented slices pass, `pnpm types`, `pnpm test`, `pnpm lint`, and `pnpm build` pass before declaring the implementation ready, and a manual browser smoke can complete upload -> verify sender -> prepare fields -> verify partner -> sign/request changes -> revise -> complete -> download final PDF.
 
+## Lifecycle API Contract
+
+Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": string, "message": string, ... } }`.
+
+| Endpoint | Purpose | Notes |
+| --- | --- | --- |
+| `POST /api/envelopes` | Create a draft envelope. | Requires `x-internal-user-id`; accepts `Idempotency-Key`. |
+| `POST /api/envelopes/{id}/source-pdf` | Upload one source PDF under 10 MB. | Requires `x-internal-user-id`; accepts `Idempotency-Key`; rejects `INVALID_SOURCE_PDF` and `SOURCE_PDF_TOO_LARGE`. |
+| `POST /api/envelopes/{id}/recipients` | Add 1-10 recipients. | Requires `x-internal-user-id`; rejects invalid recipient lists. |
+| `POST /api/envelopes/{id}/fields` | Add signature/date coordinate fields. | Requires `x-internal-user-id`; rejects invalid field type, geometry, or recipient assignment. |
+| `POST /api/envelopes/{id}/actions` | Send a prepared envelope with `{ "action": "send" }`. | Rejects `INVALID_ACTION`; returns generated signing links. |
+| `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. | Requires `x-internal-user-id`. |
+| `GET /api/envelopes/{id}/status` | Poll lifecycle status and final PDF availability. | Returns envelope status and `finalPdfAvailable`. |
+| `GET /api/envelopes/{id}/final-pdf` | Download completed final PDF artifact. | Rejects `FINAL_PDF_NOT_FOUND` until finalization is available. |
+| `GET /api/signing/{token}` | Resolve a signer magic-link session. | Rejects `TOKEN_NOT_FOUND` and `EXPIRED_TOKEN`. |
+| `POST /api/signing/{token}/complete` | Complete typed signature/date values. | Rejects invalid signer completion input. |
+| `POST /api/signing/{token}/decline` | Decline with reason and optional comment. | Rejects invalid decline input. |
+
+Current stable error codes include `UNAUTHORIZED`, `INVALID_ACTION`, `INVALID_SOURCE_PDF`, `SOURCE_PDF_TOO_LARGE`, `INVALID_RECIPIENTS`, `INVALID_FIELDS`, `ENVELOPE_NOT_DRAFT`, `TOKEN_NOT_FOUND`, `EXPIRED_TOKEN`, and `FINAL_PDF_NOT_FOUND`.
+
+## Validation Checklist
+
+| # | Validation item | Evidence target |
+| --- | --- | --- |
+| 1 | Draft envelope creation returns stable JSON with `draft` status. | API integration test |
+| 2 | Envelope creation persists creator identity and timestamp. | DB assertion |
+| 3 | Repeated create with the same `Idempotency-Key` returns the original result. | Idempotency test |
+| 4 | Invalid lifecycle action returns machine-readable error JSON with valid values. | Error contract test |
+| 5 | Valid PDF under 10 MB uploads to R2 and links to the envelope. | API/storage test |
+| 6 | Non-PDF upload returns `INVALID_SOURCE_PDF`. | Validation test |
+| 7 | Oversized upload returns `SOURCE_PDF_TOO_LARGE`. | Validation test |
+| 8 | Uploaded PDF hash, byte size, content type, and R2 key are persisted. | DB and R2 assertions |
+| 9 | Repeated upload with the same `Idempotency-Key` avoids duplicate document records. | Idempotency test |
+| 10 | Recipient creation accepts 1-10 valid recipients. | Recipient API test |
+| 11 | Invalid recipient lists return stable validation errors. | Validation test |
+| 12 | Sending creates active signer tokens and invitation send records. | Integration test |
+| 13 | Manual resend creates a new send record without duplicating recipients. | Resend test |
+| 14 | Expired tokens return `EXPIRED_TOKEN` and cannot sign. | Time-controlled test |
+| 15 | Signature/date fields persist page, geometry, type, and recipient assignment. | Field API test |
+| 16 | Invalid fields return machine-readable errors listing valid field types. | Validation test |
+| 17 | Fields cannot be changed after send without an explicit supported transition. | State guard test |
+| 18 | Signer completion records field values and recipient status. | Signing flow test |
+| 19 | Decline records reason/comment audit events and moves envelope to declined. | Decline flow test |
+| 20 | Final PDF status/download returns the completed artifact after all signers complete. | Lifecycle/PDF test |
+
+## Manual Human UI Smoke Checklist
+
+1. Run `pnpm db:migrate:dev` and `pnpm dev`.
+2. Open `/manual-signing-smoke`.
+3. Run setup and confirm a signing link is created.
+4. Open the signing link and verify assigned fields render.
+5. Complete signing with typed signature and date.
+6. Confirm final PDF availability appears.
+7. Download the final PDF from the browser.
+8. For field placement review, create a real envelope and recipient, then open `/envelope-fields?envelopeId=<uuid>&recipientId=<uuid>&name=<name>&email=<email>`.
+
 ## Out of Scope
 
 - Password accounts, organizations, workspaces, and role-based access control.
