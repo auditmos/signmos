@@ -4,16 +4,73 @@
 	"compatibility_date": "2025-09-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/server.ts",
+	// Top-level config is the default/dev Worker. Use --env staging or --env production for deployed pilot environments.
 	"r2_buckets": [
 		{
 			"binding": "DOCUMENTS_BUCKET",
 			"bucket_name": "signmos-documents-dev"
 		}
 	],
-	"vars": {
-		"CLOUDFLARE_ENV": "dev",
-		"DATABASE_HOST": "",
-		"DATABASE_USERNAME": "",
-		"DATABASE_PASSWORD": ""
+	"secrets": {
+		"required": [
+			"CLOUDFLARE_ENV",
+			"DATABASE_HOST",
+			"DATABASE_USERNAME",
+			"DATABASE_PASSWORD",
+			"APP_BASE_URL",
+			"RESEND_API_KEY",
+			"RESEND_FROM_EMAIL",
+			"RESEND_REPLY_TO_EMAIL",
+			"TURNSTILE_SITE_KEY",
+			"TURNSTILE_SECRET_KEY"
+		]
+	},
+	"env": {
+		"staging": {
+			"name": "signmos-staging",
+			"r2_buckets": [
+				{
+					"binding": "DOCUMENTS_BUCKET",
+					"bucket_name": "signmos-documents-staging"
+				}
+			],
+			"secrets": {
+				"required": [
+					"CLOUDFLARE_ENV",
+					"DATABASE_HOST",
+					"DATABASE_USERNAME",
+					"DATABASE_PASSWORD",
+					"APP_BASE_URL",
+					"RESEND_API_KEY",
+					"RESEND_FROM_EMAIL",
+					"RESEND_REPLY_TO_EMAIL",
+					"TURNSTILE_SITE_KEY",
+					"TURNSTILE_SECRET_KEY"
+				]
+			}
+		},
+		"production": {
+			"name": "signmos-production",
+			"r2_buckets": [
+				{
+					"binding": "DOCUMENTS_BUCKET",
+					"bucket_name": "signmos-documents-production"
+				}
+			],
+			"secrets": {
+				"required": [
+					"CLOUDFLARE_ENV",
+					"DATABASE_HOST",
+					"DATABASE_USERNAME",
+					"DATABASE_PASSWORD",
+					"APP_BASE_URL",
+					"RESEND_API_KEY",
+					"RESEND_FROM_EMAIL",
+					"RESEND_REPLY_TO_EMAIL",
+					"TURNSTILE_SITE_KEY",
+					"TURNSTILE_SECRET_KEY"
+				]
+			}
+		}
 	}
 }
