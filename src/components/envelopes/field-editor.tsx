@@ -26,10 +26,12 @@ export function EnvelopeFieldEditor({ envelopeId, recipients }: EnvelopeFieldEdi
 	const [width, setWidth] = useState(180);
 	const [height, setHeight] = useState(48);
 	const [error, setError] = useState<string | null>(null);
+	const [message, setMessage] = useState<string | null>(null);
 
 	async function saveField(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		setError(null);
+		setMessage(null);
 		const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
 			method: "POST",
 			headers: {
@@ -41,6 +43,7 @@ export function EnvelopeFieldEditor({ envelopeId, recipients }: EnvelopeFieldEdi
 			}),
 		});
 		if (!response.ok) setError("Unable to save field");
+		if (response.ok) setMessage("Field saved");
 	}
 
 	return (
@@ -84,6 +87,7 @@ export function EnvelopeFieldEditor({ envelopeId, recipients }: EnvelopeFieldEdi
 				</Button>
 			</div>
 			{error && <p className="md:col-span-4 text-sm text-destructive">{error}</p>}
+			{message && <p className="md:col-span-4 text-sm text-muted-foreground">{message}</p>}
 		</form>
 	);
 }

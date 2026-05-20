@@ -31,6 +31,7 @@ describe("EnvelopeFieldEditor", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Save field" }));
 
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		await screen.findByText("Field saved");
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/fields",
 			expect.objectContaining({
