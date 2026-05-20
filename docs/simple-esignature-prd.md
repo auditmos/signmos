@@ -120,7 +120,7 @@ All JSON endpoints respond with `{ "data": ... }` on success and `{ "error": { "
 | `POST /api/envelopes/{id}/source-pdf` | Upload source PDF to R2 | `application/pdf` body under 10 MB; headers: `x-internal-user-id`, optional `Idempotency-Key` | Source document `{ id, envelopeId, r2Key, sha256, byteSize, contentType, uploadedBy, uploadedAt }` | Yes | `UNAUTHORIZED`, `INVALID_SOURCE_PDF`, `SOURCE_PDF_TOO_LARGE` |
 | `POST /api/envelopes/{id}/recipients` | Add recipients to draft envelope | `{ recipients: [{ name, email }] }`, 1-10 entries | Recipient array `{ id, envelopeId, name, email, status, createdAt }` | No | `UNAUTHORIZED`, `INVALID_RECIPIENTS` |
 | `POST /api/envelopes/{id}/fields` | Add signature/date field coordinates | `{ fields: [{ recipientId, type, page, x, y, width, height }] }` | Field array `{ id, envelopeId, recipientId, type, page, x, y, width, height, createdAt }` | No | `UNAUTHORIZED`, `INVALID_FIELDS`, `ENVELOPE_NOT_DRAFT` |
-| `POST /api/envelopes/{id}/actions` | Send a draft envelope | `{ action: "send" }`; header: `x-internal-user-id` | `{ envelopeId, status, sentBy, tokenCount, emailSendCount }` | No | `UNAUTHORIZED`, `INVALID_ACTION` with valid values |
+| `POST /api/envelopes/{id}/actions` | Send a draft envelope | `{ action: "send" }`; header: `x-internal-user-id` | `{ envelopeId, status, sentBy, tokenCount, emailSendCount, signingLinks }` | No | `UNAUTHORIZED`, `INVALID_ACTION` with valid values |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Resend one invitation | Header: `x-internal-user-id` | `{ recipientId, email, emailSendCount }` | No | `UNAUTHORIZED`, `EXPIRED_TOKEN` when the new link is later used after expiry |
 | `GET /api/envelopes/{id}/status` | Poll envelope lifecycle state | Path envelope ID | `{ envelopeId, status, finalPdfAvailable }` | Not applicable | `FINAL_PDF_NOT_FOUND` only applies to download |
 | `GET /api/envelopes/{id}/final-pdf` | Download completed PDF artifact | Path envelope ID | `application/pdf` body | Not applicable | `FINAL_PDF_NOT_FOUND` |
@@ -157,19 +157,15 @@ Stable enum values exposed to agents are envelope statuses `draft`, `sent`, `com
 
 ## Manual Human UI Smoke Checklist
 
-Use this checklist for the issue #12 human browser review. Start the local app with `pnpm dev`, open `http://localhost:3000`, and record the browser paths/screenshots you verified.
+Use this checklist for the issue #12 human browser review. Start the local app with `pnpm dev`, open `http://localhost:3000/manual-signing-smoke`, and record the browser paths/screenshots you verified.
 
 | Step | What to test | Expected result |
 |---|---|---|
-| 1 | Open `/envelope-fields` | The field placement screen renders without layout overlap or runtime errors. |
-| 2 | Place a signature field for Ada Lovelace with page `1`, x `72`, y `144`, width `180`, height `48` | The UI reports `Field saved`, and the request targets `POST /api/envelopes/{id}/fields`. |
-| 3 | Change field type to date and place page `1`, x `300`, y `144`, width `120`, height `32` | The UI reports `Field saved`, using the same shared field model. |
-| 4 | Open `/signing/demo-token` or the signer link produced by a local seeded/API-created envelope | The signer page renders assigned fields and does not require internal login. |
-| 5 | Type signer name `Ada Lovelace` and signing date `2026-05-20`, then submit | The UI reports `Signing complete`. |
-| 6 | Verify final PDF availability through the API status endpoint for the same envelope | `GET /api/envelopes/{id}/status` returns `status: "completed"` and `finalPdfAvailable: true`. |
-| 7 | Download the final PDF through the API | `GET /api/envelopes/{id}/final-pdf` returns `application/pdf`; the PDF contains the typed name/date and audit summary. |
-
-Known manual review note: the current UI exposes field placement and signer completion screens. Upload, send, status, and final PDF download are exercised through the API contract and lifecycle smoke test unless a full internal workflow page is added later.
+| 1 | Open `/manual-signing-smoke` | The manual smoke page renders without layout overlap or runtime errors. |
+| 2 | Click `Run setup` | The browser creates an envelope, uploads a source PDF, adds Ada Lovelace, adds signature/date fields, sends the envelope, and displays a `/signing/{token}` link. |
+| 3 | Open the displayed signer link in another tab | The signer page renders assigned fields and does not require internal login. |
+| 4 | Return to `/manual-signing-smoke`, type signer name `Ada Lovelace` and signing date `2026-05-20`, then click `Complete in page` | The page reports `Final PDF is available`. |
+| 5 | Click `Download final PDF` | The browser downloads an `application/pdf` final artifact containing the typed name/date and audit summary. |
 
 ## Out of Scope
 

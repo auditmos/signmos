@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ManualSigningSmokeRouteImport } from './routes/manual-signing-smoke'
 import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SigningTokenRouteImport } from './routes/signing.$token'
 
+const ManualSigningSmokeRoute = ManualSigningSmokeRouteImport.update({
+  id: '/manual-signing-smoke',
+  path: '/manual-signing-smoke',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EnvelopeFieldsRoute = EnvelopeFieldsRouteImport.update({
   id: '/envelope-fields',
   path: '/envelope-fields',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesById {
@@ -52,25 +60,50 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
+  '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/clients' | '/envelope-fields' | '/signing/$token'
+  fullPaths:
+    | '/'
+    | '/clients'
+    | '/envelope-fields'
+    | '/manual-signing-smoke'
+    | '/signing/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/clients' | '/envelope-fields' | '/signing/$token'
-  id: '__root__' | '/' | '/clients' | '/envelope-fields' | '/signing/$token'
+  to:
+    | '/'
+    | '/clients'
+    | '/envelope-fields'
+    | '/manual-signing-smoke'
+    | '/signing/$token'
+  id:
+    | '__root__'
+    | '/'
+    | '/clients'
+    | '/envelope-fields'
+    | '/manual-signing-smoke'
+    | '/signing/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ClientsRoute: typeof ClientsRoute
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
+  ManualSigningSmokeRoute: typeof ManualSigningSmokeRoute
   SigningTokenRoute: typeof SigningTokenRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/manual-signing-smoke': {
+      id: '/manual-signing-smoke'
+      path: '/manual-signing-smoke'
+      fullPath: '/manual-signing-smoke'
+      preLoaderRoute: typeof ManualSigningSmokeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/envelope-fields': {
       id: '/envelope-fields'
       path: '/envelope-fields'
@@ -106,6 +139,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ClientsRoute: ClientsRoute,
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
+  ManualSigningSmokeRoute: ManualSigningSmokeRoute,
   SigningTokenRoute: SigningTokenRoute,
 }
 export const routeTree = rootRouteImport

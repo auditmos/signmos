@@ -127,6 +127,14 @@ export const SendEnvelopeResultSchema = z.object({
 	sentBy: z.string().min(1),
 	tokenCount: z.number().int().nonnegative(),
 	emailSendCount: z.number().int().nonnegative(),
+	signingLinks: z.array(
+		z.object({
+			recipientId: z.string().uuid(),
+			email: z.string().email(),
+			token: z.string().min(1),
+			url: z.string().min(1),
+		}),
+	),
 });
 export type SendEnvelopeResult = z.infer<typeof SendEnvelopeResultSchema>;
 

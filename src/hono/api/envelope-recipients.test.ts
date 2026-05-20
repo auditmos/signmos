@@ -332,6 +332,20 @@ describe("envelope recipient API", () => {
 				sentBy: "sender_123",
 				tokenCount: 2,
 				emailSendCount: 2,
+				signingLinks: [
+					{
+						recipientId: "20000000-0000-4000-8000-000000000001",
+						email: "ada@example.com",
+						token: expect.any(String),
+						url: expect.stringMatching(/^\/signing\//),
+					},
+					{
+						recipientId: "20000000-0000-4000-8000-000000000002",
+						email: "grace@example.com",
+						token: expect.any(String),
+						url: expect.stringMatching(/^\/signing\//),
+					},
+				],
 			},
 		});
 		expect(state.envelopes[0]?.status).toBe("sent");

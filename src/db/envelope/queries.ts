@@ -249,6 +249,15 @@ export async function sendEnvelope(
 		sentBy,
 		tokenCount: tokens.length,
 		emailSendCount: recipients.length,
+		signingLinks: recipients.map((recipient, index) => {
+			const token = tokens[index]?.token ?? "";
+			return {
+				recipientId: recipient.id,
+				email: recipient.email,
+				token,
+				url: `/signing/${token}`,
+			};
+		}),
 	};
 }
 

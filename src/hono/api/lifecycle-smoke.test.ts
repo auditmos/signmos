@@ -256,7 +256,18 @@ describe("agent lifecycle smoke path", () => {
 			body: JSON.stringify({ action: "send" }),
 		});
 		expect(sent.status).toBe(200);
-		const token = state.tokens[0]?.token as string;
+		const sentBody = (await sent.json()) as {
+			data: {
+				signingLinks: Array<{ recipientId: string; email: string; token: string; url: string }>;
+			};
+		};
+		const token = sentBody.data.signingLinks[0]?.token;
+		expect(sentBody.data.signingLinks[0]).toEqual({
+			recipientId,
+			email: "ada@example.com",
+			token,
+			url: `/signing/${token}`,
+		});
 		expect(token).toBeTruthy();
 
 		const sentStatus = await apiHono.request(`/api/envelopes/${envelopeId}/status`);
