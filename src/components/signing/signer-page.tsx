@@ -114,6 +114,12 @@ export function SignerPage({ token }: SignerPageProps) {
 					)}
 				</div>
 			)}
+			{!session && !error && (
+				<div className="rounded-md border p-4 text-sm text-muted-foreground">
+					<p className="font-medium text-foreground">Loading signing session</p>
+					<p className="text-pretty">Fetching the document and assigned signing fields.</p>
+				</div>
+			)}
 			{session?.sourceDocument && (
 				<section className="space-y-3">
 					<div className="flex flex-wrap items-center justify-between gap-3">
@@ -136,14 +142,23 @@ export function SignerPage({ token }: SignerPageProps) {
 			{session && (
 				<>
 					<div className="grid gap-3 rounded-md border p-4 md:grid-cols-2">
-						{session.fields.map((field) => (
-							<div key={field.id} className="rounded-md border bg-muted/30 p-3">
-								<p className="font-medium capitalize">{field.type}</p>
-								<p className="text-sm text-muted-foreground">
-									Page {field.page}, x {field.x}, y {field.y}, {field.width}x{field.height}
+						{session.fields.length === 0 ? (
+							<div className="space-y-1 md:col-span-2">
+								<p className="font-medium">No assigned fields</p>
+								<p className="text-pretty text-sm text-muted-foreground">
+									Request changes if this document is missing a signature or date field.
 								</p>
 							</div>
-						))}
+						) : (
+							session.fields.map((field) => (
+								<div key={field.id} className="rounded-md border bg-muted/30 p-3">
+									<p className="font-medium capitalize">{field.type}</p>
+									<p className="text-sm text-muted-foreground">
+										Page {field.page}, x {field.x}, y {field.y}, {field.width}x{field.height}
+									</p>
+								</div>
+							))
+						)}
 					</div>
 					<form onSubmit={completeSigning} className="grid gap-4 md:grid-cols-3">
 						<div className="space-y-2">

@@ -3,6 +3,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SignerPage } from "./signer-page";
 
 describe("SignerPage", () => {
+	it("shows a loading state while resolving the signing link", () => {
+		vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+
+		render(<SignerPage token="valid-token" />);
+
+		expect(screen.getByText("Loading signing session")).toBeTruthy();
+	});
+
 	it("loads assigned fields and submits typed signing values", async () => {
 		const fetchMock = vi
 			.fn()
@@ -92,6 +100,7 @@ describe("SignerPage", () => {
 		render(<SignerPage token="valid-token" />);
 
 		await screen.findByRole("link", { name: "Open source PDF" });
+		expect(screen.getByText("No assigned fields")).toBeTruthy();
 		fireEvent.change(screen.getByLabelText("Change request comment"), {
 			target: { value: "Please update the billing address." },
 		});
@@ -138,6 +147,27 @@ describe("SignerPage", () => {
 		expect(screen.getByRole("link", { name: "Verify email" }).getAttribute("href")).toBe(
 			"/api/signing/verifications/valid-token",
 		);
+	});
+
+	it("shows an expired signing-link message without signing controls", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "ENVELOPE_EXPIRED",
+						message: "This signing link is no longer active",
+					},
+				}),
+				{ status: 410 },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("This signing link is no longer active");
+		expect(screen.queryByRole("button", { name: "Complete signing" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Request changes" })).toBeNull();
 	});
 
 	it("shows a deleted document message without PDF or signing controls", async () => {
