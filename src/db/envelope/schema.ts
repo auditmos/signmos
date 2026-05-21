@@ -4,6 +4,7 @@ import {
 	fieldTypes,
 	recipientStatuses,
 	senderVerificationStatuses,
+	signatureProfileKinds,
 } from "./table";
 
 export const envelopeLifecycleActions = ["send"] as const;
@@ -28,6 +29,9 @@ export type SenderVerificationStatus = z.infer<typeof SenderVerificationStatusSc
 
 export const FieldTypeSchema = z.enum(fieldTypes);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
+
+export const SignatureProfileKindSchema = z.enum(signatureProfileKinds);
+export type SignatureProfileKind = z.infer<typeof SignatureProfileKindSchema>;
 
 export const EnvelopeLifecycleActionSchema = z.enum(envelopeLifecycleActions);
 export type EnvelopeLifecycleAction = z.infer<typeof EnvelopeLifecycleActionSchema>;
@@ -190,6 +194,45 @@ export const RecipientResponseSchema = z.object({
 });
 export type RecipientResponse = z.infer<typeof RecipientResponseSchema>;
 
+export const SignatureProfileSchema = z.object({
+	id: z.string().uuid(),
+	envelopeId: z.string().uuid(),
+	createdBy: z.string().min(1),
+	kind: SignatureProfileKindSchema,
+	label: z.string().min(1),
+	svgPath: z.string().nullable().optional(),
+	typedText: z.string().nullable().optional(),
+	typedFont: z.string().nullable().optional(),
+	selected: z.boolean(),
+	createdAt: z.date(),
+});
+export type SignatureProfile = z.infer<typeof SignatureProfileSchema>;
+
+export const SignatureProfileCreateRequestSchema = z.discriminatedUnion("kind", [
+	z.object({
+		kind: z.literal("drawn"),
+		label: z.string().min(1).max(120),
+		svgPath: z.string().min(1),
+		selected: z.boolean().optional().default(true),
+	}),
+	z.object({
+		kind: z.literal("typed"),
+		label: z.string().min(1).max(120),
+		typedText: z.string().min(1).max(120),
+		typedFont: z.string().min(1).max(80).default("serif"),
+		selected: z.boolean().optional().default(true),
+	}),
+]);
+export type SignatureProfileCreateRequest = z.infer<typeof SignatureProfileCreateRequestSchema>;
+
+export const SignatureProfileResponseSchema = SignatureProfileSchema.extend({
+	svgPath: z.string().nullable(),
+	typedText: z.string().nullable(),
+	typedFont: z.string().nullable(),
+	createdAt: z.string(),
+});
+export type SignatureProfileResponse = z.infer<typeof SignatureProfileResponseSchema>;
+
 export const SendEnvelopeResultSchema = z.object({
 	envelopeId: z.string().uuid(),
 	status: z.literal("sent"),
@@ -300,6 +343,12 @@ export const AddFieldsRequestSchema = z.object({
 });
 export type AddFieldsRequest = z.infer<typeof AddFieldsRequestSchema>;
 
+export const DefaultFieldPlacementRequestSchema = z.object({
+	recipientIds: z.array(z.string().uuid()).min(1).max(10),
+	page: z.number().int().min(1).optional().default(1),
+});
+export type DefaultFieldPlacementRequest = z.infer<typeof DefaultFieldPlacementRequestSchema>;
+
 export const EnvelopeFieldResponseSchema = EnvelopeFieldSchema.extend({
 	createdAt: z.string(),
 });
@@ -355,5 +404,20 @@ export function toEnvelopeFieldResponse(field: EnvelopeField): EnvelopeFieldResp
 		width: field.width,
 		height: field.height,
 		createdAt: field.createdAt.toISOString(),
+	};
+}
+
+export function toSignatureProfileResponse(profile: SignatureProfile): SignatureProfileResponse {
+	return {
+		id: profile.id,
+		envelopeId: profile.envelopeId,
+		createdBy: profile.createdBy,
+		kind: profile.kind,
+		label: profile.label,
+		svgPath: profile.svgPath ?? null,
+		typedText: profile.typedText ?? null,
+		typedFont: profile.typedFont ?? null,
+		selected: profile.selected,
+		createdAt: profile.createdAt.toISOString(),
 	};
 }

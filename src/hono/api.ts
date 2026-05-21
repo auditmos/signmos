@@ -1,4 +1,5 @@
 import clientsEndpoint from "@/hono/api/clients";
+import envelopePreparationEndpoint from "@/hono/api/envelope-preparation";
 import envelopesEndpoint from "@/hono/api/envelopes";
 import healthEndpoint from "@/hono/api/health";
 import signingEndpoint from "@/hono/api/signing";
@@ -9,4 +10,5 @@ export const apiHono = createHono().basePath("/api");
 apiHono.route("/health", healthEndpoint);
 apiHono.route("/clients", clientsEndpoint);
 apiHono.route("/envelopes", envelopesEndpoint);
+apiHono.route("/envelopes", envelopePreparationEndpoint);
 apiHono.route("/signing", signingEndpoint);

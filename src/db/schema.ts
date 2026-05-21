@@ -11,6 +11,7 @@ export {
 	rateLimitRecords,
 	senderVerificationEmailRecords,
 	senderVerificationTokens,
+	signatureProfiles,
 	signerTokens,
 	sourceDocuments,
 } from "./envelope/table";

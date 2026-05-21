@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const envelopeStatuses = [
 	"awaiting_verification",
@@ -12,6 +12,7 @@ export const envelopeStatuses = [
 export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
 export const senderVerificationStatuses = ["pending", "verified", "expired"] as const;
 export const fieldTypes = ["signature", "date"] as const;
+export const signatureProfileKinds = ["drawn", "typed"] as const;
 
 export const envelopes = pgTable("envelopes", {
 	id: uuid("id").defaultRandom().primaryKey(),
@@ -121,6 +122,21 @@ export const envelopeRecipients = pgTable("envelope_recipients", {
 	name: text("name").notNull(),
 	email: text("email").notNull(),
 	status: text("status").notNull().default("pending"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const signatureProfiles = pgTable("signature_profiles", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	createdBy: text("created_by").notNull(),
+	kind: text("kind").notNull(),
+	label: text("label").notNull(),
+	svgPath: text("svg_path"),
+	typedText: text("typed_text"),
+	typedFont: text("typed_font"),
+	selected: boolean("selected").notNull().default(true),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

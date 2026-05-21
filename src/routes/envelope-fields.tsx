@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { EnvelopeFieldEditor } from "@/components/envelopes/field-editor";
+import { EnvelopePreparationPage } from "@/components/envelopes/envelope-preparation-page";
 
 export const Route = createFileRoute("/envelope-fields")({
 	validateSearch: z.object({
@@ -8,30 +8,43 @@ export const Route = createFileRoute("/envelope-fields")({
 		recipientId: z.string().optional(),
 		name: z.string().optional(),
 		email: z.string().optional(),
+		partnerRecipientId: z.string().optional(),
+		partnerName: z.string().optional(),
+		partnerEmail: z.string().optional(),
 	}),
 	component: EnvelopeFieldsRoute,
 });
 
 function EnvelopeFieldsRoute() {
 	const search = Route.useSearch();
-	const envelopeId = search.envelopeId ?? "00000000-0000-4000-8000-000000000001";
-	const recipient = {
-		id: search.recipientId ?? "20000000-0000-4000-8000-000000000001",
-		name: search.name ?? "Ada Lovelace",
-		email: search.email ?? "ada@example.com",
-	};
+	const hasReviewEnvelope =
+		search.envelopeId &&
+		search.recipientId &&
+		search.name &&
+		search.email &&
+		search.partnerRecipientId &&
+		search.partnerName &&
+		search.partnerEmail;
 
 	return (
-		<div className="min-h-screen bg-background p-6">
-			<div className="mx-auto max-w-5xl space-y-6">
-				<div>
-					<h1 className="text-2xl font-semibold">Envelope fields</h1>
-					<p className="text-sm text-muted-foreground">
-						Place signature and date fields with page coordinates.
-					</p>
-				</div>
-				<EnvelopeFieldEditor envelopeId={envelopeId} recipients={[recipient]} />
-			</div>
-		</div>
+		<EnvelopePreparationPage
+			envelopeId={search.envelopeId}
+			recipients={
+				hasReviewEnvelope
+					? [
+							{
+								id: search.recipientId,
+								name: search.name,
+								email: search.email,
+							},
+							{
+								id: search.partnerRecipientId,
+								name: search.partnerName,
+								email: search.partnerEmail,
+							},
+						]
+					: undefined
+			}
+		/>
 	);
 }
