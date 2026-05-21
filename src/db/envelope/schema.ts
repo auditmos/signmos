@@ -273,6 +273,11 @@ export type SignerToken = z.infer<typeof SignerTokenSchema>;
 export const SignerSessionSchema = z.object({
 	envelopeId: z.string().uuid(),
 	recipientId: z.string().uuid(),
+	sourceDocument: z.object({
+		version: z.number().int().positive(),
+		contentType: z.literal("application/pdf"),
+		downloadUrl: z.string().min(1),
+	}),
 	fields: z.array(
 		z.object({
 			id: z.string().uuid(),
@@ -307,6 +312,11 @@ export const DeclineSigningRequestSchema = z.object({
 });
 export type DeclineSigningRequest = z.infer<typeof DeclineSigningRequestSchema>;
 
+export const ChangeRequestSigningRequestSchema = z.object({
+	comment: z.string().min(1),
+});
+export type ChangeRequestSigningRequest = z.infer<typeof ChangeRequestSigningRequestSchema>;
+
 export const DeclineSigningResultSchema = z.object({
 	envelopeId: z.string().uuid(),
 	recipientId: z.string().uuid(),
@@ -314,6 +324,15 @@ export const DeclineSigningResultSchema = z.object({
 	envelopeStatus: z.literal("declined"),
 });
 export type DeclineSigningResult = z.infer<typeof DeclineSigningResultSchema>;
+
+export const ChangeRequestSigningResultSchema = z.object({
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	recipientStatus: z.literal("sent"),
+	envelopeStatus: z.literal("changes_requested"),
+	allowedActions: z.array(z.string()),
+});
+export type ChangeRequestSigningResult = z.infer<typeof ChangeRequestSigningResultSchema>;
 
 export const EnvelopeFieldSchema = z.object({
 	id: z.string().uuid(),

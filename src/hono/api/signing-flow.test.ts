@@ -5,6 +5,7 @@ import {
 	envelopes,
 	fieldValues,
 	signerTokens,
+	sourceDocuments,
 } from "@/db/envelope";
 import { apiHono } from "@/hono/api";
 
@@ -13,6 +14,7 @@ const state = vi.hoisted(() => ({
 	recipientsTable: null as unknown,
 	fieldsTable: null as unknown,
 	tokensTable: null as unknown,
+	sourceDocumentsTable: null as unknown,
 	fieldValuesTable: null as unknown,
 	auditEventsTable: null as unknown,
 	envelopes: [
@@ -81,6 +83,19 @@ const state = vi.hoisted(() => ({
 			createdAt: new Date("2026-05-20T07:03:00.000Z"),
 		},
 	],
+	sourceDocuments: [
+		{
+			id: "10000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			r2Key: "envelopes/00000000-0000-4000-8000-000000000001/source-v1.pdf",
+			version: 1,
+			sha256: "a".repeat(64),
+			byteSize: 10,
+			contentType: "application/pdf",
+			uploadedBy: "sender_123",
+			uploadedAt: new Date("2026-05-20T07:01:00.000Z"),
+		},
+	],
 	fieldValues: [] as unknown[],
 	auditEvents: [] as unknown[],
 }));
@@ -90,6 +105,7 @@ function selectRows(table: unknown) {
 	if (table === state.envelopesTable) return state.envelopes;
 	if (table === state.recipientsTable) return state.recipients;
 	if (table === state.fieldsTable) return state.fields;
+	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
 	return [];
 }
 
@@ -141,6 +157,7 @@ describe("signing flow API", () => {
 		state.recipientsTable = envelopeRecipients;
 		state.fieldsTable = envelopeFields;
 		state.tokensTable = signerTokens;
+		state.sourceDocumentsTable = sourceDocuments;
 		state.fieldValuesTable = fieldValues;
 		state.auditEventsTable = auditEvents;
 	});
@@ -155,6 +172,11 @@ describe("signing flow API", () => {
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				recipientId: "20000000-0000-4000-8000-000000000001",
+				sourceDocument: {
+					version: 1,
+					contentType: "application/pdf",
+					downloadUrl: "/api/signing/valid-token/source-pdf",
+				},
 				fields: [
 					expect.objectContaining({
 						id: "50000000-0000-4000-8000-000000000001",
@@ -169,6 +191,26 @@ describe("signing flow API", () => {
 				],
 			},
 		});
+	});
+
+	it("downloads the current source PDF for a verified partner", async () => {
+		const response = await apiHono.request(
+			"/api/signing/valid-token/source-pdf",
+			{
+				headers: { "x-now": "2026-05-20T07:03:00.000Z" },
+			},
+			{
+				DOCUMENTS_BUCKET: {
+					get: async (key: string) => ({
+						arrayBuffer: async () => new TextEncoder().encode(`%PDF-1.7 ${key}\n%%EOF`).buffer,
+					}),
+				},
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/pdf");
+		expect(new TextDecoder().decode(await response.arrayBuffer())).toContain("source-v1.pdf");
 	});
 
 	it("completes typed signature and date fields while other recipients remain outstanding", async () => {

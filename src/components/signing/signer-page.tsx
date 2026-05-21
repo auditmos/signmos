@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { Check, FileText, MessageSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,11 @@ interface SignerField {
 interface SignerSession {
 	envelopeId: string;
 	recipientId: string;
+	sourceDocument: {
+		version: number;
+		contentType: "application/pdf";
+		downloadUrl: string;
+	};
 	fields: SignerField[];
 }
 
@@ -33,10 +38,12 @@ export function SignerPage({ token }: SignerPageProps) {
 	const [session, setSession] = useState<SignerSession | null>(null);
 	const [signatureName, setSignatureName] = useState("");
 	const [date, setDate] = useState("");
+	const [changeComment, setChangeComment] = useState("");
 	const [reason, setReason] = useState("");
 	const [comment, setComment] = useState("");
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<SigningError | null>(null);
+	const [changeRequested, setChangeRequested] = useState(false);
 
 	useEffect(() => {
 		let active = true;
@@ -78,11 +85,22 @@ export function SignerPage({ token }: SignerPageProps) {
 		setMessage(response.ok ? "Signing declined" : "Unable to decline");
 	}
 
+	async function requestChanges(event: React.FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const response = await fetch(`/api/signing/${token}/change-request`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ comment: changeComment }),
+		});
+		if (response.ok) setChangeRequested(true);
+		setMessage(response.ok ? "Changes requested" : "Unable to request changes");
+	}
+
 	return (
 		<div className="mx-auto max-w-4xl space-y-6 p-6">
 			<div>
-				<h1 className="text-2xl font-semibold">Review and sign</h1>
-				<p className="text-sm text-muted-foreground">
+				<h1 className="text-balance text-2xl font-semibold">Review and sign</h1>
+				<p className="text-pretty text-sm text-muted-foreground">
 					No account is required for this signing link.
 				</p>
 			</div>
@@ -95,6 +113,25 @@ export function SignerPage({ token }: SignerPageProps) {
 						</a>
 					)}
 				</div>
+			)}
+			{session?.sourceDocument && (
+				<section className="space-y-3">
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<h2 className="text-base font-semibold">Source PDF</h2>
+						<a
+							className="inline-flex items-center gap-2 text-sm font-medium text-primary underline"
+							href={session.sourceDocument.downloadUrl}
+						>
+							<FileText className="h-4 w-4" />
+							Open source PDF
+						</a>
+					</div>
+					<iframe
+						className="h-96 w-full rounded-md border bg-muted"
+						src={session.sourceDocument.downloadUrl}
+						title="Source PDF preview"
+					/>
+				</section>
 			)}
 			<div className="grid gap-3 rounded-md border p-4 md:grid-cols-2">
 				{session?.fields.map((field) => (
@@ -127,9 +164,26 @@ export function SignerPage({ token }: SignerPageProps) {
 					/>
 				</div>
 				<div className="flex items-end">
-					<Button type="submit" className="w-full">
+					<Button type="submit" className="w-full" disabled={changeRequested}>
 						<Check className="h-4 w-4" />
 						Complete signing
+					</Button>
+				</div>
+			</form>
+			<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
+				<div className="space-y-2 md:col-span-2">
+					<Label htmlFor="changeComment">Change request comment</Label>
+					<Input
+						id="changeComment"
+						value={changeComment}
+						onChange={(event) => setChangeComment(event.target.value)}
+						required
+					/>
+				</div>
+				<div className="flex items-end">
+					<Button type="submit" variant="outline" className="w-full" disabled={changeRequested}>
+						<MessageSquare className="h-4 w-4" />
+						Request changes
 					</Button>
 				</div>
 			</form>

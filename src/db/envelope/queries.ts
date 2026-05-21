@@ -14,6 +14,7 @@ import {
 	type EnvelopeField,
 	EnvelopeFieldSchema,
 	EnvelopeSchema,
+	getEnvelopeAllowedActions,
 	type Recipient,
 	RecipientSchema,
 	type SignerSession,
@@ -44,6 +45,13 @@ export interface CreateEnvelopeResult {
 export interface AttachSourceDocumentResult {
 	document: SourceDocument;
 	reused: boolean;
+}
+
+export class SigningCompletionBlockedError extends Error {
+	constructor(public readonly status: Envelope["status"]) {
+		super("Envelope is not open for completion");
+		this.name = "SigningCompletionBlockedError";
+	}
 }
 
 export async function createEnvelope(input: CreateEnvelopeInput): Promise<CreateEnvelopeResult> {
@@ -194,6 +202,15 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 			.where(eq(envelopeFields.recipientId, token.recipientId))
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
+	const sourceDocumentsForEnvelope = (
+		await db
+			.select()
+			.from(sourceDocuments)
+			.where(eq(sourceDocuments.envelopeId, token.envelopeId))
+			.limit(100)
+	).map((document) => SourceDocumentSchema.parse(document));
+	const sourceDocument = latestSourceDocument(sourceDocumentsForEnvelope);
+	if (!sourceDocument) throw new Error("Envelope source PDF required");
 
 	await db
 		.insert(auditEvents)
@@ -208,6 +225,11 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 	return {
 		envelopeId: token.envelopeId,
 		recipientId: token.recipientId,
+		sourceDocument: {
+			version: sourceDocument.version,
+			contentType: sourceDocument.contentType,
+			downloadUrl: `/api/signing/${token.token}/source-pdf`,
+		},
 		fields: fields.map((field) => ({
 			id: field.id,
 			type: field.type,
@@ -220,12 +242,39 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 	};
 }
 
+export async function getSignerSourceDocument(token: SignerToken): Promise<SourceDocument | null> {
+	const db = getDb();
+	const documents = (
+		await db
+			.select()
+			.from(sourceDocuments)
+			.where(eq(sourceDocuments.envelopeId, token.envelopeId))
+			.limit(100)
+	).map((document) => SourceDocumentSchema.parse(document));
+	return latestSourceDocument(documents);
+}
+
+function latestSourceDocument(documents: SourceDocument[]): SourceDocument | null {
+	return [...documents].sort((left, right) => right.version - left.version)[0] ?? null;
+}
+
 export async function completeSigning(
 	token: SignerToken,
 	input: CompleteSigningRequest,
 	options: { documentsBucket?: R2Bucket } = {},
 ): Promise<CompleteSigningResult> {
 	const db = getDb();
+	const [envelope] = await db
+		.select()
+		.from(envelopes)
+		.where(eq(envelopes.id, token.envelopeId))
+		.limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope) throw new Error("Envelope not found");
+	if (parsedEnvelope.status !== "sent") {
+		throw new SigningCompletionBlockedError(parsedEnvelope.status);
+	}
+
 	const fields = (
 		await db
 			.select()
@@ -293,6 +342,10 @@ export async function completeSigning(
 		recipientStatus: "completed",
 		envelopeStatus,
 	};
+}
+
+export function getSigningBlockedAllowedActions(status: Envelope["status"]): string[] {
+	return getEnvelopeAllowedActions(status);
 }
 
 export async function declineSigning(

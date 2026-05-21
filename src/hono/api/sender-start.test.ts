@@ -312,6 +312,7 @@ describe("sender start API", () => {
 				headers: {
 					"content-type": "application/json",
 					"cf-connecting-ip": "198.51.100.10",
+					"x-now": "2026-05-21T09:01:00.000Z",
 				},
 				body: JSON.stringify({
 					name: "Ada Lovelace",

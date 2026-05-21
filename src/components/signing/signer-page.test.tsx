@@ -12,6 +12,11 @@ describe("SignerPage", () => {
 						data: {
 							envelopeId: "00000000-0000-4000-8000-000000000001",
 							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
 							fields: [
 								{
 									id: "field-1",
@@ -35,6 +40,12 @@ describe("SignerPage", () => {
 		render(<SignerPage token="valid-token" />);
 
 		await screen.findByText("signature");
+		expect(screen.getByRole("link", { name: "Open source PDF" }).getAttribute("href")).toBe(
+			"/api/signing/valid-token/source-pdf",
+		);
+		expect(screen.getByTitle("Source PDF preview").getAttribute("src")).toBe(
+			"/api/signing/valid-token/source-pdf",
+		);
 		fireEvent.change(screen.getByLabelText("Typed signature"), {
 			target: { value: "Ada Lovelace" },
 		});
@@ -52,6 +63,57 @@ describe("SignerPage", () => {
 					date: "2026-05-20",
 				}),
 			}),
+		);
+	});
+
+	it("submits a change request comment from the signer page", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
+							fields: [],
+						},
+					}),
+					{ status: 200 },
+				),
+			)
+			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByRole("link", { name: "Open source PDF" });
+		fireEvent.change(screen.getByLabelText("Change request comment"), {
+			target: { value: "Please update the billing address." },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			"/api/signing/valid-token/change-request",
+			expect.objectContaining({
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ comment: "Please update the billing address." }),
+			}),
+		);
+		await screen.findByText("Changes requested");
+		expect(screen.getByRole("button", { name: "Complete signing" })).toHaveProperty(
+			"disabled",
+			true,
+		);
+		expect(screen.getByRole("button", { name: "Request changes" })).toHaveProperty(
+			"disabled",
+			true,
 		);
 	});
 

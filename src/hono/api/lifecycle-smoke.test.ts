@@ -132,6 +132,11 @@ function insertFinalDocuments(rows: Array<Record<string, unknown>>) {
 	return inserted;
 }
 
+function deleteRows(table: unknown) {
+	if (table === state.fieldsTable) state.fields.length = 0;
+	return [];
+}
+
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({
@@ -161,6 +166,9 @@ vi.mock("@/db/setup", () => ({
 					return [];
 				},
 			}),
+		}),
+		delete: (table: unknown) => ({
+			where: async () => deleteRows(table),
 		}),
 	}),
 }));
@@ -287,7 +295,7 @@ describe("agent lifecycle smoke path", () => {
 		const verifiedBody = (await verified.json()) as {
 			data: { signingLink: { token: string; url: string } };
 		};
-		const token = verifiedBody.data.signingLink.token;
+		let token = verifiedBody.data.signingLink.token;
 		expect(verifiedBody.data.signingLink.url).toBe(`/signing/${token}`);
 		expect(token).toBeTruthy();
 
@@ -300,6 +308,72 @@ describe("agent lifecycle smoke path", () => {
 				allowedActions: ["view_signing_status", "resend_invitation"],
 			},
 		});
+
+		const changeRequest = await apiHono.request(`/api/signing/${token}/change-request`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-now": "2026-05-20T08:45:00.000Z" },
+			body: JSON.stringify({ comment: "Please update the billing address." }),
+		});
+		expect(changeRequest.status).toBe(200);
+
+		const changesStatus = await apiHono.request(`/api/envelopes/${envelopeId}/status`);
+		await expect(changesStatus.json()).resolves.toEqual({
+			data: {
+				envelopeId,
+				status: "changes_requested",
+				finalPdfAvailable: false,
+				allowedActions: ["upload_revised_source_pdf"],
+			},
+		});
+
+		const revisedUpload = await apiHono.request(
+			`/api/envelopes/${envelopeId}/source-pdf`,
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/pdf",
+					"x-internal-user-id": "sender_123",
+				},
+				body: "%PDF-1.4\nrevised\n%%EOF",
+			},
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(revisedUpload.status).toBe(201);
+		expect(state.fields).toHaveLength(0);
+		expect(state.envelopes[0]?.status).toBe("draft");
+
+		const revisedFields = await apiHono.request(`/api/envelopes/${envelopeId}/fields`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-internal-user-id": "user_123" },
+			body: JSON.stringify({
+				fields: [
+					{ recipientId, type: "signature", page: 1, x: 72, y: 144, width: 180, height: 48 },
+					{ recipientId, type: "date", page: 1, x: 300, y: 144, width: 120, height: 32 },
+				],
+			}),
+		});
+		expect(revisedFields.status).toBe(201);
+
+		const resent = await apiHono.request(`/api/envelopes/${envelopeId}/actions`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-internal-user-id": "sender_123" },
+			body: JSON.stringify({ action: "send" }),
+		});
+		expect(resent.status).toBe(200);
+		const resentBody = (await resent.json()) as {
+			data: { verificationLinks: Array<{ token: string }> };
+		};
+		const revisedVerificationToken = resentBody.data.verificationLinks[0]?.token;
+		expect(revisedVerificationToken).toBeTruthy();
+		const revisedVerified = await apiHono.request(
+			`/api/signing/verifications/${revisedVerificationToken}`,
+			{ headers: { "x-now": "2026-05-20T08:55:00.000Z" } },
+		);
+		expect(revisedVerified.status).toBe(200);
+		const revisedVerifiedBody = (await revisedVerified.json()) as {
+			data: { signingLink: { token: string } };
+		};
+		token = revisedVerifiedBody.data.signingLink.token;
 
 		const signed = await apiHono.request(
 			`/api/signing/${token}/complete`,
