@@ -1,4 +1,5 @@
 import {
+	auditEvents as auditEventsTable,
 	envelopes as envelopesTable,
 	idempotencyRecords as idempotencyRecordsTable,
 	sourceDocuments as sourceDocumentsTable,
@@ -7,6 +8,7 @@ import { apiHono } from "@/hono/api";
 
 const dbState = vi.hoisted(() => ({
 	envelopesTable: null as unknown,
+	auditEventsTable: null as unknown,
 	idempotencyRecordsTable: null as unknown,
 	sourceDocumentsTable: null as unknown,
 	insertedEnvelopes: [] as Array<{
@@ -24,6 +26,7 @@ const dbState = vi.hoisted(() => ({
 	sourceDocuments: [] as Array<{
 		id: string;
 		envelopeId: string;
+		version: number;
 		r2Key: string;
 		sha256: string;
 		byteSize: number;
@@ -31,6 +34,7 @@ const dbState = vi.hoisted(() => ({
 		uploadedBy: string;
 		uploadedAt: Date;
 	}>,
+	auditEvents: [] as Array<Record<string, unknown>>,
 	r2Objects: new Map<string, Uint8Array>(),
 }));
 
@@ -49,6 +53,7 @@ function selectRows(table: unknown): unknown[] {
 	if (table === dbState.idempotencyRecordsTable) return dbState.idempotencyRecords;
 	if (table === dbState.envelopesTable) return selectEnvelopeRows();
 	if (table === dbState.sourceDocumentsTable) return dbState.sourceDocuments;
+	if (table === dbState.auditEventsTable) return dbState.auditEvents;
 	return [];
 }
 
@@ -61,23 +66,29 @@ function selectEnvelopeRows(): InsertedEnvelope[] {
 function insertRow(
 	table: unknown,
 	value: Partial<InsertedEnvelope> &
-		Partial<SourceDocument> & { envelopeId?: string; key?: string },
+		Partial<SourceDocument> & { envelopeId?: string; key?: string; operation?: string },
 ): unknown[] {
 	if (table === dbState.idempotencyRecordsTable) return insertIdempotencyRecord(value);
 	if (table === dbState.sourceDocumentsTable) return insertSourceDocument(value);
+	if (table === dbState.auditEventsTable) return insertAuditEvent(value);
 	return insertEnvelope(value);
 }
 
 function insertIdempotencyRecord(
 	value: Partial<InsertedEnvelope> &
-		Partial<SourceDocument> & { envelopeId?: string; key?: string },
+		Partial<SourceDocument> & { envelopeId?: string; key?: string; operation?: string },
 ): [] {
 	dbState.idempotencyRecords.push({
 		key: value.key ?? "",
-		operation: "envelope.create",
+		operation: value.operation ?? "envelope.create",
 		createdBy: value.createdBy ?? "",
 		envelopeId: value.envelopeId ?? "",
 	});
+	return [];
+}
+
+function insertAuditEvent(value: Record<string, unknown>): [] {
+	dbState.auditEvents.push(value);
 	return [];
 }
 
@@ -86,6 +97,7 @@ function insertSourceDocument(value: Partial<SourceDocument>): SourceDocument[] 
 		id: `10000000-0000-4000-8000-${String(dbState.sourceDocuments.length + 1).padStart(12, "0")}`,
 		envelopeId: value.envelopeId ?? "",
 		r2Key: value.r2Key ?? "",
+		version: value.version ?? 1,
 		sha256: value.sha256 ?? "",
 		byteSize: value.byteSize ?? 0,
 		contentType: value.contentType ?? "",
@@ -124,7 +136,7 @@ vi.mock("@/db/setup", () => ({
 		insert: (table: unknown) => ({
 			values: (
 				value: Partial<InsertedEnvelope> &
-					Partial<SourceDocument> & { envelopeId?: string; key?: string },
+					Partial<SourceDocument> & { envelopeId?: string; key?: string; operation?: string },
 			) => ({
 				returning: async () => insertRow(table, value),
 			}),
@@ -135,11 +147,13 @@ vi.mock("@/db/setup", () => ({
 describe("envelopes API", () => {
 	beforeEach(() => {
 		dbState.envelopesTable = envelopesTable;
+		dbState.auditEventsTable = auditEventsTable;
 		dbState.idempotencyRecordsTable = idempotencyRecordsTable;
 		dbState.sourceDocumentsTable = sourceDocumentsTable;
 		dbState.insertedEnvelopes.length = 0;
 		dbState.idempotencyRecords.length = 0;
 		dbState.sourceDocuments.length = 0;
+		dbState.auditEvents.length = 0;
 		dbState.r2Objects.clear();
 	});
 
@@ -252,7 +266,8 @@ describe("envelopes API", () => {
 			data: {
 				id: expect.any(String),
 				envelopeId: "00000000-0000-4000-8000-000000000001",
-				r2Key: expect.stringContaining("source.pdf"),
+				r2Key: expect.stringContaining("source-v1.pdf"),
+				version: 1,
 				sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
 				byteSize: pdfBytes.byteLength,
 				contentType: "application/pdf",

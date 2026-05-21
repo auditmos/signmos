@@ -4,21 +4,24 @@ import {
 	AddRecipientsRequestSchema,
 	addFields,
 	addRecipients,
-	attachSourceDocument,
 	createEnvelope,
 	EnvelopeActionRequestSchema,
 	envelopeLifecycleActions,
 	getEnvelopeFinalizationStatus,
 	getFinalDocument,
+	recordSourcePdfUploadRejection,
 	resendInvitation,
+	resolveVerifiedSenderSession,
 	SenderStartRateLimitError,
 	SenderStartRequestSchema,
+	SourcePdfUploadError,
 	sendEnvelope,
 	startSenderEnvelope,
 	toEnvelopeFieldResponse,
 	toEnvelopeResponse,
 	toRecipientResponse,
 	toSourceDocumentResponse,
+	uploadSourcePdfDocument,
 	verifySenderToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
@@ -204,7 +207,14 @@ envelopesEndpoint.get("/:id/final-pdf", async (c) => {
 });
 
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {
-	const uploadedBy = c.req.header("x-internal-user-id");
+	const envelopeId = c.req.param("id");
+	const uploadedBy =
+		c.req.header("x-internal-user-id") ??
+		(await getVerifiedSenderUploadEmail(
+			c.req.header("x-sender-session-token"),
+			envelopeId,
+			c.req.header("x-now"),
+		));
 	if (!uploadedBy) {
 		return c.json(
 			{
@@ -220,6 +230,11 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	const contentType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
 	const bytes = new Uint8Array(await c.req.arrayBuffer());
 	if (contentType !== "application/pdf" || !isPdf(bytes)) {
+		await recordSourcePdfUploadRejection({
+			envelopeId,
+			eventType: "source_pdf.upload_rejected",
+			message: uploadedBy,
+		});
 		return c.json(
 			{
 				error: {
@@ -232,6 +247,11 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 		);
 	}
 	if (bytes.byteLength > maxSourcePdfBytes) {
+		await recordSourcePdfUploadRejection({
+			envelopeId,
+			eventType: "source_pdf.upload_too_large",
+			message: uploadedBy,
+		});
 		return c.json(
 			{
 				error: {
@@ -244,25 +264,50 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 		);
 	}
 
-	const envelopeId = c.req.param("id");
 	const sha256 = await sha256Hex(bytes);
-	const r2Key = `envelopes/${envelopeId}/source.pdf`;
 	const bucket = (c.env as Env & { DOCUMENTS_BUCKET: R2Bucket }).DOCUMENTS_BUCKET;
-	await bucket.put(r2Key, bytes, {
-		httpMetadata: { contentType: "application/pdf" },
-	});
+	try {
+		const result = await uploadSourcePdfDocument({
+			envelopeId,
+			uploadedBy,
+			idempotencyKey: c.req.header("idempotency-key") ?? undefined,
+			bytes,
+			sha256,
+			contentType: "application/pdf",
+			documentsBucket: bucket,
+		});
 
-	const result = await attachSourceDocument({
-		envelopeId,
-		uploadedBy,
-		idempotencyKey: c.req.header("idempotency-key") ?? undefined,
-		r2Key,
-		sha256,
-		byteSize: bytes.byteLength,
-		contentType: "application/pdf",
-	});
-
-	return c.json({ data: toSourceDocumentResponse(result.document) }, result.reused ? 200 : 201);
+		return c.json({ data: toSourceDocumentResponse(result.document) }, result.reused ? 200 : 201);
+	} catch (error) {
+		if (error instanceof SourcePdfUploadError) {
+			if (error.code === "DUPLICATE_SOURCE_PDF") {
+				await recordSourcePdfUploadRejection({
+					envelopeId,
+					eventType: "source_pdf.upload_duplicate",
+					message: uploadedBy,
+				});
+				return c.json(
+					{
+						error: {
+							code: "DUPLICATE_SOURCE_PDF",
+							message: "Envelope already has a source PDF",
+						},
+					},
+					409,
+				);
+			}
+			return c.json(
+				{
+					error: {
+						code: "ENVELOPE_NOT_DRAFT",
+						message: "Source PDFs can only be uploaded while the envelope is draft",
+					},
+				},
+				409,
+			);
+		}
+		throw error;
+	}
 });
 
 envelopesEndpoint.post("/:id/recipients", async (c) => {
@@ -431,6 +476,16 @@ async function verifyTurnstileToken(input: {
 	const json: unknown = await response.json();
 	const parsed = TurnstileSiteVerifyResponseSchema.safeParse(json);
 	return parsed.success && parsed.data.success;
+}
+
+async function getVerifiedSenderUploadEmail(
+	token: string | undefined,
+	envelopeId: string,
+	nowHeader: string | undefined,
+): Promise<string | null> {
+	if (!token) return null;
+	const session = await resolveVerifiedSenderSession(token, envelopeId, parseNow(nowHeader));
+	return session?.email ?? null;
 }
 
 export default envelopesEndpoint;

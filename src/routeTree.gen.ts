@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SourcePdfUploadRouteImport } from './routes/source-pdf-upload'
 import { Route as ManualSigningSmokeRouteImport } from './routes/manual-signing-smoke'
 import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SigningTokenRouteImport } from './routes/signing.$token'
 
+const SourcePdfUploadRoute = SourcePdfUploadRouteImport.update({
+  id: '/source-pdf-upload',
+  path: '/source-pdf-upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ManualSigningSmokeRoute = ManualSigningSmokeRouteImport.update({
   id: '/manual-signing-smoke',
   path: '/manual-signing-smoke',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
+  '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
+  '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRoutesById {
@@ -61,6 +69,7 @@ export interface FileRoutesById {
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
+  '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/signing/$token': typeof SigningTokenRoute
 }
 export interface FileRouteTypes {
@@ -70,6 +79,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
+    | '/source-pdf-upload'
     | '/signing/$token'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -77,6 +87,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
+    | '/source-pdf-upload'
     | '/signing/$token'
   id:
     | '__root__'
@@ -84,6 +95,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
+    | '/source-pdf-upload'
     | '/signing/$token'
   fileRoutesById: FileRoutesById
 }
@@ -92,11 +104,19 @@ export interface RootRouteChildren {
   ClientsRoute: typeof ClientsRoute
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
   ManualSigningSmokeRoute: typeof ManualSigningSmokeRoute
+  SourcePdfUploadRoute: typeof SourcePdfUploadRoute
   SigningTokenRoute: typeof SigningTokenRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/source-pdf-upload': {
+      id: '/source-pdf-upload'
+      path: '/source-pdf-upload'
+      fullPath: '/source-pdf-upload'
+      preLoaderRoute: typeof SourcePdfUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/manual-signing-smoke': {
       id: '/manual-signing-smoke'
       path: '/manual-signing-smoke'
@@ -140,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClientsRoute: ClientsRoute,
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
   ManualSigningSmokeRoute: ManualSigningSmokeRoute,
+  SourcePdfUploadRoute: SourcePdfUploadRoute,
   SigningTokenRoute: SigningTokenRoute,
 }
 export const routeTree = rootRouteImport

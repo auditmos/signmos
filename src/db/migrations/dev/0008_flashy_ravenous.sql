@@ -1,0 +1,1 @@
+ALTER TABLE "source_documents" ADD COLUMN "version" integer DEFAULT 1 NOT NULL;

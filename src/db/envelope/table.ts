@@ -3,6 +3,7 @@ import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-or
 export const envelopeStatuses = [
 	"awaiting_verification",
 	"draft",
+	"changes_requested",
 	"sent",
 	"completed",
 	"declined",
@@ -92,6 +93,7 @@ export const sourceDocuments = pgTable("source_documents", {
 		.notNull()
 		.references(() => envelopes.id),
 	r2Key: text("r2_key").notNull().unique(),
+	version: integer("version").notNull().default(1),
 	sha256: text("sha256").notNull(),
 	byteSize: integer("byte_size").notNull(),
 	contentType: text("content_type").notNull(),
