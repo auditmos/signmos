@@ -272,7 +272,12 @@ describe("agent lifecycle smoke path", () => {
 
 		const sentStatus = await apiHono.request(`/api/envelopes/${envelopeId}/status`);
 		await expect(sentStatus.json()).resolves.toEqual({
-			data: { envelopeId, status: "sent", finalPdfAvailable: false },
+			data: {
+				envelopeId,
+				status: "sent",
+				finalPdfAvailable: false,
+				allowedActions: ["view_signing_status", "resend_invitation"],
+			},
 		});
 
 		const signed = await apiHono.request(
@@ -288,7 +293,12 @@ describe("agent lifecycle smoke path", () => {
 
 		const completedStatus = await apiHono.request(`/api/envelopes/${envelopeId}/status`);
 		await expect(completedStatus.json()).resolves.toEqual({
-			data: { envelopeId, status: "completed", finalPdfAvailable: true },
+			data: {
+				envelopeId,
+				status: "completed",
+				finalPdfAvailable: true,
+				allowedActions: ["download_final_pdf"],
+			},
 		});
 
 		const finalPdf = await apiHono.request(`/api/envelopes/${envelopeId}/final-pdf`, undefined, {

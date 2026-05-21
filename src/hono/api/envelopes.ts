@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
 	AddFieldsRequestSchema,
 	AddRecipientsRequestSchema,
@@ -10,16 +11,105 @@ import {
 	getEnvelopeFinalizationStatus,
 	getFinalDocument,
 	resendInvitation,
+	SenderStartRateLimitError,
+	SenderStartRequestSchema,
 	sendEnvelope,
+	startSenderEnvelope,
 	toEnvelopeFieldResponse,
 	toEnvelopeResponse,
 	toRecipientResponse,
 	toSourceDocumentResponse,
+	verifySenderToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
 
 const envelopesEndpoint = createHono();
 const maxSourcePdfBytes = 10 * 1024 * 1024;
+const TurnstileSiteVerifyResponseSchema = z.object({ success: z.boolean() }).passthrough();
+
+type SenderStartEnv = Env & {
+	TURNSTILE_SECRET_KEY?: string;
+	TURNSTILE_TEST_BYPASS?: string;
+};
+
+envelopesEndpoint.post("/sender-start", async (c) => {
+	const body: unknown = await c.req.json().catch(() => null);
+	const parsed = SenderStartRequestSchema.safeParse(body);
+	if (!parsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "INVALID_SENDER_START",
+					message: "Sender name, email, and Turnstile token are required",
+					fields: ["name", "email", "turnstileToken"],
+				},
+			},
+			400,
+		);
+	}
+
+	const requestIp = getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
+	const turnstilePassed = await verifyTurnstileToken({
+		env: (c.env ?? {}) as SenderStartEnv,
+		token: parsed.data.turnstileToken,
+		ip: requestIp,
+	});
+	if (!turnstilePassed) {
+		return c.json(
+			{
+				error: {
+					code: "TURNSTILE_FAILED",
+					message: "Turnstile verification failed",
+				},
+			},
+			403,
+		);
+	}
+
+	try {
+		const result = await startSenderEnvelope({
+			name: parsed.data.name,
+			email: parsed.data.email,
+			requestIp,
+			baseUrl: new URL(c.req.url).origin,
+			idempotencyKey: c.req.header("idempotency-key") ?? undefined,
+			now: parseNow(c.req.header("x-now")),
+		});
+		return c.json({ data: result.response }, result.reused ? 200 : 201);
+	} catch (error) {
+		if (error instanceof SenderStartRateLimitError) {
+			return c.json(
+				{
+					error: {
+						code: "RATE_LIMITED",
+						message: "Too many sender start attempts",
+						scope: error.scope,
+						resetAt: error.resetAt.toISOString(),
+					},
+				},
+				429,
+			);
+		}
+		throw error;
+	}
+});
+
+envelopesEndpoint.get("/sender-verifications/:token", async (c) => {
+	const result = await verifySenderToken(c.req.param("token"), parseNow(c.req.header("x-now")));
+	if (!result.ok) {
+		return c.json(
+			{
+				error: {
+					code: result.error.code,
+					message: result.error.message,
+				},
+			},
+			result.error.status,
+		);
+	}
+
+	return c.json({ data: result.data });
+});
 
 envelopesEndpoint.post("/", async (c) => {
 	const createdBy = c.req.header("x-internal-user-id");
@@ -302,6 +392,45 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 	new Uint8Array(buffer).set(bytes);
 	const hash = await crypto.subtle.digest("SHA-256", buffer);
 	return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function getRequestIp(
+	cfConnectingIp: string | undefined,
+	forwardedFor: string | undefined,
+): string {
+	return cfConnectingIp ?? forwardedFor?.split(",")[0]?.trim() ?? "unknown";
+}
+
+function parseNow(nowHeader: string | undefined): Date {
+	return new Date(nowHeader ?? Date.now());
+}
+
+async function verifyTurnstileToken(input: {
+	env: SenderStartEnv;
+	token: string;
+	ip: string;
+}): Promise<boolean> {
+	if (input.env.TURNSTILE_TEST_BYPASS === "true" && input.token === "test-pass") {
+		return true;
+	}
+
+	const secret = input.env.TURNSTILE_SECRET_KEY;
+	if (!secret) return false;
+
+	const form = new FormData();
+	form.append("secret", secret);
+	form.append("response", input.token);
+	if (input.ip !== "unknown") form.append("remoteip", input.ip);
+
+	const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+		method: "POST",
+		body: form,
+	});
+	if (!response.ok) return false;
+
+	const json: unknown = await response.json();
+	const parsed = TurnstileSiteVerifyResponseSchema.safeParse(json);
+	return parsed.success && parsed.data.success;
 }
 
 export default envelopesEndpoint;

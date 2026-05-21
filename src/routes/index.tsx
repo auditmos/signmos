@@ -1,24 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MiddlewareDemo } from "@/components/demo";
-import { FeaturesSection } from "@/components/landing/features-section";
-import { Footer } from "@/components/landing/footer";
-import { HeroSection } from "@/components/landing/hero-section";
-import { NavigationBar } from "@/components/navigation";
+import { StartEnvelopePage } from "@/components/sender/start-envelope-page";
 
 export const Route = createFileRoute("/")({
-	component: LandingPage,
+	component: IndexPage,
 });
 
-function LandingPage() {
+function IndexPage() {
 	return (
-		<div className="min-h-screen bg-background">
-			<NavigationBar />
-			<main>
-				<HeroSection />
-				<FeaturesSection />
-				<MiddlewareDemo />
-			</main>
-			<Footer />
-		</div>
+		<StartEnvelopePage
+			turnstileSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || undefined}
+			testTurnstileToken={import.meta.env.DEV ? "test-pass" : undefined}
+		/>
 	);
 }

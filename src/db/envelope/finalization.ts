@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
-import { type Envelope, EnvelopeSchema, type FinalDocument, FinalDocumentSchema } from "./schema";
+import {
+	type Envelope,
+	EnvelopeSchema,
+	type FinalDocument,
+	FinalDocumentSchema,
+	getEnvelopeAllowedActions,
+} from "./schema";
 import {
 	auditEvents,
 	envelopeFields,
@@ -18,6 +24,7 @@ export interface EnvelopeFinalizationStatus {
 	envelopeId: string;
 	status: Envelope["status"];
 	finalPdfAvailable: boolean;
+	allowedActions: string[];
 }
 
 export async function finalizeCompletedEnvelope(
@@ -87,6 +94,7 @@ export async function getEnvelopeFinalizationStatus(
 		envelopeId,
 		status: parsedEnvelope.status,
 		finalPdfAvailable: Boolean(finalDocument),
+		allowedActions: getEnvelopeAllowedActions(parsedEnvelope.status),
 	};
 }
 

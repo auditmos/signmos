@@ -8,6 +8,9 @@ export {
 	fieldValues,
 	finalDocuments,
 	idempotencyRecords,
+	rateLimitRecords,
+	senderVerificationEmailRecords,
+	senderVerificationTokens,
 	signerTokens,
 	sourceDocuments,
 } from "./envelope/table";

@@ -1,13 +1,29 @@
 import { z } from "zod";
-import { envelopeStatuses, fieldTypes, recipientStatuses } from "./table";
+import {
+	envelopeStatuses,
+	fieldTypes,
+	recipientStatuses,
+	senderVerificationStatuses,
+} from "./table";
 
 export const envelopeLifecycleActions = ["send"] as const;
+export const envelopeAllowedActionsByStatus = {
+	awaiting_verification: ["verify_sender_email"],
+	draft: ["upload_source_pdf", "add_recipients", "add_fields", "send"],
+	sent: ["view_signing_status", "resend_invitation"],
+	completed: ["download_final_pdf"],
+	declined: [],
+	expired: [],
+} as const satisfies Record<EnvelopeStatus, readonly string[]>;
 
 export const EnvelopeStatusSchema = z.enum(envelopeStatuses);
 export type EnvelopeStatus = z.infer<typeof EnvelopeStatusSchema>;
 
 export const RecipientStatusSchema = z.enum(recipientStatuses);
 export type RecipientStatus = z.infer<typeof RecipientStatusSchema>;
+
+export const SenderVerificationStatusSchema = z.enum(senderVerificationStatuses);
+export type SenderVerificationStatus = z.infer<typeof SenderVerificationStatusSchema>;
 
 export const FieldTypeSchema = z.enum(fieldTypes);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
@@ -78,6 +94,55 @@ export const SourceDocumentResponseSchema = z.object({
 	uploadedAt: z.string(),
 });
 export type SourceDocumentResponse = z.infer<typeof SourceDocumentResponseSchema>;
+
+export const SenderStartRequestSchema = z.object({
+	name: z.string().trim().min(1).max(120),
+	email: z.string().trim().toLowerCase().email(),
+	turnstileToken: z.string().min(1),
+});
+export type SenderStartRequest = z.infer<typeof SenderStartRequestSchema>;
+
+export const SenderVerificationTokenSchema = z.object({
+	id: z.string().uuid(),
+	envelopeId: z.string().uuid(),
+	name: z.string().min(1),
+	email: z.string().email(),
+	token: z.string().min(1),
+	status: SenderVerificationStatusSchema,
+	expiresAt: z.date(),
+	verifiedAt: z.date().nullable().optional(),
+	createdAt: z.date(),
+});
+export type SenderVerificationToken = z.infer<typeof SenderVerificationTokenSchema>;
+
+export const SenderStartResponseSchema = z.object({
+	envelopeId: z.string().uuid(),
+	status: z.literal("awaiting_verification"),
+	sender: z.object({
+		name: z.string(),
+		email: z.string().email(),
+	}),
+	allowedActions: z.array(z.string()),
+	verification: z.object({
+		email: z.string().email(),
+		expiresAt: z.string(),
+		fallbackUrl: z.string().min(1),
+	}),
+});
+export type SenderStartResponse = z.infer<typeof SenderStartResponseSchema>;
+
+export const SenderVerificationResponseSchema = z.object({
+	envelopeId: z.string().uuid(),
+	status: z.literal("draft"),
+	senderSessionToken: z.string().min(1),
+	sender: z.object({
+		name: z.string(),
+		email: z.string().email(),
+	}),
+	allowedActions: z.array(z.string()),
+	verifiedAt: z.string(),
+});
+export type SenderVerificationResponse = z.infer<typeof SenderVerificationResponseSchema>;
 
 export const FinalDocumentSchema = z.object({
 	id: z.string().uuid().optional(),
@@ -256,6 +321,10 @@ export function toSourceDocumentResponse(document: SourceDocument): SourceDocume
 		uploadedBy: document.uploadedBy,
 		uploadedAt: document.uploadedAt.toISOString(),
 	};
+}
+
+export function getEnvelopeAllowedActions(status: EnvelopeStatus): string[] {
+	return [...envelopeAllowedActionsByStatus[status]];
 }
 
 export function toRecipientResponse(recipient: Recipient): RecipientResponse {

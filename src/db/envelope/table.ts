@@ -1,7 +1,15 @@
 import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
-export const envelopeStatuses = ["draft", "sent", "completed", "declined", "expired"] as const;
+export const envelopeStatuses = [
+	"awaiting_verification",
+	"draft",
+	"sent",
+	"completed",
+	"declined",
+	"expired",
+] as const;
 export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
+export const senderVerificationStatuses = ["pending", "verified", "expired"] as const;
 export const fieldTypes = ["signature", "date"] as const;
 
 export const envelopes = pgTable("envelopes", {
@@ -31,6 +39,50 @@ export const idempotencyRecords = pgTable(
 			table.operation,
 			table.createdBy,
 		),
+	],
+);
+
+export const senderVerificationTokens = pgTable("sender_verification_tokens", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	name: text("name").notNull(),
+	email: text("email").notNull(),
+	token: text("token").notNull().unique(),
+	status: text("status").notNull().default("pending"),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	verifiedAt: timestamp("verified_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const senderVerificationEmailRecords = pgTable("sender_verification_email_records", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	envelopeId: uuid("envelope_id")
+		.notNull()
+		.references(() => envelopes.id),
+	tokenId: uuid("token_id")
+		.notNull()
+		.references(() => senderVerificationTokens.id),
+	email: text("email").notNull(),
+	kind: text("kind").notNull(),
+	fallbackUrl: text("fallback_url"),
+	sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const rateLimitRecords = pgTable(
+	"rate_limit_records",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		key: text("key").notNull(),
+		operation: text("operation").notNull(),
+		attempts: integer("attempts").notNull(),
+		resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("rate_limit_records_key_operation_unique").on(table.key, table.operation),
 	],
 );
 
