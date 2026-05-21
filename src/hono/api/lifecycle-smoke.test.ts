@@ -396,9 +396,11 @@ describe("agent lifecycle smoke path", () => {
 			},
 		});
 
-		const finalPdf = await apiHono.request(`/api/envelopes/${envelopeId}/final-pdf`, undefined, {
-			DOCUMENTS_BUCKET: bucket,
-		});
+		const finalPdf = await apiHono.request(
+			`/api/signing/${token}/final-pdf`,
+			{ headers: { "x-now": "2026-05-20T09:01:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
 		expect(finalPdf.status).toBe(200);
 		expect(finalPdf.headers.get("content-type")).toBe("application/pdf");
 		expect(new TextDecoder().decode(await finalPdf.arrayBuffer())).toContain("Ada Lovelace");

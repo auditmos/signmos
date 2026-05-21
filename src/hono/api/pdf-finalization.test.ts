@@ -1,10 +1,13 @@
 import {
 	auditEvents,
+	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
 	fieldValues,
 	finalDocuments,
+	senderVerificationEmailRecords,
+	senderVerificationTokens,
 	signerTokens,
 	sourceDocuments,
 } from "@/db/envelope";
@@ -19,13 +22,16 @@ const state = vi.hoisted(() => ({
 	auditEventsTable: null as unknown,
 	sourceDocumentsTable: null as unknown,
 	finalDocumentsTable: null as unknown,
+	emailSendRecordsTable: null as unknown,
+	senderVerificationTokensTable: null as unknown,
+	senderVerificationEmailRecordsTable: null as unknown,
 	envelopes: [
 		{
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
-			createdBy: "user_123",
+			createdBy: "sender@example.com",
 			createdAt: new Date("2026-05-20T07:00:00.000Z"),
-			sentBy: "sender_123",
+			sentBy: "sender@example.com",
 			sentAt: new Date("2026-05-20T07:04:00.000Z"),
 		},
 	],
@@ -76,7 +82,7 @@ const state = vi.hoisted(() => ({
 			verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
 			createdAt: new Date("2026-05-20T07:03:00.000Z"),
 		},
-	],
+	] as Array<Record<string, unknown>>,
 	sourceDocuments: [
 		{
 			id: "10000000-0000-4000-8000-000000000001",
@@ -89,9 +95,24 @@ const state = vi.hoisted(() => ({
 			uploadedAt: new Date("2026-05-20T07:01:00.000Z"),
 		},
 	],
+	senderVerificationTokens: [
+		{
+			id: "70000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Sender Example",
+			email: "sender@example.com",
+			token: "sender-token",
+			status: "verified",
+			expiresAt: new Date("2026-05-20T08:30:00.000Z"),
+			verifiedAt: new Date("2026-05-20T07:00:00.000Z"),
+			createdAt: new Date("2026-05-20T06:59:00.000Z"),
+		},
+	],
 	fieldValues: [] as Array<Record<string, unknown>>,
 	auditEvents: [] as Array<Record<string, unknown>>,
 	finalDocuments: [] as Array<Record<string, unknown>>,
+	emailSendRecords: [] as Array<Record<string, unknown>>,
+	senderVerificationEmailRecords: [] as Array<Record<string, unknown>>,
 	r2Objects: new Map<string, Uint8Array>(),
 }));
 
@@ -104,6 +125,11 @@ function selectRows(table: unknown) {
 	if (table === state.auditEventsTable) return state.auditEvents;
 	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
 	if (table === state.finalDocumentsTable) return state.finalDocuments;
+	if (table === state.emailSendRecordsTable) return state.emailSendRecords;
+	if (table === state.senderVerificationTokensTable) return state.senderVerificationTokens;
+	if (table === state.senderVerificationEmailRecordsTable) {
+		return state.senderVerificationEmailRecords;
+	}
 	return [];
 }
 
@@ -111,6 +137,10 @@ function insertRows(table: unknown, rows: Array<Record<string, unknown>>) {
 	if (table === state.fieldValuesTable) state.fieldValues.push(...rows);
 	if (table === state.auditEventsTable) state.auditEvents.push(...rows);
 	if (table === state.finalDocumentsTable) state.finalDocuments.push(...rows);
+	if (table === state.emailSendRecordsTable) state.emailSendRecords.push(...rows);
+	if (table === state.senderVerificationEmailRecordsTable) {
+		state.senderVerificationEmailRecords.push(...rows);
+	}
 	return rows;
 }
 
@@ -154,15 +184,77 @@ describe("PDF finalization", () => {
 		state.auditEventsTable = auditEvents;
 		state.sourceDocumentsTable = sourceDocuments;
 		state.finalDocumentsTable = finalDocuments;
+		state.emailSendRecordsTable = emailSendRecords;
+		state.senderVerificationTokensTable = senderVerificationTokens;
+		state.senderVerificationEmailRecordsTable = senderVerificationEmailRecords;
 		state.fieldValues.length = 0;
 		state.auditEvents.length = 0;
 		state.finalDocuments.length = 0;
+		state.emailSendRecords.length = 0;
+		state.senderVerificationEmailRecords.length = 0;
 		state.r2Objects.clear();
+		state.recipients.length = 1;
+		state.tokens.length = 1;
 		state.envelopes[0] = { ...state.envelopes[0], status: "sent" };
 		state.recipients[0] = { ...state.recipients[0], status: "sent" };
+		state.tokens[0] = {
+			...state.tokens[0],
+			expiresAt: new Date("2026-05-27T07:03:00.000Z"),
+			verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
+		};
+	});
+
+	it("keeps the envelope sent until every required recipient completes", async () => {
+		state.recipients.push({
+			id: "20000000-0000-4000-8000-000000000002",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Grace Hopper",
+			email: "grace@example.com",
+			status: "sent",
+			createdAt: new Date("2026-05-20T07:02:30.000Z"),
+		});
+		const bucket = {
+			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {
+				const bytes =
+					value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer);
+				state.r2Objects.set(key, bytes);
+				return null;
+			},
+		};
+
+		const response = await apiHono.request(
+			"/api/signing/valid-token/complete",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-now": "2026-05-20T08:00:00.000Z",
+				},
+				body: JSON.stringify({ signatureName: "Ada Lovelace", date: "2026-05-20" }),
+			},
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				envelopeStatus: "sent",
+				recipientStatus: "completed",
+			}),
+		});
+		expect(state.envelopes[0]?.status).toBe("sent");
+		expect(state.finalDocuments).toHaveLength(0);
+		expect(state.emailSendRecords).toHaveLength(0);
+		expect(state.senderVerificationEmailRecords).toHaveLength(0);
+		expect(state.r2Objects.size).toBe(0);
 	});
 
 	it("generates a final PDF with flattened values and audit summary when all recipients complete", async () => {
+		// #19 assumptions before RED:
+		// - Completion notifications are persisted as send records, not real Resend calls.
+		// - Sender completion fallback uses the verified sender process token.
+		// - Partner completion fallback uses the verified signing process token.
+		// - The certificate checksum is a deterministic hash over signing inputs, not a self-hash.
 		const bucket = {
 			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {
 				const bytes =
@@ -198,11 +290,28 @@ describe("PDF finalization", () => {
 		expect(finalPdf).toContain("Ada Lovelace");
 		expect(finalPdf).toContain("2026-05-20");
 		expect(finalPdf).toContain("signature page=1 x=72 y=144 width=180 height=48");
-		expect(finalPdf).toContain("AUDIT SUMMARY");
+		expect(finalPdf).toContain("AUDIT CERTIFICATE");
+		expect(finalPdf).toContain("Certificate checksum:");
+		expect(finalPdf).toContain(`Source SHA-256: ${"a".repeat(64)}`);
 		expect(finalPdf).toContain("recipient.completed");
+		expect(state.emailSendRecords).toEqual([
+			expect.objectContaining({
+				email: "ada@example.com",
+				kind: "completion",
+				fallbackUrl: "/api/signing/valid-token/final-pdf",
+			}),
+		]);
+		expect(state.senderVerificationEmailRecords).toEqual([
+			expect.objectContaining({
+				email: "sender@example.com",
+				kind: "completion",
+				fallbackUrl:
+					"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",
+			}),
+		]);
 	});
 
-	it("reports final PDF availability and downloads the completed artifact", async () => {
+	it("reports final PDF availability and downloads through verified process links", async () => {
 		const finalPdf = new TextEncoder().encode("%PDF-1.4\ncompleted artifact\n%%EOF");
 		const r2Key = "envelopes/00000000-0000-4000-8000-000000000001/final.pdf";
 		state.finalDocuments.push({
@@ -236,16 +345,86 @@ describe("PDF finalization", () => {
 			},
 		});
 
-		const downloadResponse = await apiHono.request(
+		const unauthenticatedDownload = await apiHono.request(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf",
 			undefined,
 			{ DOCUMENTS_BUCKET: bucket },
 		);
+		expect(unauthenticatedDownload.status).toBe(403);
 
-		expect(downloadResponse.status).toBe(200);
-		expect(downloadResponse.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await downloadResponse.arrayBuffer())).toContain(
+		const senderDownload = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",
+			{ headers: { "x-now": "2026-05-20T08:00:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(senderDownload.status).toBe(200);
+		expect(senderDownload.headers.get("content-type")).toBe("application/pdf");
+		expect(new TextDecoder().decode(await senderDownload.arrayBuffer())).toContain(
 			"completed artifact",
 		);
+
+		const signerDownload = await apiHono.request(
+			"/api/signing/valid-token/final-pdf",
+			{ headers: { "x-now": "2026-05-20T08:00:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(signerDownload.status).toBe(200);
+		expect(signerDownload.headers.get("content-type")).toBe("application/pdf");
+		expect(new TextDecoder().decode(await signerDownload.arrayBuffer())).toContain(
+			"completed artifact",
+		);
+	});
+
+	it("blocks unverified, expired, and deleted final PDF access", async () => {
+		const finalPdf = new TextEncoder().encode("%PDF-1.4\ncompleted artifact\n%%EOF");
+		const r2Key = "envelopes/00000000-0000-4000-8000-000000000001/final.pdf";
+		state.finalDocuments.push({
+			id: "90000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			r2Key,
+			sha256: "b".repeat(64),
+			byteSize: finalPdf.byteLength,
+			contentType: "application/pdf",
+			createdAt: new Date("2026-05-20T08:01:00.000Z"),
+		});
+		state.envelopes[0] = { ...state.envelopes[0], status: "completed" };
+		state.r2Objects.set(r2Key, finalPdf);
+		const bucket = {
+			get: async (key: string) => ({
+				arrayBuffer: async () => state.r2Objects.get(key)?.buffer,
+			}),
+		};
+
+		state.tokens[0] = { ...state.tokens[0], verifiedAt: null };
+		const unverified = await apiHono.request(
+			"/api/signing/valid-token/final-pdf",
+			{ headers: { "x-now": "2026-05-20T08:00:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(unverified.status).toBe(403);
+
+		state.tokens[0] = {
+			...state.tokens[0],
+			verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
+			expiresAt: new Date("2026-05-20T07:30:00.000Z"),
+		};
+		const expired = await apiHono.request(
+			"/api/signing/valid-token/final-pdf",
+			{ headers: { "x-now": "2026-05-20T08:00:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(expired.status).toBe(410);
+
+		state.tokens[0] = {
+			...state.tokens[0],
+			expiresAt: new Date("2026-05-27T07:03:00.000Z"),
+		};
+		state.envelopes[0] = { ...state.envelopes[0], status: "deleted" };
+		const deleted = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",
+			{ headers: { "x-now": "2026-05-20T08:00:00.000Z" } },
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(deleted.status).toBe(404);
 	});
 });

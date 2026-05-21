@@ -154,6 +154,7 @@ describe("source PDF upload API", () => {
 				method: "POST",
 				headers: {
 					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
 					"idempotency-key": "source-upload-1",
 					"content-type": "application/pdf",
 				},
@@ -215,6 +216,7 @@ describe("source PDF upload API", () => {
 				method: "POST",
 				headers: {
 					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
 					"content-type": "application/pdf",
 				},
 				body: new Uint8Array(),
@@ -239,6 +241,7 @@ describe("source PDF upload API", () => {
 				method: "POST",
 				headers: {
 					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
 					"content-type": "application/pdf",
 				},
 				body: tooLargeBytes,
@@ -272,6 +275,7 @@ describe("source PDF upload API", () => {
 				method: "POST",
 				headers: {
 					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
 					"content-type": "application/pdf",
 				},
 				body: new TextEncoder().encode("%PDF-1.7\n%"),
@@ -307,6 +311,7 @@ describe("source PDF upload API", () => {
 			method: "POST",
 			headers: {
 				"x-sender-session-token": "verified-sender-token",
+				"x-now": "2026-05-21T09:10:00.000Z",
 				"idempotency-key": "source-upload-1",
 				"content-type": "application/pdf",
 			},
@@ -363,6 +368,7 @@ describe("source PDF upload API", () => {
 				method: "POST",
 				headers: {
 					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
 					"content-type": "application/pdf",
 				},
 				body: new TextEncoder().encode("%PDF-1.7 revised\n%"),

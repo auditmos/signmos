@@ -8,6 +8,7 @@ export const envelopeStatuses = [
 	"completed",
 	"declined",
 	"expired",
+	"deleted",
 ] as const;
 export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
 export const senderVerificationStatuses = ["pending", "verified", "expired"] as const;

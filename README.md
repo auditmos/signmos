@@ -112,14 +112,15 @@ SEND=$(curl -s -X POST "$BASE/api/envelopes/$ENVELOPE_ID/actions" \
   -H "content-type: application/json" \
   -d '{"action":"send"}')
 
-echo "$SEND" | jq '.data.signingLinks'
+echo "$SEND" | jq '.data.verificationLinks'
 ```
 
-Open each returned `url` as `http://localhost:3000/signing/{token}` and complete both signers. Then:
+Verify each returned `url`, copy the resulting `data.signingLink.token` into `SIGNING_TOKEN`,
+open `http://localhost:3000/signing/$SIGNING_TOKEN`, and complete both signers. Then:
 
 ```bash
 curl -s "$BASE/api/envelopes/$ENVELOPE_ID/status" | jq
-curl -L "$BASE/api/envelopes/$ENVELOPE_ID/final-pdf" -o /tmp/signmos-final.pdf
+curl -L "$BASE/api/signing/$SIGNING_TOKEN/final-pdf" -o /tmp/signmos-final.pdf
 ```
 
 ## Lifecycle API
@@ -135,8 +136,9 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `POST /api/envelopes/{id}/actions` | Send an envelope with `{ "action": "send" }`; returns signing links. |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. |
 | `GET /api/envelopes/{id}/status` | Poll lifecycle state and final PDF availability. |
-| `GET /api/envelopes/{id}/final-pdf` | Download the completed PDF artifact. |
+| `GET /api/envelopes/{id}/final-pdf` | Download the completed PDF artifact with a verified sender session token. |
 | `GET /api/signing/{token}` | Resolve a magic-link signer session. |
+| `GET /api/signing/{token}/final-pdf` | Download the completed PDF artifact through a verified signer token. |
 | `POST /api/signing/{token}/complete` | Complete typed signature/date values. |
 | `POST /api/signing/{token}/decline` | Decline with reason and optional comment. |
 

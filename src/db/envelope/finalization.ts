@@ -6,13 +6,24 @@ import {
 	type FinalDocument,
 	FinalDocumentSchema,
 	getEnvelopeAllowedActions,
+	RecipientSchema,
+	SenderVerificationTokenSchema,
+	type SignerToken,
+	SignerTokenSchema,
+	type SourceDocument,
+	SourceDocumentSchema,
 } from "./schema";
 import {
 	auditEvents,
+	emailSendRecords,
 	envelopeFields,
+	envelopeRecipients,
 	envelopes,
 	fieldValues,
 	finalDocuments,
+	senderVerificationEmailRecords,
+	senderVerificationTokens,
+	signerTokens,
 	sourceDocuments,
 } from "./table";
 
@@ -34,11 +45,14 @@ export async function finalizeCompletedEnvelope(
 	if (!options.documentsBucket) return null;
 
 	const db = getDb();
-	const [sourceDocument] = await db
+	const sourceDocumentRows = await db
 		.select()
 		.from(sourceDocuments)
 		.where(eq(sourceDocuments.envelopeId, envelopeId))
-		.limit(1);
+		.limit(100);
+	const sourceDocument = latestSourceDocument(
+		sourceDocumentRows.map((document) => SourceDocumentSchema.parse(document)),
+	);
 	if (!sourceDocument) throw new Error("Envelope source PDF required");
 
 	const rows = {
@@ -58,22 +72,28 @@ export async function finalizeCompletedEnvelope(
 			.where(eq(auditEvents.envelopeId, envelopeId))
 			.limit(100),
 	};
-	const bytes = new TextEncoder().encode(buildFinalPdf(envelopeId, rows));
+	const encoder = new TextEncoder();
+	const certificateHash = await sha256Hex(
+		encoder.encode(buildCertificateMaterial(sourceDocument, rows)),
+	);
+	const bytes = encoder.encode(buildFinalPdf(envelopeId, sourceDocument, rows, certificateHash));
 	const r2Key = `envelopes/${envelopeId}/final.pdf`;
 	await options.documentsBucket.put(r2Key, bytes, {
 		httpMetadata: { contentType: "application/pdf" },
 	});
 
+	const finalSha256 = await sha256Hex(bytes);
 	const [document] = await db
 		.insert(finalDocuments)
 		.values({
 			envelopeId,
 			r2Key,
-			sha256: await sha256Hex(bytes),
+			sha256: finalSha256,
 			byteSize: bytes.byteLength,
 			contentType: "application/pdf",
 		})
 		.returning();
+	await recordCompletionNotifications(envelopeId);
 	return document ? FinalDocumentSchema.parse(document) : null;
 }
 
@@ -93,13 +113,17 @@ export async function getEnvelopeFinalizationStatus(
 	return {
 		envelopeId,
 		status: parsedEnvelope.status,
-		finalPdfAvailable: Boolean(finalDocument),
+		finalPdfAvailable: parsedEnvelope.status === "completed" && Boolean(finalDocument),
 		allowedActions: getEnvelopeAllowedActions(parsedEnvelope.status),
 	};
 }
 
 export async function getFinalDocument(envelopeId: string): Promise<FinalDocument | null> {
 	const db = getDb();
+	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope || parsedEnvelope.status !== "completed") return null;
+
 	const [document] = await db
 		.select()
 		.from(finalDocuments)
@@ -108,55 +132,59 @@ export async function getFinalDocument(envelopeId: string): Promise<FinalDocumen
 	return document ? FinalDocumentSchema.parse(document) : null;
 }
 
+export async function getSignerFinalDocument(token: SignerToken): Promise<FinalDocument | null> {
+	return getFinalDocument(token.envelopeId);
+}
+
 function buildFinalPdf(
 	envelopeId: string,
+	sourceDocument: SourceDocument,
 	rows: {
 		fields: Array<Record<string, unknown>>;
 		values: Array<Record<string, unknown>>;
 		events: Array<Record<string, unknown>>;
 	},
+	certificateHash: string,
 ): string {
-	const valueByField = new Map(rows.values.map((value) => [value.fieldId, String(value.value)]));
-	const flattenedFields = rows.fields.map((field) =>
+	const flattenedFields = buildFlattenedFieldLines(rows);
+	const eventSummary = buildEventSummaryLines(rows.events);
+	const pageOneContent = [
+		...textBlock([`ENVELOPE ${envelopeId}`, "FLATTENED FIELDS"], 72, 760, 10, 14),
+		...flattenedFields.flatMap((line, index) => {
+			const field = rows.fields[index];
+			const value = line.split(" value=")[1] ?? "";
+			const x = numberValue(field, "x", 72);
+			const y = numberValue(field, "y", 144);
+			const height = numberValue(field, "height", 32);
+			const baseline = Math.max(36, 792 - y - height);
+			return [
+				...textBlock([value], x, baseline, 12, 14),
+				...textBlock([line], x, baseline - 12, 7, 9),
+			];
+		}),
+	].join("\n");
+	const pageTwoContent = textBlock(
 		[
-			String(field.type),
-			`page=${field.page}`,
-			`x=${field.x}`,
-			`y=${field.y}`,
-			`width=${field.width}`,
-			`height=${field.height}`,
-			`value=${valueByField.get(field.id) ?? ""}`,
-		].join(" "),
+			"AUDIT CERTIFICATE",
+			`Envelope: ${envelopeId}`,
+			`Source SHA-256: ${sourceDocument.sha256}`,
+			`Certificate checksum: ${certificateHash}`,
+			"SIGNING EVENT SUMMARY",
+			...eventSummary,
+		],
+		72,
+		760,
+		10,
+		14,
 	);
-	const auditSummary = rows.events.map((event) =>
-		[event.eventType, event.message].filter(Boolean).join(": "),
-	);
-
-	const contentLines = [
-		`ENVELOPE ${envelopeId}`,
-		"FLATTENED FIELDS",
-		...flattenedFields,
-		"AUDIT SUMMARY",
-		...auditSummary,
-	];
-	const content = [
-		"BT",
-		"/F1 10 Tf",
-		"72 760 Td",
-		...contentLines.flatMap((line, index) => [
-			index === 0 ? "" : "0 -14 Td",
-			`(${escapePdfText(line)}) Tj`,
-		]),
-		"ET",
-	]
-		.filter(Boolean)
-		.join("\n");
 	const objects = [
 		"<< /Type /Catalog /Pages 2 0 R >>",
-		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>",
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-		`<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+		`<< /Length ${pageOneContent.length} >>\nstream\n${pageOneContent}\nendstream`,
+		`<< /Length ${pageTwoContent.length} >>\nstream\n${pageTwoContent}\nendstream`,
 	];
 	let pdf = "%PDF-1.4\n";
 	const offsets = [0];
@@ -173,6 +201,156 @@ function buildFinalPdf(
 	pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
 	pdf += `startxref\n${xrefOffset}\n%%EOF`;
 	return pdf;
+}
+
+async function recordCompletionNotifications(envelopeId: string): Promise<void> {
+	const db = getDb();
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, envelopeId))
+			.limit(100)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const tokens = (
+		await db.select().from(signerTokens).where(eq(signerTokens.envelopeId, envelopeId)).limit(100)
+	).map((token) => SignerTokenSchema.parse(token));
+	const partnerRecords = recipients.flatMap((recipient) => {
+		const token = latestSignerToken(tokens, recipient.id);
+		if (!token) return [];
+		return [
+			{
+				envelopeId,
+				recipientId: recipient.id,
+				tokenId: token.id,
+				email: recipient.email,
+				kind: "completion",
+				fallbackUrl: `/api/signing/${token.token}/final-pdf`,
+			},
+		];
+	});
+	if (partnerRecords.length > 0) {
+		await db.insert(emailSendRecords).values(partnerRecords).returning();
+	}
+
+	const senderTokens = (
+		await db
+			.select()
+			.from(senderVerificationTokens)
+			.where(eq(senderVerificationTokens.envelopeId, envelopeId))
+			.limit(100)
+	).map((token) => SenderVerificationTokenSchema.parse(token));
+	const senderToken = latestVerifiedSenderToken(senderTokens);
+	if (senderToken) {
+		await db
+			.insert(senderVerificationEmailRecords)
+			.values({
+				envelopeId,
+				tokenId: senderToken.id,
+				email: senderToken.email,
+				kind: "completion",
+				fallbackUrl: `/api/envelopes/${envelopeId}/final-pdf?senderSessionToken=${encodeURIComponent(senderToken.token)}`,
+			})
+			.returning();
+	}
+}
+
+function buildCertificateMaterial(
+	sourceDocument: SourceDocument,
+	rows: {
+		fields: Array<Record<string, unknown>>;
+		values: Array<Record<string, unknown>>;
+		events: Array<Record<string, unknown>>;
+	},
+): string {
+	return [
+		`source:${sourceDocument.sha256}`,
+		"fields:",
+		...buildFlattenedFieldLines(rows),
+		"events:",
+		...buildEventSummaryLines(rows.events),
+	].join("\n");
+}
+
+function buildFlattenedFieldLines(rows: {
+	fields: Array<Record<string, unknown>>;
+	values: Array<Record<string, unknown>>;
+}): string[] {
+	const valueByField = new Map(
+		rows.values.map((value) => [stringValue(value, "fieldId"), stringValue(value, "value")]),
+	);
+	return rows.fields.map((field) =>
+		[
+			stringValue(field, "type"),
+			`page=${stringValue(field, "page")}`,
+			`x=${stringValue(field, "x")}`,
+			`y=${stringValue(field, "y")}`,
+			`width=${stringValue(field, "width")}`,
+			`height=${stringValue(field, "height")}`,
+			`value=${valueByField.get(stringValue(field, "id")) ?? ""}`,
+		].join(" "),
+	);
+}
+
+function buildEventSummaryLines(events: Array<Record<string, unknown>>): string[] {
+	return events.map((event) =>
+		[stringValue(event, "eventType"), stringValue(event, "message")].filter(Boolean).join(": "),
+	);
+}
+
+function textBlock(
+	lines: string[],
+	x: number,
+	y: number,
+	fontSize: number,
+	leading: number,
+): string[] {
+	return [
+		"BT",
+		`/F1 ${fontSize} Tf`,
+		`${x} ${y} Td`,
+		...lines.flatMap((line, index) => [
+			index === 0 ? "" : `0 -${leading} Td`,
+			`(${escapePdfText(line)}) Tj`,
+		]),
+		"ET",
+	].filter(Boolean);
+}
+
+function latestSourceDocument(documents: SourceDocument[]): SourceDocument | null {
+	return [...documents].sort((left, right) => right.version - left.version)[0] ?? null;
+}
+
+function latestSignerToken(
+	tokens: ReturnType<typeof SignerTokenSchema.parse>[],
+	recipientId: string,
+) {
+	return [...tokens]
+		.filter((token) => token.recipientId === recipientId)
+		.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
+}
+
+function latestVerifiedSenderToken(
+	tokens: ReturnType<typeof SenderVerificationTokenSchema.parse>[],
+) {
+	return [...tokens]
+		.filter((token) => token.status === "verified")
+		.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
+}
+
+function stringValue(row: Record<string, unknown> | undefined, key: string): string {
+	const value = row?.[key];
+	if (value instanceof Date) return value.toISOString();
+	return value == null ? "" : String(value);
+}
+
+function numberValue(
+	row: Record<string, unknown> | undefined,
+	key: string,
+	fallback: number,
+): number {
+	const value = Number(row?.[key]);
+	return Number.isFinite(value) ? value : fallback;
 }
 
 function escapePdfText(text: string): string {

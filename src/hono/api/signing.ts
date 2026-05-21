@@ -4,6 +4,7 @@ import {
 	completeSigning,
 	DeclineSigningRequestSchema,
 	declineSigning,
+	getSignerFinalDocument,
 	getSignerSession,
 	getSignerSourceDocument,
 	getSigningBlockedAllowedActions,
@@ -60,6 +61,42 @@ signingEndpoint.get("/:token/source-pdf", async (c) => {
 				error: {
 					code: "SOURCE_PDF_NOT_FOUND",
 					message: "Source PDF is not available",
+				},
+			},
+			404,
+		);
+	}
+
+	return new Response(await object.arrayBuffer(), {
+		headers: { "content-type": document.contentType },
+	});
+});
+
+signingEndpoint.get("/:token/final-pdf", async (c) => {
+	const token = await getUsableToken(c.req.param("token"), c.req.header("x-now"));
+	if (token instanceof Response) return token;
+
+	const document = await getSignerFinalDocument(token);
+	if (!document) {
+		return c.json(
+			{
+				error: {
+					code: "FINAL_PDF_NOT_FOUND",
+					message: "Completed PDF is not available",
+				},
+			},
+			404,
+		);
+	}
+
+	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
+	const object = await bucket?.get(document.r2Key);
+	if (!object) {
+		return c.json(
+			{
+				error: {
+					code: "FINAL_PDF_NOT_FOUND",
+					message: "Completed PDF is not available",
 				},
 			},
 			404,

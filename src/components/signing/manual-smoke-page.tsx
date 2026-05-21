@@ -165,7 +165,11 @@ export function ManualSigningSmokePage() {
 						{state.finalPdfAvailable && (
 							<a
 								className="inline-flex items-center gap-2 text-primary underline"
-								href={`/api/envelopes/${state.envelopeId}/final-pdf`}
+								href={
+									state.signingLink
+										? `/api/signing/${state.signingLink.token}/final-pdf`
+										: `/api/envelopes/${state.envelopeId}/final-pdf`
+								}
 							>
 								<FileText className="h-4 w-4" />
 								Download final PDF

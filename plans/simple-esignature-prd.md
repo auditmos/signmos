@@ -164,8 +164,9 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `POST /api/envelopes/{id}/actions` | Send a prepared envelope with `{ "action": "send" }`. | Rejects `INVALID_ACTION`; returns generated signing links. |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. | Requires `x-internal-user-id`. |
 | `GET /api/envelopes/{id}/status` | Poll lifecycle status and final PDF availability. | Returns envelope status and `finalPdfAvailable`. |
-| `GET /api/envelopes/{id}/final-pdf` | Download completed final PDF artifact. | Rejects `FINAL_PDF_NOT_FOUND` until finalization is available. |
+| `GET /api/envelopes/{id}/final-pdf` | Download completed final PDF artifact through a verified sender session token. | Rejects unverified sender access and `FINAL_PDF_NOT_FOUND` until finalization is available. |
 | `GET /api/signing/{token}` | Resolve a signer magic-link session. | Rejects `TOKEN_NOT_FOUND` and `EXPIRED_TOKEN`. |
+| `GET /api/signing/{token}/final-pdf` | Download completed final PDF artifact through a verified signer token. | Rejects unverified, expired, deleted, or unavailable access. |
 | `POST /api/signing/{token}/complete` | Complete typed signature/date values. | Rejects invalid signer completion input. |
 | `POST /api/signing/{token}/decline` | Decline with reason and optional comment. | Rejects invalid decline input. |
 

@@ -16,6 +16,7 @@ export const envelopeAllowedActionsByStatus = {
 	completed: ["download_final_pdf"],
 	declined: [],
 	expired: [],
+	deleted: [],
 } as const satisfies Record<EnvelopeStatus, readonly string[]>;
 
 export const EnvelopeStatusSchema = z.enum(envelopeStatuses);

@@ -14,6 +14,7 @@ describe("lifecycle API contract documentation", () => {
 			"GET /api/envelopes/{id}/status",
 			"GET /api/envelopes/{id}/final-pdf",
 			"GET /api/signing/{token}",
+			"GET /api/signing/{token}/final-pdf",
 			"POST /api/signing/{token}/complete",
 			"POST /api/signing/{token}/decline",
 			"Idempotency-Key",
