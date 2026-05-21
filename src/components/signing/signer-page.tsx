@@ -133,84 +133,88 @@ export function SignerPage({ token }: SignerPageProps) {
 					/>
 				</section>
 			)}
-			<div className="grid gap-3 rounded-md border p-4 md:grid-cols-2">
-				{session?.fields.map((field) => (
-					<div key={field.id} className="rounded-md border bg-muted/30 p-3">
-						<p className="font-medium capitalize">{field.type}</p>
-						<p className="text-sm text-muted-foreground">
-							Page {field.page}, x {field.x}, y {field.y}, {field.width}x{field.height}
-						</p>
+			{session && (
+				<>
+					<div className="grid gap-3 rounded-md border p-4 md:grid-cols-2">
+						{session.fields.map((field) => (
+							<div key={field.id} className="rounded-md border bg-muted/30 p-3">
+								<p className="font-medium capitalize">{field.type}</p>
+								<p className="text-sm text-muted-foreground">
+									Page {field.page}, x {field.x}, y {field.y}, {field.width}x{field.height}
+								</p>
+							</div>
+						))}
 					</div>
-				))}
-			</div>
-			<form onSubmit={completeSigning} className="grid gap-4 md:grid-cols-3">
-				<div className="space-y-2">
-					<Label htmlFor="signatureName">Typed signature</Label>
-					<Input
-						id="signatureName"
-						value={signatureName}
-						onChange={(event) => setSignatureName(event.target.value)}
-						required
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="signingDate">Signing date</Label>
-					<Input
-						id="signingDate"
-						type="date"
-						value={date}
-						onChange={(event) => setDate(event.target.value)}
-						required
-					/>
-				</div>
-				<div className="flex items-end">
-					<Button type="submit" className="w-full" disabled={changeRequested}>
-						<Check className="h-4 w-4" />
-						Complete signing
-					</Button>
-				</div>
-			</form>
-			<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
-				<div className="space-y-2 md:col-span-2">
-					<Label htmlFor="changeComment">Change request comment</Label>
-					<Input
-						id="changeComment"
-						value={changeComment}
-						onChange={(event) => setChangeComment(event.target.value)}
-						required
-					/>
-				</div>
-				<div className="flex items-end">
-					<Button type="submit" variant="outline" className="w-full" disabled={changeRequested}>
-						<MessageSquare className="h-4 w-4" />
-						Request changes
-					</Button>
-				</div>
-			</form>
-			<form onSubmit={declineSigning} className="grid gap-4 md:grid-cols-3">
-				<div className="space-y-2">
-					<Label htmlFor="declineReason">Decline reason</Label>
-					<Input
-						id="declineReason"
-						value={reason}
-						onChange={(event) => setReason(event.target.value)}
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="declineComment">Comment</Label>
-					<Input
-						id="declineComment"
-						value={comment}
-						onChange={(event) => setComment(event.target.value)}
-					/>
-				</div>
-				<div className="flex items-end">
-					<Button type="submit" variant="outline" className="w-full">
-						<X className="h-4 w-4" />
-						Decline
-					</Button>
-				</div>
-			</form>
+					<form onSubmit={completeSigning} className="grid gap-4 md:grid-cols-3">
+						<div className="space-y-2">
+							<Label htmlFor="signatureName">Typed signature</Label>
+							<Input
+								id="signatureName"
+								value={signatureName}
+								onChange={(event) => setSignatureName(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="signingDate">Signing date</Label>
+							<Input
+								id="signingDate"
+								type="date"
+								value={date}
+								onChange={(event) => setDate(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex items-end">
+							<Button type="submit" className="w-full" disabled={changeRequested}>
+								<Check className="h-4 w-4" />
+								Complete signing
+							</Button>
+						</div>
+					</form>
+					<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
+						<div className="space-y-2 md:col-span-2">
+							<Label htmlFor="changeComment">Change request comment</Label>
+							<Input
+								id="changeComment"
+								value={changeComment}
+								onChange={(event) => setChangeComment(event.target.value)}
+								required
+							/>
+						</div>
+						<div className="flex items-end">
+							<Button type="submit" variant="outline" className="w-full" disabled={changeRequested}>
+								<MessageSquare className="h-4 w-4" />
+								Request changes
+							</Button>
+						</div>
+					</form>
+					<form onSubmit={declineSigning} className="grid gap-4 md:grid-cols-3">
+						<div className="space-y-2">
+							<Label htmlFor="declineReason">Decline reason</Label>
+							<Input
+								id="declineReason"
+								value={reason}
+								onChange={(event) => setReason(event.target.value)}
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="declineComment">Comment</Label>
+							<Input
+								id="declineComment"
+								value={comment}
+								onChange={(event) => setComment(event.target.value)}
+							/>
+						</div>
+						<div className="flex items-end">
+							<Button type="submit" variant="outline" className="w-full">
+								<X className="h-4 w-4" />
+								Decline
+							</Button>
+						</div>
+					</form>
+				</>
+			)}
 			{message && <p className="text-sm text-muted-foreground">{message}</p>}
 		</div>
 	);

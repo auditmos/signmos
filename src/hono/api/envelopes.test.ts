@@ -221,7 +221,7 @@ describe("envelopes API", () => {
 			error: {
 				code: "INVALID_ACTION",
 				message: "Invalid envelope lifecycle action",
-				validValues: ["send"],
+				validValues: ["send", "cancel", "expire", "delete"],
 			},
 		});
 	});

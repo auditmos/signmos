@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveVerifiedSenderSession } from "@/db/envelope";
 
 export type SenderStartEnv = Env & {
 	TURNSTILE_SECRET_KEY?: string;
@@ -34,6 +35,16 @@ export function getRequestIp(
 
 export function parseNow(nowHeader: string | undefined): Date {
 	return new Date(nowHeader ?? Date.now());
+}
+
+export async function getVerifiedSenderUploadEmail(
+	token: string | undefined,
+	envelopeId: string,
+	nowHeader: string | undefined,
+): Promise<string | null> {
+	if (!token) return null;
+	const session = await resolveVerifiedSenderSession(token, envelopeId, parseNow(nowHeader));
+	return session?.email ?? null;
 }
 
 export async function verifyTurnstileToken(input: {

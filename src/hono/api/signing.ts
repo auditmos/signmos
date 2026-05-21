@@ -4,6 +4,7 @@ import {
 	completeSigning,
 	DeclineSigningRequestSchema,
 	declineSigning,
+	getEnvelopeStatus,
 	getSignerFinalDocument,
 	getSignerSession,
 	getSignerSourceDocument,
@@ -222,6 +223,29 @@ async function getUsableToken(tokenValue: string, nowHeader: string | undefined)
 	}
 
 	const now = new Date(nowHeader ?? Date.now());
+	const envelopeStatus = await getEnvelopeStatus(token.envelopeId);
+	if (envelopeStatus === "deleted") {
+		return Response.json(
+			{
+				error: {
+					code: "ENVELOPE_DELETED",
+					message: "This document was deleted by the sender",
+				},
+			},
+			{ status: 410 },
+		);
+	}
+	if (envelopeStatus === "expired") {
+		return Response.json(
+			{
+				error: {
+					code: "ENVELOPE_EXPIRED",
+					message: "This signing link is no longer active",
+				},
+			},
+			{ status: 410 },
+		);
+	}
 	if (token.expiresAt <= now) {
 		await recordPartnerLinkExpired(token);
 		return Response.json(

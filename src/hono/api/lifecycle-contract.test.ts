@@ -12,6 +12,7 @@ describe("lifecycle API contract documentation", () => {
 			"POST /api/envelopes/{id}/fields",
 			"POST /api/envelopes/{id}/actions",
 			"GET /api/envelopes/{id}/status",
+			"GET /api/envelopes/{id}/retention",
 			"GET /api/envelopes/{id}/final-pdf",
 			"GET /api/signing/{token}",
 			"GET /api/signing/{token}/final-pdf",

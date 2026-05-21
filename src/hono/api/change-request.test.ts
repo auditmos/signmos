@@ -143,7 +143,7 @@ describe("partner change requests", () => {
 				recipientId: "20000000-0000-4000-8000-000000000001",
 				recipientStatus: "sent",
 				envelopeStatus: "changes_requested",
-				allowedActions: ["upload_revised_source_pdf"],
+				allowedActions: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
 			},
 		});
 		expect(state.envelopes[0]?.status).toBe("changes_requested");
@@ -189,7 +189,7 @@ describe("partner change requests", () => {
 			error: {
 				code: "SIGNING_BLOCKED",
 				message: "Envelope is waiting for sender revision",
-				allowedActions: ["upload_revised_source_pdf"],
+				allowedActions: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
 			},
 		});
 	});

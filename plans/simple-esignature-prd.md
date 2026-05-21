@@ -161,9 +161,10 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `POST /api/envelopes/{id}/source-pdf` | Upload one source PDF under 10 MB. | Requires `x-internal-user-id`; accepts `Idempotency-Key`; rejects `INVALID_SOURCE_PDF` and `SOURCE_PDF_TOO_LARGE`. |
 | `POST /api/envelopes/{id}/recipients` | Add 1-10 recipients. | Requires `x-internal-user-id`; rejects invalid recipient lists. |
 | `POST /api/envelopes/{id}/fields` | Add signature/date coordinate fields. | Requires `x-internal-user-id`; rejects invalid field type, geometry, or recipient assignment. |
-| `POST /api/envelopes/{id}/actions` | Send a prepared envelope with `{ "action": "send" }`. | Rejects `INVALID_ACTION`; returns generated signing links. |
+| `POST /api/envelopes/{id}/actions` | Send, cancel, expire, or delete an envelope with `{ "action": ... }`. | Rejects `INVALID_ACTION`; delete revokes stored PDF access. |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. | Requires `x-internal-user-id`. |
 | `GET /api/envelopes/{id}/status` | Poll lifecycle status and final PDF availability. | Returns envelope status and `finalPdfAvailable`. |
+| `GET /api/envelopes/{id}/retention` | Check 90-day retention eligibility for completed or expired envelopes. | Requires `x-internal-user-id` and supports `x-now` for deterministic tests. |
 | `GET /api/envelopes/{id}/final-pdf` | Download completed final PDF artifact through a verified sender session token. | Rejects unverified sender access and `FINAL_PDF_NOT_FOUND` until finalization is available. |
 | `GET /api/signing/{token}` | Resolve a signer magic-link session. | Rejects `TOKEN_NOT_FOUND` and `EXPIRED_TOKEN`. |
 | `GET /api/signing/{token}/final-pdf` | Download completed final PDF artifact through a verified signer token. | Rejects unverified, expired, deleted, or unavailable access. |

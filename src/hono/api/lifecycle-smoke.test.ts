@@ -305,7 +305,7 @@ describe("agent lifecycle smoke path", () => {
 				envelopeId,
 				status: "sent",
 				finalPdfAvailable: false,
-				allowedActions: ["view_signing_status", "resend_invitation"],
+				allowedActions: ["view_signing_status", "resend_invitation", "cancel", "expire", "delete"],
 			},
 		});
 
@@ -322,7 +322,7 @@ describe("agent lifecycle smoke path", () => {
 				envelopeId,
 				status: "changes_requested",
 				finalPdfAvailable: false,
-				allowedActions: ["upload_revised_source_pdf"],
+				allowedActions: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
 			},
 		});
 
@@ -392,7 +392,7 @@ describe("agent lifecycle smoke path", () => {
 				envelopeId,
 				status: "completed",
 				finalPdfAvailable: true,
-				allowedActions: ["download_final_pdf"],
+				allowedActions: ["download_final_pdf", "delete"],
 			},
 		});
 

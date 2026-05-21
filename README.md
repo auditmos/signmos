@@ -133,9 +133,10 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `POST /api/envelopes/{id}/source-pdf` | Upload a PDF under 10 MB. Requires `x-internal-user-id`; accepts `Idempotency-Key`. |
 | `POST /api/envelopes/{id}/recipients` | Add 1-10 recipients. Requires `x-internal-user-id`. |
 | `POST /api/envelopes/{id}/fields` | Add signature/date coordinate fields. Requires `x-internal-user-id`. |
-| `POST /api/envelopes/{id}/actions` | Send an envelope with `{ "action": "send" }`; returns signing links. |
+| `POST /api/envelopes/{id}/actions` | Send, cancel, expire, or delete an envelope with `{ "action": ... }`. |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. |
 | `GET /api/envelopes/{id}/status` | Poll lifecycle state and final PDF availability. |
+| `GET /api/envelopes/{id}/retention` | Check 90-day retention eligibility for completed or expired envelopes. |
 | `GET /api/envelopes/{id}/final-pdf` | Download the completed PDF artifact with a verified sender session token. |
 | `GET /api/signing/{token}` | Resolve a magic-link signer session. |
 | `GET /api/signing/{token}/final-pdf` | Download the completed PDF artifact through a verified signer token. |

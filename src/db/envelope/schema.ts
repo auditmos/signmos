@@ -7,15 +7,15 @@ import {
 	signatureProfileKinds,
 } from "./table";
 
-export const envelopeLifecycleActions = ["send"] as const;
+export const envelopeLifecycleActions = ["send", "cancel", "expire", "delete"] as const;
 export const envelopeAllowedActionsByStatus = {
 	awaiting_verification: ["verify_sender_email"],
 	draft: ["upload_source_pdf", "add_recipients", "add_fields", "send"],
-	changes_requested: ["upload_revised_source_pdf"],
-	sent: ["view_signing_status", "resend_invitation"],
-	completed: ["download_final_pdf"],
+	changes_requested: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
+	sent: ["view_signing_status", "resend_invitation", "cancel", "expire", "delete"],
+	completed: ["download_final_pdf", "delete"],
 	declined: [],
-	expired: [],
+	expired: ["delete"],
 	deleted: [],
 } as const satisfies Record<EnvelopeStatus, readonly string[]>;
 

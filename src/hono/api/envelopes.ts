@@ -3,11 +3,14 @@ import {
 	AddRecipientsRequestSchema,
 	addFields,
 	addRecipients,
+	controlEnvelope,
 	createEnvelope,
 	EnvelopeActionRequestSchema,
+	EnvelopeControlError,
 	envelopeLifecycleActions,
 	getEnvelopeAllowedActions,
 	getEnvelopeFinalizationStatus,
+	getEnvelopeRetentionStatus,
 	getFinalDocument,
 	recordSourcePdfUploadRejection,
 	resendInvitation,
@@ -27,6 +30,7 @@ import {
 import { createHono } from "@/hono/factory";
 import {
 	getRequestIp,
+	getVerifiedSenderUploadEmail,
 	isPdf,
 	parseNow,
 	type SenderStartEnv,
@@ -36,7 +40,6 @@ import {
 
 const envelopesEndpoint = createHono();
 const maxSourcePdfBytes = 10 * 1024 * 1024;
-
 envelopesEndpoint.post("/sender-start", async (c) => {
 	const body: unknown = await c.req.json().catch(() => null);
 	const parsed = SenderStartRequestSchema.safeParse(body);
@@ -166,12 +169,57 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 			401,
 		);
 	}
-	const result = await sendEnvelope(c.req.param("id"), sentBy);
-	return c.json({ data: result });
+	if (parsed.data.action === "send") {
+		const result = await sendEnvelope(c.req.param("id"), sentBy);
+		return c.json({ data: result });
+	}
+
+	try {
+		const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
+		const result = await controlEnvelope(c.req.param("id"), sentBy, parsed.data.action, {
+			documentsBucket: bucket,
+		});
+		return c.json({ data: result });
+	} catch (error) {
+		if (error instanceof EnvelopeControlError) {
+			return c.json(
+				{
+					error: {
+						code: error.code,
+						message: "Envelope action is not allowed in the current state",
+						allowedActions: error.allowedActions,
+					},
+				},
+				409,
+			);
+		}
+		throw error;
+	}
 });
 
 envelopesEndpoint.get("/:id/status", async (c) => {
 	const result = await getEnvelopeFinalizationStatus(c.req.param("id"));
+	return c.json({ data: result });
+});
+
+envelopesEndpoint.get("/:id/retention", async (c) => {
+	const userId = c.req.header("x-internal-user-id");
+	if (!userId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const result = await getEnvelopeRetentionStatus(
+		c.req.param("id"),
+		parseNow(c.req.header("x-now")),
+	);
 	return c.json({ data: result });
 });
 
@@ -447,15 +495,5 @@ envelopesEndpoint.post("/:id/fields", async (c) => {
 	}
 	return c.json({ data: fields.map(toEnvelopeFieldResponse) }, 201);
 });
-
-async function getVerifiedSenderUploadEmail(
-	token: string | undefined,
-	envelopeId: string,
-	nowHeader: string | undefined,
-): Promise<string | null> {
-	if (!token) return null;
-	const session = await resolveVerifiedSenderSession(token, envelopeId, parseNow(nowHeader));
-	return session?.email ?? null;
-}
 
 export default envelopesEndpoint;

@@ -139,4 +139,27 @@ describe("SignerPage", () => {
 			"/api/signing/verifications/valid-token",
 		);
 	});
+
+	it("shows a deleted document message without PDF or signing controls", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "ENVELOPE_DELETED",
+						message: "This document was deleted by the sender",
+					},
+				}),
+				{ status: 410 },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("This document was deleted by the sender");
+		expect(screen.queryByRole("link", { name: "Open source PDF" })).toBeNull();
+		expect(screen.queryByTitle("Source PDF preview")).toBeNull();
+		expect(screen.queryByRole("button", { name: "Complete signing" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Request changes" })).toBeNull();
+	});
 });
