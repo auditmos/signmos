@@ -4,7 +4,7 @@ import { SignatureProfilePanel } from "@/components/sender/signature-profile-pan
 import { Button } from "@/components/ui/button";
 import { EnvelopeFieldEditor } from "./field-editor";
 
-export interface PreparationRecipient {
+interface PreparationRecipient {
 	id: string;
 	name: string;
 	email: string;

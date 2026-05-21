@@ -8,9 +8,9 @@
 		"drizzle-*.config.ts"
 	],
 	"ignoreDependencies": [
+		"@radix-ui/react-dropdown-menu",
+		"@radix-ui/react-dialog",
 		"@tanstack/react-form",
-		"@testing-library/dom",
-		"@testing-library/react",
 		"web-vitals"
 	],
 	"ignore": ["src/components/ui/**", "src/core/errors.ts", "src/db/**"]

@@ -8,22 +8,27 @@ The legal posture is basic e-signature intent. Signmos records signer intent, ti
 
 ## Current Capabilities
 
+- Start a no-account envelope from `/` with sender email verification fallback links in dev/test.
 - Create draft envelopes through the lifecycle API.
-- Upload one source PDF per draft envelope to R2.
+- Upload one source PDF per draft envelope to R2 from `/source-pdf-upload`.
 - Add up to 10 recipients.
-- Add signature and date fields by page coordinates.
-- Use `/envelope-fields` to visually review/place fields for a real envelope via query params.
-- Send envelopes in parallel and receive generated signing links in the API response.
-- Open `/signing/{token}` without an account to complete or decline signing.
-- Generate and store a completed final PDF after all recipients complete.
-- Download the final PDF from the lifecycle API.
+- Create drawn or typed signature profiles.
+- Add signature and date fields by page coordinates, or use default placement.
+- Use `/envelope-fields` to visually prepare/review fields.
+- Send envelopes, persist notification records, and receive verification/signing fallback links in API responses.
+- Open `/signing/{token}` without an account after partner email verification.
+- Complete signing, decline, or request changes with a comment.
+- Revise a PDF after a change request, clear old fields, resend, and complete the envelope.
+- Generate and store a completed PDF with flattened field values plus an audit certificate/checksum.
+- Download the final PDF from verified sender or signer process links.
+- Expire/delete envelopes and check 90-day retention eligibility.
 - Use `/manual-signing-smoke` to run the full browser-driven local smoke flow.
 
 Known product gaps:
 
-- No production email delivery UI yet. Send records are persisted, and generated signing links are returned by the API for manual sharing.
 - No full internal dashboard/worklist yet.
-- Final PDF generation is deterministic and testable, but not a polished production PDF overlay engine.
+- No public API keys, standalone agent CLI, webhooks, billing, templates, or multi-document envelopes yet.
+- Final PDF generation is deterministic and testable, but still pilot-scope rather than a full production PDF layout engine.
 
 ## Quick Start
 
@@ -45,7 +50,7 @@ After applying migrations and starting the dev server:
 
 ```bash
 pnpm db:migrate:dev
-pnpm dev
+TURNSTILE_TEST_BYPASS=true pnpm dev
 ```
 
 Open:
@@ -129,37 +134,39 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 
 | Endpoint | Purpose |
 |---|---|
+| `POST /api/envelopes/sender-start` | Start a no-account envelope with sender name/email and Turnstile; accepts `Idempotency-Key`. |
+| `GET /api/envelopes/sender-verifications/{token}` | Verify the sender magic link and return a sender session token. |
 | `POST /api/envelopes` | Create a draft envelope. Requires `x-internal-user-id`; accepts `Idempotency-Key`. |
 | `POST /api/envelopes/{id}/source-pdf` | Upload a PDF under 10 MB. Requires `x-internal-user-id`; accepts `Idempotency-Key`. |
 | `POST /api/envelopes/{id}/recipients` | Add 1-10 recipients. Requires `x-internal-user-id`. |
+| `POST /api/envelopes/{id}/signature-profiles` | Create a drawn or typed signature profile. |
 | `POST /api/envelopes/{id}/fields` | Add signature/date coordinate fields. Requires `x-internal-user-id`. |
+| `POST /api/envelopes/{id}/fields/defaults` | Add default bottom-right signature/date fields for recipients. |
 | `POST /api/envelopes/{id}/actions` | Send, cancel, expire, or delete an envelope with `{ "action": ... }`. |
 | `POST /api/envelopes/{id}/recipients/{recipientId}/resend` | Create a new invitation send record and signing token. |
 | `GET /api/envelopes/{id}/status` | Poll lifecycle state and final PDF availability. |
 | `GET /api/envelopes/{id}/retention` | Check 90-day retention eligibility for completed or expired envelopes. |
 | `GET /api/envelopes/{id}/final-pdf` | Download the completed PDF artifact with a verified sender session token. |
+| `GET /api/signing/verifications/{token}` | Verify a partner magic link and return a signing link. |
 | `GET /api/signing/{token}` | Resolve a magic-link signer session. |
+| `GET /api/signing/{token}/source-pdf` | Download the source PDF for a verified signer session. |
 | `GET /api/signing/{token}/final-pdf` | Download the completed PDF artifact through a verified signer token. |
 | `POST /api/signing/{token}/complete` | Complete typed signature/date values. |
+| `POST /api/signing/{token}/change-request` | Request changes with a comment and pause completion until revision/resend. |
 | `POST /api/signing/{token}/decline` | Decline with reason and optional comment. |
 
-See [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) for the full contract, validation checklist, assumptions, and out-of-scope items.
+See [plans/pilot-readiness-contract.md](./plans/pilot-readiness-contract.md) for the current agent-ready endpoint contract, smoke checklist, UI-state evidence, and PRD validation map. See [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) for the original PRD.
 
 ## Routes
 
 | Route | Purpose |
 |---|---|
-| `/` | Landing/demo page from the original starter. |
+| `/` | No-account sender start form. |
 | `/clients` | Starter client CRUD demo. |
-| `/envelope-fields` | Field placement UI. Supports `envelopeId`, `recipientId`, `name`, and `email` query params. |
+| `/source-pdf-upload` | Sender PDF upload/revision screen. Supports `envelopeId` and `senderSessionToken` query params. |
+| `/envelope-fields` | Field preparation UI for review envelopes and explicit field placement. |
 | `/signing/{token}` | No-account signer page for a magic link. |
 | `/manual-signing-smoke` | Browser-driven local smoke test for the complete workflow. |
-
-Example real field editor URL:
-
-```text
-/envelope-fields?envelopeId=<uuid>&recipientId=<uuid>&name=Ada%20Lovelace&email=ada@example.com
-```
 
 ## Project Structure
 
@@ -168,10 +175,17 @@ src/
 ├── server.ts                         # CF Workers entry; routes /api/* to Hono
 ├── routes/                           # TanStack file routes
 │   ├── envelope-fields.tsx
+│   ├── source-pdf-upload.tsx
 │   ├── manual-signing-smoke.tsx
 │   └── signing.$token.tsx
 ├── components/
-│   ├── envelopes/field-editor.tsx
+│   ├── sender/
+│   │   ├── start-envelope-page.tsx
+│   │   ├── source-pdf-upload-panel.tsx
+│   │   └── signature-profile-panel.tsx
+│   ├── envelopes/
+│   │   ├── envelope-preparation-page.tsx
+│   │   └── field-editor.tsx
 │   └── signing/
 │       ├── manual-smoke-page.tsx
 │       └── signer-page.tsx
@@ -233,7 +247,7 @@ Generate staging/production migrations with the corresponding `db:generate:*` sc
 | `pnpm db:migrate:{dev,staging,production}` | Apply migrations. |
 | `pnpm db:pull:{dev,staging,production}` | Pull schema from DB. |
 | `pnpm db:studio` | Open Drizzle Studio against dev. |
-| `pnpm db:seed:{dev,staging,production}` | Seed starter client data. |
+| `pnpm db:seed:{dev,staging,production}` | Seed demo client data. |
 
 All `db:*` scripts load per-environment vars with `@dotenvx/dotenvx`.
 

@@ -10,17 +10,22 @@
 - [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md): Detailed agent operating rules distilled from `.claude/rules`.
 - [plans/simple-esignature-prd.md](plans/simple-esignature-prd.md): Product requirements, lifecycle API contract, validation checklist, manual human UI smoke checklist.
 - [plans/simple-esignature.md](plans/simple-esignature.md): Original phase plan for the e-signature workflow.
+- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Current agent-ready endpoint contract, smoke checklist, UI-state evidence, and PRD validation map.
 
 ## Implemented Workflow
 
 - Draft envelope creation.
+- No-account sender start with email verification fallback links.
 - Source PDF upload to R2 through `DOCUMENTS_BUCKET`.
 - Recipient creation with a 10-recipient limit.
+- Drawn and typed signature profile creation.
 - Signature/date field placement via API and `/envelope-fields`.
-- Parallel send with returned signing links.
-- Magic-link signer access through `/signing/{token}`.
+- Parallel send with returned partner verification/signing links.
+- Magic-link signer access through `/signing/{token}` after partner verification.
 - Typed signature/date completion.
+- Change requests, revised upload, resend, and completion after revision.
 - Decline with reason and optional comment.
+- Manual expire/delete controls and retention eligibility.
 - Audit event persistence.
 - Completed PDF finalization and final PDF download.
 - Browser-driven local full workflow at `/manual-signing-smoke`.
@@ -32,6 +37,7 @@
 - [src/hono/api.ts](src/hono/api.ts): Mounts API endpoints.
 - [src/hono/api/envelopes.ts](src/hono/api/envelopes.ts): Envelope lifecycle HTTP routes.
 - [src/hono/api/signing.ts](src/hono/api/signing.ts): Signer magic-link HTTP routes.
+- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Agent-ready lifecycle contract and smoke evidence map.
 - [src/hono/factory.ts](src/hono/factory.ts): Typed Hono factory.
 - [src/server.ts](src/server.ts): Cloudflare Worker entry; routes `/api/*` to Hono.
 
@@ -46,6 +52,11 @@
 ### UI
 
 - [src/routes/envelope-fields.tsx](src/routes/envelope-fields.tsx): Field editor route with query-param context.
+- [src/routes/source-pdf-upload.tsx](src/routes/source-pdf-upload.tsx): Sender source PDF upload route.
+- [src/components/sender/start-envelope-page.tsx](src/components/sender/start-envelope-page.tsx): No-account sender start UI.
+- [src/components/sender/source-pdf-upload-panel.tsx](src/components/sender/source-pdf-upload-panel.tsx): PDF upload/revision UI.
+- [src/components/sender/signature-profile-panel.tsx](src/components/sender/signature-profile-panel.tsx): Drawn/typed signature profile UI.
+- [src/components/envelopes/envelope-preparation-page.tsx](src/components/envelopes/envelope-preparation-page.tsx): Review envelope setup and preparation shell.
 - [src/components/envelopes/field-editor.tsx](src/components/envelopes/field-editor.tsx): Field placement form.
 - [src/routes/signing.$token.tsx](src/routes/signing.$token.tsx): Magic-link signer route.
 - [src/components/signing/signer-page.tsx](src/components/signing/signer-page.tsx): Signer completion/decline UI.

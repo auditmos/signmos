@@ -32,8 +32,8 @@ All requests enter `src/server.ts`.
 
 - `src/hono/factory.ts` creates typed Hono instances with Cloudflare bindings.
 - `src/hono/api.ts` mounts `/api/health`, `/api/clients`, `/api/envelopes`, and `/api/signing`.
-- `src/hono/api/envelopes.ts` owns envelope lifecycle HTTP routes: create, source PDF upload, recipients, fields, send/resend, status, and final PDF download.
-- `src/hono/api/signing.ts` owns signer-token routes: resolve session, complete signing, and decline.
+- `src/hono/api/envelopes.ts` owns envelope lifecycle HTTP routes: sender start/verification, create, source PDF upload/revision, recipients, signature profiles, fields/default placement, send/resend, controls, status, retention, and final PDF download.
+- `src/hono/api/signing.ts` owns signer-token routes: partner verification, source PDF access, resolve session, complete signing, change request, decline, and final PDF download.
 - `src/hono/api/clients.ts` and `src/hono/api/health.ts` are starter/demo and health surfaces, not core signing workflow.
 
 ### Envelope Domain
@@ -54,19 +54,25 @@ All requests enter `src/server.ts`.
 
 ### Routes And Feature UI
 
-- `src/routes/envelope-fields.tsx` adapts query params into the field editor.
+- `src/routes/index.tsx` renders the no-account sender start form.
+- `src/components/sender/start-envelope-page.tsx` owns sender initiation, Turnstile submission, validation, and verification fallback display.
+- `src/routes/source-pdf-upload.tsx` adapts sender session query params into the upload/revision screen.
+- `src/components/sender/source-pdf-upload-panel.tsx` owns source PDF upload and validation states.
+- `src/components/sender/signature-profile-panel.tsx` owns drawn and typed signature profile creation.
+- `src/routes/envelope-fields.tsx` renders the envelope preparation surface.
+- `src/components/envelopes/envelope-preparation-page.tsx` creates a review envelope and wires signature profiles to field placement.
 - `src/components/envelopes/field-editor.tsx` is the current field placement form.
 - `src/routes/signing.$token.tsx` adapts the magic-link token route to the signer page.
-- `src/components/signing/signer-page.tsx` loads assigned fields and posts completion/decline.
+- `src/components/signing/signer-page.tsx` loads assigned fields and posts completion, change requests, and decline.
 - `src/routes/manual-signing-smoke.tsx` and `src/components/signing/manual-smoke-page.tsx` provide the local browser-driven full workflow smoke path.
-- `src/routes/index.tsx`, `src/components/landing/*`, and `src/components/clients/*` are starter or supporting UI surfaces.
+- `src/routes/clients.tsx` and `src/components/clients/*` remain a demo client CRUD surface outside the signing workflow.
 
 ### Design System And Styling
 
 - `src/components/ui/*` contains generated Shadcn primitives.
 - `src/styles.css` contains Tailwind CSS v4 setup, Shadcn CSS variables, and theme tokens.
 - `src/lib/utils.ts` contains shared class-name utility behavior.
-- `src/components/theme/*` owns theme provider and toggle UI.
+- `src/components/theme/*` owns the app theme provider.
 
 ### Tests
 
