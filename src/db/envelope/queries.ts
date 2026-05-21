@@ -16,8 +16,6 @@ import {
 	EnvelopeSchema,
 	type Recipient,
 	RecipientSchema,
-	type ResendInvitationResult,
-	type SendEnvelopeResult,
 	type SignerSession,
 	type SignerToken,
 	SignerTokenSchema,
@@ -26,7 +24,6 @@ import {
 } from "./schema";
 import {
 	auditEvents,
-	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
@@ -181,140 +178,6 @@ export async function addRecipients(
 	return rows.map((recipient) => RecipientSchema.parse(recipient));
 }
 
-export async function sendEnvelope(
-	envelopeId: string,
-	sentBy: string,
-): Promise<SendEnvelopeResult> {
-	const db = getDb();
-	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
-	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
-	if (!parsedEnvelope) throw new Error("Envelope not found");
-	if (parsedEnvelope.status !== "draft") throw new Error("Envelope must be draft");
-
-	const documents = await db
-		.select()
-		.from(sourceDocuments)
-		.where(eq(sourceDocuments.envelopeId, envelopeId))
-		.limit(1);
-	if (documents.length === 0) throw new Error("Envelope source PDF required");
-
-	const recipients = (
-		await db
-			.select()
-			.from(envelopeRecipients)
-			.where(eq(envelopeRecipients.envelopeId, envelopeId))
-			.limit(10)
-	).map((recipient) => RecipientSchema.parse(recipient));
-	if (recipients.length === 0) throw new Error("Envelope recipients required");
-
-	const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-	const tokens = await db
-		.insert(signerTokens)
-		.values(
-			recipients.map((recipient) => ({
-				envelopeId,
-				recipientId: recipient.id,
-				token: crypto.randomUUID(),
-				status: "active",
-				expiresAt,
-			})),
-		)
-		.returning();
-
-	await db
-		.insert(emailSendRecords)
-		.values(
-			recipients.map((recipient, index) => ({
-				envelopeId,
-				recipientId: recipient.id,
-				tokenId: tokens[index]?.id ?? "",
-				email: recipient.email,
-				kind: "invitation",
-			})),
-		)
-		.returning();
-
-	await db
-		.update(envelopes)
-		.set({ status: "sent", sentBy, sentAt: new Date() })
-		.where(eq(envelopes.id, envelopeId));
-	await db
-		.update(envelopeRecipients)
-		.set({ status: "sent" })
-		.where(eq(envelopeRecipients.envelopeId, envelopeId));
-
-	return {
-		envelopeId,
-		status: "sent",
-		sentBy,
-		tokenCount: tokens.length,
-		emailSendCount: recipients.length,
-		signingLinks: recipients.map((recipient, index) => {
-			const token = tokens[index]?.token ?? "";
-			return {
-				recipientId: recipient.id,
-				email: recipient.email,
-				token,
-				url: `/signing/${token}`,
-			};
-		}),
-	};
-}
-
-export async function resendInvitation(
-	envelopeId: string,
-	recipientId: string,
-): Promise<ResendInvitationResult> {
-	const db = getDb();
-	const recipients = (
-		await db
-			.select()
-			.from(envelopeRecipients)
-			.where(eq(envelopeRecipients.envelopeId, envelopeId))
-			.limit(10)
-	).map((recipient) => RecipientSchema.parse(recipient));
-	const recipient = recipients.find((candidate) => candidate.id === recipientId);
-	if (!recipient) throw new Error("Recipient not found");
-
-	const [token] = await db
-		.insert(signerTokens)
-		.values([
-			{
-				envelopeId,
-				recipientId,
-				token: crypto.randomUUID(),
-				status: "active",
-				expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-			},
-		])
-		.returning();
-	if (!token) throw new Error("Failed to create signer token");
-
-	await db
-		.insert(emailSendRecords)
-		.values([
-			{
-				envelopeId,
-				recipientId,
-				tokenId: token.id,
-				email: recipient.email,
-				kind: "resend",
-			},
-		])
-		.returning();
-
-	const sends = await db
-		.select()
-		.from(emailSendRecords)
-		.where(eq(emailSendRecords.recipientId, recipientId))
-		.limit(100);
-	return {
-		recipientId,
-		email: recipient.email,
-		emailSendCount: sends.length,
-	};
-}
-
 export async function resolveSignerToken(token: string): Promise<SignerToken | null> {
 	const db = getDb();
 	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
@@ -331,6 +194,16 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 			.where(eq(envelopeFields.recipientId, token.recipientId))
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
+
+	await db
+		.insert(auditEvents)
+		.values({
+			envelopeId: token.envelopeId,
+			recipientId: token.recipientId,
+			eventType: "partner.signing.viewed",
+			message: null,
+		})
+		.returning();
 
 	return {
 		envelopeId: token.envelopeId,

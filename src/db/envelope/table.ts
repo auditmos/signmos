@@ -151,6 +151,7 @@ export const signerTokens = pgTable("signer_tokens", {
 	token: text("token").notNull().unique(),
 	status: text("status").notNull().default("active"),
 	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	verifiedAt: timestamp("verified_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -167,6 +168,7 @@ export const emailSendRecords = pgTable("email_send_records", {
 		.references(() => signerTokens.id),
 	email: text("email").notNull(),
 	kind: text("kind").notNull(),
+	fallbackUrl: text("fallback_url"),
 	sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

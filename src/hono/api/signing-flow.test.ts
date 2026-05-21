@@ -77,6 +77,7 @@ const state = vi.hoisted(() => ({
 			token: "valid-token",
 			status: "active",
 			expiresAt: new Date("2026-05-27T07:03:00.000Z"),
+			verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
 			createdAt: new Date("2026-05-20T07:03:00.000Z"),
 		},
 	],

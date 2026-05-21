@@ -126,6 +126,7 @@ function insertEmailSends(rows: unknown[]) {
 			tokenId: string;
 			email: string;
 			kind: "invitation" | "resend";
+			fallbackUrl?: string;
 		};
 		return {
 			id: `40000000-0000-4000-8000-${String(state.emailSends.length + index + 1).padStart(12, "0")}`,
@@ -134,6 +135,7 @@ function insertEmailSends(rows: unknown[]) {
 			tokenId: send.tokenId,
 			email: send.email,
 			kind: send.kind,
+			fallbackUrl: send.fallbackUrl,
 			sentAt: new Date("2026-05-20T07:04:00.000Z"),
 		};
 	});
@@ -332,18 +334,20 @@ describe("envelope recipient API", () => {
 				sentBy: "sender_123",
 				tokenCount: 2,
 				emailSendCount: 2,
-				signingLinks: [
+				verificationLinks: [
 					{
 						recipientId: "20000000-0000-4000-8000-000000000001",
 						email: "ada@example.com",
 						token: expect.any(String),
-						url: expect.stringMatching(/^\/signing\//),
+						url: expect.stringMatching(/^\/api\/signing\/verifications\//),
+						expiresAt: expect.any(String),
 					},
 					{
 						recipientId: "20000000-0000-4000-8000-000000000002",
 						email: "grace@example.com",
 						token: expect.any(String),
-						url: expect.stringMatching(/^\/signing\//),
+						url: expect.stringMatching(/^\/api\/signing\/verifications\//),
+						expiresAt: expect.any(String),
 					},
 				],
 			},
@@ -399,8 +403,14 @@ describe("envelope recipient API", () => {
 			},
 		});
 		expect(state.recipients).toHaveLength(1);
+		expect(state.tokens).toHaveLength(2);
 		expect(state.emailSends).toHaveLength(2);
-		expect(state.emailSends[1]?.kind).toBe("resend");
+		expect(state.emailSends[1]).toEqual(
+			expect.objectContaining({
+				kind: "resend",
+				fallbackUrl: `/api/signing/verifications/${state.tokens[1]?.token}`,
+			}),
+		);
 	});
 
 	it("rejects expired signer tokens with a stable error", async () => {

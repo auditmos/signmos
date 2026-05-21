@@ -1,12 +1,18 @@
-import { Check, FileText, Play, Send } from "lucide-react";
+import { Check, FileText, Play, Send, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-interface SigningLink {
+interface VerificationLink {
 	recipientId: string;
 	email: string;
+	token: string;
+	url: string;
+	expiresAt: string;
+}
+
+interface SigningLink {
 	token: string;
 	url: string;
 }
@@ -14,7 +20,8 @@ interface SigningLink {
 interface SmokeState {
 	envelopeId: string;
 	recipientId: string;
-	signingLink: SigningLink;
+	verificationLink: VerificationLink;
+	signingLink: SigningLink | null;
 	finalPdfAvailable: boolean;
 }
 
@@ -56,28 +63,38 @@ export function ManualSigningSmokePage() {
 			},
 			{ "x-internal-user-id": "manual-ui" },
 		);
-		const sent = await postJson<{ signingLinks: SigningLink[] }>(
+		const sent = await postJson<{ verificationLinks: VerificationLink[] }>(
 			`/api/envelopes/${envelope.id}/actions`,
 			{ action: "send" },
 			{ "x-internal-user-id": "manual-ui" },
 		);
+		const verificationLink = sent.verificationLinks[0] ?? {
+			recipientId,
+			email: "ada@example.com",
+			token: "",
+			url: "",
+			expiresAt: "",
+		};
 		setState({
 			envelopeId: envelope.id,
 			recipientId,
-			signingLink: sent.signingLinks[0] ?? {
-				recipientId,
-				email: "ada@example.com",
-				token: "",
-				url: "",
-			},
+			verificationLink,
+			signingLink: null,
 			finalPdfAvailable: false,
 		});
 		setMessage("Envelope sent");
 	}
 
+	async function verifyPartner() {
+		if (!state) return;
+		const verified = await getJson<{ signingLink: SigningLink }>(state.verificationLink.url);
+		setState({ ...state, signingLink: verified.signingLink });
+		setMessage("Partner verified");
+	}
+
 	async function completeInPage(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (!state) return;
+		if (!state?.signingLink) return;
 		await postJson(`/api/signing/${state.signingLink.token}/complete`, { signatureName, date });
 		const status = await getJson<{ finalPdfAvailable: boolean }>(
 			`/api/envelopes/${state.envelopeId}/status`,
@@ -107,10 +124,19 @@ export function ManualSigningSmokePage() {
 							<p>
 								Envelope: <span className="font-mono">{state.envelopeId}</span>
 							</p>
-							<a className="text-primary underline" href={state.signingLink.url}>
-								{state.signingLink.url}
+							<a className="text-primary underline" href={state.verificationLink.url}>
+								{state.verificationLink.url}
 							</a>
+							{state.signingLink && (
+								<a className="text-primary underline" href={state.signingLink.url}>
+									{state.signingLink.url}
+								</a>
+							)}
 						</div>
+						<Button type="button" variant="outline" onClick={verifyPartner}>
+							<ShieldCheck className="h-4 w-4" />
+							Verify partner
+						</Button>
 						<form onSubmit={completeInPage} className="grid gap-4 md:grid-cols-3">
 							<div className="space-y-2">
 								<Label htmlFor="manual-signature-name">Typed signature</Label>
@@ -130,7 +156,7 @@ export function ManualSigningSmokePage() {
 								/>
 							</div>
 							<div className="flex items-end">
-								<Button type="submit" className="w-full">
+								<Button type="submit" className="w-full" disabled={!state.signingLink}>
 									<Send className="h-4 w-4" />
 									Complete in page
 								</Button>

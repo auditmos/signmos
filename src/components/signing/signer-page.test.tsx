@@ -54,4 +54,27 @@ describe("SignerPage", () => {
 			}),
 		);
 	});
+
+	it("shows the partner verification link when signing access is blocked", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					error: {
+						code: "PARTNER_VERIFICATION_REQUIRED",
+						message: "Partner email verification is required before signing",
+						verificationUrl: "/api/signing/verifications/valid-token",
+					},
+				}),
+				{ status: 403 },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("Partner email verification is required before signing");
+		expect(screen.getByRole("link", { name: "Verify email" }).getAttribute("href")).toBe(
+			"/api/signing/verifications/valid-token",
+		);
+	});
 });

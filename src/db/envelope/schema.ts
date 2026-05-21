@@ -239,12 +239,13 @@ export const SendEnvelopeResultSchema = z.object({
 	sentBy: z.string().min(1),
 	tokenCount: z.number().int().nonnegative(),
 	emailSendCount: z.number().int().nonnegative(),
-	signingLinks: z.array(
+	verificationLinks: z.array(
 		z.object({
 			recipientId: z.string().uuid(),
 			email: z.string().email(),
 			token: z.string().min(1),
 			url: z.string().min(1),
+			expiresAt: z.string().min(1),
 		}),
 	),
 });
@@ -264,6 +265,7 @@ export const SignerTokenSchema = z.object({
 	token: z.string().min(1),
 	status: z.literal("active"),
 	expiresAt: z.date(),
+	verifiedAt: z.date().nullable().optional(),
 	createdAt: z.date(),
 });
 export type SignerToken = z.infer<typeof SignerTokenSchema>;

@@ -4,11 +4,30 @@ import {
 	DeclineSigningRequestSchema,
 	declineSigning,
 	getSignerSession,
+	recordPartnerLinkExpired,
 	resolveSignerToken,
+	verifyPartnerToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
 
 const signingEndpoint = createHono();
+
+signingEndpoint.get("/verifications/:token", async (c) => {
+	const result = await verifyPartnerToken(c.req.param("token"), parseNow(c.req.header("x-now")));
+	if (!result.ok) {
+		return c.json(
+			{
+				error: {
+					code: result.error.code,
+					message: result.error.message,
+				},
+			},
+			result.error.status,
+		);
+	}
+
+	return c.json({ data: result.data });
+});
 
 signingEndpoint.get("/:token", async (c) => {
 	const token = await getUsableToken(c.req.param("token"), c.req.header("x-now"));
@@ -74,6 +93,7 @@ async function getUsableToken(tokenValue: string, nowHeader: string | undefined)
 
 	const now = new Date(nowHeader ?? Date.now());
 	if (token.expiresAt <= now) {
+		await recordPartnerLinkExpired(token);
 		return Response.json(
 			{
 				error: {
@@ -84,8 +104,24 @@ async function getUsableToken(tokenValue: string, nowHeader: string | undefined)
 			{ status: 410 },
 		);
 	}
+	if (!token.verifiedAt) {
+		return Response.json(
+			{
+				error: {
+					code: "PARTNER_VERIFICATION_REQUIRED",
+					message: "Partner email verification is required before signing",
+					verificationUrl: `/api/signing/verifications/${token.token}`,
+				},
+			},
+			{ status: 403 },
+		);
+	}
 
 	return token;
+}
+
+function parseNow(nowHeader: string | undefined): Date {
+	return new Date(nowHeader ?? Date.now());
 }
 
 export default signingEndpoint;

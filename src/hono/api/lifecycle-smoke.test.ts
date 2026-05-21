@@ -155,6 +155,9 @@ vi.mock("@/db/setup", () => ({
 					if (table === state.recipientsTable) {
 						state.recipients = state.recipients.map((recipient) => ({ ...recipient, ...value }));
 					}
+					if (table === state.tokensTable) {
+						state.tokens = state.tokens.map((token) => ({ ...token, ...value }));
+					}
 					return [];
 				},
 			}),
@@ -258,16 +261,34 @@ describe("agent lifecycle smoke path", () => {
 		expect(sent.status).toBe(200);
 		const sentBody = (await sent.json()) as {
 			data: {
-				signingLinks: Array<{ recipientId: string; email: string; token: string; url: string }>;
+				verificationLinks: Array<{
+					recipientId: string;
+					email: string;
+					token: string;
+					url: string;
+					expiresAt: string;
+				}>;
 			};
 		};
-		const token = sentBody.data.signingLinks[0]?.token;
-		expect(sentBody.data.signingLinks[0]).toEqual({
+		const verificationToken = sentBody.data.verificationLinks[0]?.token;
+		expect(sentBody.data.verificationLinks[0]).toEqual({
 			recipientId,
 			email: "ada@example.com",
-			token,
-			url: `/signing/${token}`,
+			token: verificationToken,
+			url: `/api/signing/verifications/${verificationToken}`,
+			expiresAt: expect.any(String),
 		});
+		expect(verificationToken).toBeTruthy();
+
+		const verified = await apiHono.request(`/api/signing/verifications/${verificationToken}`, {
+			headers: { "x-now": "2026-05-20T08:30:00.000Z" },
+		});
+		expect(verified.status).toBe(200);
+		const verifiedBody = (await verified.json()) as {
+			data: { signingLink: { token: string; url: string } };
+		};
+		const token = verifiedBody.data.signingLink.token;
+		expect(verifiedBody.data.signingLink.url).toBe(`/signing/${token}`);
 		expect(token).toBeTruthy();
 
 		const sentStatus = await apiHono.request(`/api/envelopes/${envelopeId}/status`);

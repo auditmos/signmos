@@ -47,14 +47,29 @@ describe("ManualSigningSmokePage", () => {
 							sentBy: "manual-ui",
 							tokenCount: 1,
 							emailSendCount: 1,
-							signingLinks: [
+							verificationLinks: [
 								{
 									recipientId: "20000000-0000-4000-8000-000000000001",
 									email: "ada@example.com",
 									token: "valid-token",
-									url: "/signing/valid-token",
+									url: "/api/signing/verifications/valid-token",
+									expiresAt: "2026-05-27T10:00:00.000Z",
 								},
 							],
+						},
+					}),
+					{ status: 200 },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							status: "verified",
+							signingLink: { token: "valid-token", url: "/signing/valid-token" },
+							verifiedAt: "2026-05-20T10:05:00.000Z",
 						},
 					}),
 					{ status: 200 },
@@ -79,6 +94,8 @@ describe("ManualSigningSmokePage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Run setup" }));
 
+		await screen.findByRole("link", { name: "/api/signing/verifications/valid-token" });
+		fireEvent.click(screen.getByRole("button", { name: "Verify partner" }));
 		await screen.findByRole("link", { name: "/signing/valid-token" });
 		fireEvent.change(screen.getByLabelText("Typed signature"), {
 			target: { value: "Ada Lovelace" },
@@ -103,6 +120,7 @@ describe("ManualSigningSmokePage", () => {
 				headers: expect.objectContaining({ "x-internal-user-id": "manual-ui" }),
 			}),
 		);
+		expect(fetchMock).toHaveBeenCalledWith("/api/signing/verifications/valid-token");
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/signing/valid-token/complete",
 			expect.objectContaining({
