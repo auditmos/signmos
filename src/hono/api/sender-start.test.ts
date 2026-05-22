@@ -162,12 +162,15 @@ vi.mock("@/db/setup", () => ({
 describe("sender start API", () => {
 	beforeEach(resetState);
 
-	it("starts a no-account sender envelope and returns a verification fallback link", async () => {
-		// Assumptions for issue #14 RED:
+	it("starts a no-account sender envelope without returning a normal verification fallback link", async () => {
+		// Assumptions for issue #23:
 		// - POST /api/envelopes/sender-start is the public no-account start boundary.
 		// - A test Turnstile bypass is explicit and only active through the route environment.
 		// - Start creates awaiting_verification state; the magic link later moves it to draft.
-		// - PDF upload, recipients, signing, final PDFs, and password accounts stay out of scope.
+		// - Verification fallback links stay out of the normal response body.
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockRejectedValue(new Error("Turnstile network should not be called"));
 		const response = await apiHono.request(
 			"/api/envelopes/sender-start",
 			{
@@ -187,7 +190,8 @@ describe("sender start API", () => {
 		);
 
 		expect(response.status).toBe(201);
-		await expect(response.json()).resolves.toEqual({
+		const responseJson = await response.json();
+		expect(responseJson).toEqual({
 			data: {
 				envelopeId: expect.any(String),
 				status: "awaiting_verification",
@@ -199,10 +203,10 @@ describe("sender start API", () => {
 				verification: {
 					email: "ada@example.com",
 					expiresAt: expect.any(String),
-					fallbackUrl: expect.stringContaining("/sender-verifications/"),
 				},
 			},
 		});
+		expect(JSON.stringify(responseJson)).not.toContain("/sender-verifications/");
 		expect(state.envelopes).toEqual([
 			expect.objectContaining({
 				status: "awaiting_verification",
@@ -222,13 +226,103 @@ describe("sender start API", () => {
 				expect.objectContaining({ eventType: "sender.verification.sent" }),
 			]),
 		);
+		expect(fetchMock).not.toHaveBeenCalled();
+		fetchMock.mockRestore();
+	});
+
+	it("exposes the sender verification fallback URL only on an explicit developer debug request", async () => {
+		// Assumptions for issue #23:
+		// - The ordinary JSON response is the normal UI surface and must not expose raw links.
+		// - A developer/test debug surface requires both a request header and non-production env.
+		// - The persisted email/send record remains the source for fallback recovery outside UI.
+		const normal = await apiHono.request(
+			"/api/envelopes/sender-start",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"idempotency-key": "sender-start-normal-no-debug",
+					"cf-connecting-ip": "203.0.113.10",
+				},
+				body: JSON.stringify({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+					turnstileToken: "test-pass",
+				}),
+			},
+			{ TURNSTILE_TEST_BYPASS: "true" },
+		);
+
+		expect(normal.status).toBe(201);
+		expect(JSON.stringify(await normal.json())).not.toContain("/sender-verifications/");
+
+		const debug = await apiHono.request(
+			"/api/envelopes/sender-start",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"idempotency-key": "sender-start-debug-link",
+					"cf-connecting-ip": "203.0.113.11",
+					"x-signmos-debug": "sender-verification-link",
+				},
+				body: JSON.stringify({
+					name: "Grace Hopper",
+					email: "grace@example.com",
+					turnstileToken: "test-pass",
+				}),
+			},
+			{ CLOUDFLARE_ENV: "dev", TURNSTILE_TEST_BYPASS: "true" },
+		);
+
+		expect(debug.status).toBe(201);
+		const debugBody = (await debug.json()) as {
+			data: {
+				verification: Record<string, unknown>;
+			};
+			debug: {
+				senderVerificationUrl: string;
+			};
+		};
+		expect(debugBody).toEqual({
+			data: expect.any(Object),
+			debug: {
+				senderVerificationUrl: expect.stringContaining("/sender-verifications/"),
+			},
+		});
+		expect(debugBody.data.verification).toEqual({
+			email: "grace@example.com",
+			expiresAt: expect.any(String),
+		});
+
+		const productionDebug = await apiHono.request(
+			"/api/envelopes/sender-start",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"idempotency-key": "sender-start-prod-debug-link",
+					"cf-connecting-ip": "203.0.113.12",
+					"x-signmos-debug": "sender-verification-link",
+				},
+				body: JSON.stringify({
+					name: "Katherine Johnson",
+					email: "katherine@example.com",
+					turnstileToken: "test-pass",
+				}),
+			},
+			{ CLOUDFLARE_ENV: "production", TURNSTILE_TEST_BYPASS: "true" },
+		);
+
+		expect(productionDebug.status).toBe(201);
+		expect(JSON.stringify(await productionDebug.json())).not.toContain("/sender-verifications/");
 	});
 
 	it("delivers sender verification emails through Resend when configured", async () => {
 		// Assumptions for sender verification delivery RED:
 		// - POST /api/envelopes/sender-start remains the public sender start boundary.
 		// - The sender receives a magic verification URL through Resend when config is complete.
-		// - The response still exposes a fallback URL for local recovery and tests.
+		// - The normal response hides fallback URLs while email delivery still receives one.
 		// - Failed provider delivery must not silently look successful to the caller.
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(JSON.stringify({ id: "resend-sender-email-1" }), {
@@ -348,6 +442,9 @@ describe("sender start API", () => {
 				fields: ["name", "email", "turnstileToken"],
 			},
 		});
+		expect(state.envelopes).toHaveLength(0);
+		expect(state.senderVerificationTokens).toHaveLength(0);
+		expect(state.senderVerificationEmailRecords).toHaveLength(0);
 
 		const failedTurnstile = await apiHono.request("/api/envelopes/sender-start", {
 			method: "POST",
@@ -366,6 +463,9 @@ describe("sender start API", () => {
 				message: "Turnstile verification failed",
 			},
 		});
+		expect(state.envelopes).toHaveLength(0);
+		expect(state.senderVerificationTokens).toHaveLength(0);
+		expect(state.senderVerificationEmailRecords).toHaveLength(0);
 
 		state.rateLimitRecords.push({
 			id: "40000000-0000-4000-8000-000000000001",

@@ -7,9 +7,6 @@ export const Route = createFileRoute("/")({
 
 function IndexPage() {
 	return (
-		<StartEnvelopePage
-			turnstileSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || undefined}
-			testTurnstileToken={import.meta.env.DEV ? "test-pass" : undefined}
-		/>
+		<StartEnvelopePage turnstileSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY || undefined} />
 	);
 }

@@ -7,7 +7,11 @@ describe("StartEnvelopePage", () => {
 		vi.stubGlobal("crypto", { randomUUID: () => "form-idempotency-key" });
 	});
 
-	it("submits sender details and shows the verification fallback link", async () => {
+	it("submits sender details and shows sent-email confirmation without a verification link", async () => {
+		// Assumptions for issue #23:
+		// - The normal sender-start UI is not a developer/debug surface.
+		// - The API may create a fallback URL for email records, but normal UI must not render it.
+		// - Turnstile test bypass remains explicit through this component prop and route env.
 		const fetchMock = vi.fn(
 			async () =>
 				new Response(
@@ -39,9 +43,9 @@ describe("StartEnvelopePage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Start envelope" }));
 
 		await screen.findByText("Check your email");
-		expect(screen.getByRole("link", { name: "Open verification link" }).getAttribute("href")).toBe(
-			"http://localhost/sender-verifications/sender-token",
-		);
+		expect(screen.getByText("Verification was sent to ada@example.com.")).toBeTruthy();
+		expect(screen.queryByRole("link", { name: /verification/i })).toBeNull();
+		expect(document.body.textContent).not.toContain("http://localhost/sender-verifications");
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 		expect(fetchMock).toHaveBeenCalledWith(
 			"/api/envelopes/sender-start",

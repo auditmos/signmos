@@ -22,6 +22,7 @@ import {
 	resolveVerifiedSenderSession,
 	SenderStartRateLimitError,
 	SenderStartRequestSchema,
+	type SenderStartResponse,
 	SignaturePlaceholderLimitError,
 	SourcePdfUploadError,
 	sendEnvelope,
@@ -90,7 +91,7 @@ envelopesEndpoint.post("/sender-start", async (c) => {
 			now: parseNow(c.req.header("x-now")),
 			emailDelivery: getEmailDeliveryOptions(c),
 		});
-		return c.json({ data: result.response }, result.reused ? 200 : 201);
+		return c.json(senderStartResponseBody(result.response, c), result.reused ? 200 : 201);
 	} catch (error) {
 		if (error instanceof EmailDeliveryError) {
 			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
@@ -111,6 +112,51 @@ envelopesEndpoint.post("/sender-start", async (c) => {
 		throw error;
 	}
 });
+
+type PublicSenderStartResponse = Omit<SenderStartResponse, "verification"> & {
+	verification: Omit<SenderStartResponse["verification"], "fallbackUrl">;
+};
+
+type SenderStartResponseBody = {
+	data: PublicSenderStartResponse;
+	debug?: {
+		senderVerificationUrl: string;
+	};
+};
+
+type SenderStartDebugEnv = SenderStartEnv & {
+	CLOUDFLARE_ENV?: string;
+	SENDER_VERIFICATION_DEBUG_LINKS?: string;
+};
+
+function senderStartResponseBody(
+	response: SenderStartResponse,
+	c: Context,
+): SenderStartResponseBody {
+	const body: SenderStartResponseBody = { data: toPublicSenderStartResponse(response) };
+	if (shouldExposeSenderVerificationDebug(c)) {
+		body.debug = { senderVerificationUrl: response.verification.fallbackUrl };
+	}
+	return body;
+}
+
+function toPublicSenderStartResponse(response: SenderStartResponse): PublicSenderStartResponse {
+	const { fallbackUrl: _fallbackUrl, ...verification } = response.verification;
+	return { ...response, verification };
+}
+
+function shouldExposeSenderVerificationDebug(c: Context): boolean {
+	if (c.req.header("x-signmos-debug") !== "sender-verification-link") return false;
+	const env = (c.env ?? {}) as SenderStartDebugEnv;
+	if (env.CLOUDFLARE_ENV === "production") return false;
+	return (
+		env.CLOUDFLARE_ENV === "dev" ||
+		env.CLOUDFLARE_ENV === "development" ||
+		env.CLOUDFLARE_ENV === "test" ||
+		env.TURNSTILE_TEST_BYPASS === "true" ||
+		env.SENDER_VERIFICATION_DEBUG_LINKS === "true"
+	);
+}
 
 envelopesEndpoint.get("/sender-verifications/:token", async (c) => {
 	const accept = c.req.header("accept") ?? "";

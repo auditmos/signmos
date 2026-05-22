@@ -25,7 +25,6 @@ type SenderStartSuccess = {
 			email: string;
 		};
 		verification: {
-			fallbackUrl: string;
 			email: string;
 			expiresAt: string;
 		};
@@ -141,13 +140,7 @@ export function StartEnvelopePage({
 							<Alert>
 								<AlertTitle>Check your email</AlertTitle>
 								<AlertDescription>
-									Verification was created for {state.response.sender.email}.{" "}
-									<a
-										className="font-medium underline"
-										href={state.response.verification.fallbackUrl}
-									>
-										Open verification link
-									</a>
+									Verification was sent to {state.response.sender.email}.
 								</AlertDescription>
 							</Alert>
 						) : null}
