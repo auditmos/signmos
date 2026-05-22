@@ -141,7 +141,12 @@ signingEndpoint.post("/:token/complete", async (c) => {
 
 	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
 	try {
-		return c.json({ data: await completeSigning(token, parsed.data, { documentsBucket: bucket }) });
+		return c.json({
+			data: await completeSigning(token, parsed.data, {
+				documentsBucket: bucket,
+				now: parseNow(c.req.header("x-now")),
+			}),
+		});
 	} catch (error) {
 		if (error instanceof SigningCompletionBlockedError) {
 			return c.json(

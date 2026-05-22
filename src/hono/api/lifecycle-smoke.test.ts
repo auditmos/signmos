@@ -332,6 +332,9 @@ describe("agent lifecycle smoke path", () => {
 				finalPdfAvailable: false,
 				allowedActions: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
 				pendingRecipients: [],
+				changeRequest: {
+					comment: "Please update the billing address.",
+				},
 			},
 		});
 

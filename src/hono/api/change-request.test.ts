@@ -154,7 +154,8 @@ describe("partner change requests", () => {
 				tokenId: "30000000-0000-4000-8000-000000000001",
 				email: "sender@example.com",
 				kind: "change_request",
-				fallbackUrl: "/source-pdf-upload?envelopeId=00000000-0000-4000-8000-000000000001",
+				fallbackUrl:
+					"/source-pdf-upload?envelopeId=00000000-0000-4000-8000-000000000001&changeRequestComment=Please+update+the+billing+address.",
 			}),
 		]);
 		expect(state.auditEvents).toEqual(
@@ -170,6 +171,28 @@ describe("partner change requests", () => {
 				}),
 			]),
 		);
+	});
+
+	it("requires a change request comment", async () => {
+		const response = await apiHono.request("/api/signing/verified-token/change-request", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({ comment: "" }),
+		});
+
+		expect(response.status).toBe(400);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "INVALID_CHANGE_REQUEST",
+				message: "Change request comment is required",
+			},
+		});
+		expect(state.envelopes[0]?.status).toBe("sent");
+		expect(state.emailSends).toHaveLength(0);
+		expect(state.auditEvents).toHaveLength(0);
 	});
 
 	it("blocks completion while the sender revision is pending", async () => {

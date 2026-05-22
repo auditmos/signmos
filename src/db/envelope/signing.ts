@@ -125,10 +125,11 @@ export async function getSignerSourceDocument(token: SignerToken): Promise<Sourc
 export async function completeSigning(
 	token: SignerToken,
 	input: CompleteSigningRequest,
-	options: { documentsBucket?: R2Bucket } = {},
+	options: { documentsBucket?: R2Bucket; now?: Date } = {},
 ): Promise<CompleteSigningResult> {
 	const db = getDb();
 	const signature = normalizeSigningSignature(input);
+	const signingDate = formatSigningDate(options.now ?? new Date());
 	const [envelope] = await db
 		.select()
 		.from(envelopes)
@@ -156,7 +157,7 @@ export async function completeSigning(
 				envelopeId: token.envelopeId,
 				recipientId: token.recipientId,
 				fieldId: field.id,
-				value: field.type === "signature" ? signature.fieldValue : input.date,
+				value: field.type === "signature" ? signature.fieldValue : signingDate,
 			})),
 		)
 		.returning();
@@ -390,4 +391,8 @@ function buildSenderSigningNotificationUrl(envelopeId: string): string {
 
 function normalizeSignatureProfileActor(actor: string): string {
 	return actor.trim().toLowerCase();
+}
+
+function formatSigningDate(date: Date): string {
+	return date.toISOString().slice(0, 10);
 }

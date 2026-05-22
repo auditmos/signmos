@@ -358,10 +358,9 @@ describe("signing flow API", () => {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-now": "2026-05-20T08:00:00.000Z",
+				"x-now": "2026-05-21T23:45:00.000Z",
 			},
 			body: JSON.stringify({
-				date: "2026-05-20",
 				signature: {
 					kind: "typed",
 					typedText: "Ada Lovelace",
@@ -388,7 +387,7 @@ describe("signing flow API", () => {
 				}),
 				expect.objectContaining({
 					fieldId: "50000000-0000-4000-8000-000000000002",
-					value: "2026-05-20",
+					value: "2026-05-21",
 				}),
 			]),
 		);
@@ -411,7 +410,6 @@ describe("signing flow API", () => {
 				"x-now": "2026-05-20T08:00:00.000Z",
 			},
 			body: JSON.stringify({
-				date: "2026-05-20",
 				signature: {
 					kind: "drawn",
 					label: "Ada drawn",
@@ -435,6 +433,35 @@ describe("signing flow API", () => {
 			]),
 		);
 		expect(state.signatureProfiles).toHaveLength(0);
+	});
+
+	it("ignores future date payloads and stores the controlled signing date", async () => {
+		const response = await apiHono.request("/api/signing/valid-token/complete", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({
+				date: "2099-12-31",
+				signature: {
+					kind: "typed",
+					typedText: "Ada Lovelace",
+					typedFont: "cursive",
+				},
+				rememberSignature: false,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(state.fieldValues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					fieldId: "50000000-0000-4000-8000-000000000002",
+					value: "2026-05-20",
+				}),
+			]),
+		);
 	});
 
 	it("remembers a typed partner signature only when explicit consent is selected", async () => {

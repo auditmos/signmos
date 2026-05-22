@@ -26,7 +26,6 @@ export type PartnerSignaturePreference = {
 
 export type CompleteSigningPayload =
 	| {
-			date: string;
 			signature: {
 				kind: "typed";
 				typedText: string;
@@ -35,7 +34,6 @@ export type CompleteSigningPayload =
 			rememberSignature: boolean;
 	  }
 	| {
-			date: string;
 			signature: {
 				kind: "drawn";
 				label: string;
@@ -48,7 +46,6 @@ type SignatureFormValues = {
 	mode: SignatureMode;
 	typedText: string;
 	typedFont: TypedSignatureFont;
-	date: string;
 	rememberSignature: boolean;
 };
 
@@ -225,22 +222,7 @@ export function PartnerSignatureForm({
 								</div>
 							)}
 
-							<div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-								<form.Field name="date">
-									{(field) => (
-										<div className="space-y-2">
-											<Label htmlFor="signingDate">Signing date</Label>
-											<Input
-												id="signingDate"
-												type="date"
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(event) => field.handleChange(event.target.value)}
-												required
-											/>
-										</div>
-									)}
-								</form.Field>
+							<div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
 								<form.Field name="rememberSignature">
 									{(field) => (
 										<label className="flex min-h-9 items-center gap-2 text-sm">
@@ -310,7 +292,6 @@ function signatureFormDefaults(preference: PartnerSignaturePreference | null): S
 			mode: "typed",
 			typedText: preference.typedText ?? "",
 			typedFont: parseTypedFont(preference.typedFont),
-			date: "",
 			rememberSignature: false,
 		};
 	}
@@ -319,7 +300,6 @@ function signatureFormDefaults(preference: PartnerSignaturePreference | null): S
 			mode: "drawn",
 			typedText: "",
 			typedFont: "cursive",
-			date: "",
 			rememberSignature: false,
 		};
 	}
@@ -327,7 +307,6 @@ function signatureFormDefaults(preference: PartnerSignaturePreference | null): S
 		mode: "typed",
 		typedText: "",
 		typedFont: "cursive",
-		date: "",
 		rememberSignature: false,
 	};
 }
@@ -336,14 +315,12 @@ function buildCompleteSigningPayload(
 	values: SignatureFormValues,
 	drawnPath: string,
 ): { ok: true; value: CompleteSigningPayload } | { ok: false; message: string } {
-	if (!values.date) return { ok: false, message: "Choose a signing date before completing." };
 	if (values.mode === "typed") {
 		const typedText = values.typedText.trim();
 		if (!typedText) return { ok: false, message: "Type a signature before completing." };
 		return {
 			ok: true,
 			value: {
-				date: values.date,
 				signature: {
 					kind: "typed",
 					typedText,
@@ -357,7 +334,6 @@ function buildCompleteSigningPayload(
 	return {
 		ok: true,
 		value: {
-			date: values.date,
 			signature: {
 				kind: "drawn",
 				label: "Drawn signature",

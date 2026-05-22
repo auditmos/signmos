@@ -36,6 +36,9 @@ export interface EnvelopeFinalizationStatus {
 	status: Envelope["status"];
 	finalPdfAvailable: boolean;
 	allowedActions: string[];
+	changeRequest?: {
+		comment: string;
+	};
 	pendingRecipients: Array<{
 		id: string;
 		name: string;
@@ -122,12 +125,15 @@ export async function getEnvelopeFinalizationStatus(
 			.where(eq(envelopeRecipients.envelopeId, envelopeId))
 			.limit(100)
 	).map((recipient) => RecipientSchema.parse(recipient));
+	const changeRequest =
+		parsedEnvelope.status === "changes_requested" ? await getFirstChangeRequest(envelopeId) : null;
 
 	return {
 		envelopeId,
 		status: parsedEnvelope.status,
 		finalPdfAvailable: parsedEnvelope.status === "completed" && Boolean(finalDocument),
 		allowedActions: getEnvelopeAllowedActions(parsedEnvelope.status),
+		...(changeRequest ? { changeRequest } : {}),
 		pendingRecipients:
 			parsedEnvelope.status === "sent"
 				? recipients
@@ -140,6 +146,19 @@ export async function getEnvelopeFinalizationStatus(
 						}))
 				: [],
 	};
+}
+
+async function getFirstChangeRequest(envelopeId: string): Promise<{ comment: string } | null> {
+	const db = getDb();
+	const events = await db
+		.select()
+		.from(auditEvents)
+		.where(eq(auditEvents.envelopeId, envelopeId))
+		.limit(100);
+	const event = events.find(
+		(row) => row.eventType === "partner.change_requested" && typeof row.message === "string",
+	);
+	return typeof event?.message === "string" ? { comment: event.message } : null;
 }
 
 export async function getFinalDocument(envelopeId: string): Promise<FinalDocument | null> {

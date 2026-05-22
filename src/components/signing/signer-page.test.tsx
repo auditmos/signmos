@@ -58,7 +58,7 @@ describe("SignerPage", () => {
 		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
 		});
-		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
+		expect(screen.queryByLabelText("Signing date")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -68,7 +68,6 @@ describe("SignerPage", () => {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					date: "2026-05-20",
 					signature: {
 						kind: "typed",
 						typedText: "Ada Lovelace",
@@ -138,10 +137,10 @@ describe("SignerPage", () => {
 		expect(screen.queryByLabelText("Typed signature text")).toBeNull();
 
 		fireEvent.click(screen.getByRole("button", { name: "Choose typed signature" }));
+		expect(screen.queryByLabelText("Signing date")).toBeNull();
 		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada New" },
 		});
-		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -151,7 +150,6 @@ describe("SignerPage", () => {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					date: "2026-05-20",
 					signature: {
 						kind: "typed",
 						typedText: "Ada New",
@@ -212,7 +210,6 @@ describe("SignerPage", () => {
 		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
 		});
-		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
 		await screen.findByText("No signing fields are assigned to this recipient");

@@ -42,7 +42,7 @@ export async function requestSigningChanges(
 			tokenId: token.id,
 			email: envelope.createdBy,
 			kind: "change_request",
-			fallbackUrl: buildRevisionUploadUrl(token.envelopeId),
+			fallbackUrl: buildRevisionUploadUrl(token.envelopeId, input.comment),
 		})
 		.returning();
 	await db
@@ -72,6 +72,10 @@ export async function requestSigningChanges(
 	};
 }
 
-function buildRevisionUploadUrl(envelopeId: string): string {
-	return `/source-pdf-upload?envelopeId=${envelopeId}`;
+function buildRevisionUploadUrl(envelopeId: string, comment: string): string {
+	const params = new URLSearchParams({
+		envelopeId,
+		changeRequestComment: comment,
+	});
+	return `/source-pdf-upload?${params.toString()}`;
 }

@@ -313,7 +313,10 @@ export const CompleteSigningRequestSchema = z
 		signatureName: z.string().trim().min(1).optional(),
 		signature: CompleteSigningSignatureSchema.optional(),
 		rememberSignature: z.boolean().default(false),
-		date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+		date: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/)
+			.optional(),
 	})
 	.refine((input) => input.signature || input.signatureName, {
 		message: "Signature is required",
