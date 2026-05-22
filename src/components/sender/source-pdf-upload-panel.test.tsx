@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { SourcePdfUploadPanel } from "./source-pdf-upload-panel";
 
@@ -102,7 +102,16 @@ describe("SourcePdfUploadPanel", () => {
 					{ status: 200 },
 				);
 			}
-			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients") {
+			if (
+				url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients" &&
+				init?.method !== "POST"
+			) {
+				return recipientsResponse([]);
+			}
+			if (
+				url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients" &&
+				init?.method === "POST"
+			) {
 				return new Response(
 					JSON.stringify({
 						data: [
@@ -142,7 +151,9 @@ describe("SourcePdfUploadPanel", () => {
 		fireEvent.change(screen.getByLabelText("Partner email"), {
 			target: { value: "grace@example.com" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Add recipients" }));
+		const addButton = screen.getByRole("button", { name: "Add recipients" });
+		await waitFor(() => expect(addButton.hasAttribute("disabled")).toBe(false));
+		fireEvent.click(addButton);
 
 		await screen.findByText("Recipients added");
 		expect(fetchMock).toHaveBeenCalledWith(
@@ -160,11 +171,20 @@ describe("SourcePdfUploadPanel", () => {
 	});
 
 	it("adds recipients and links to field preparation for the same envelope", async () => {
-		const fetchMock = vi.fn(async (url: string | URL | Request) => {
+		const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf") {
 				return sourcePdfResponse({ status: 200 });
 			}
-			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients") {
+			if (
+				url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients" &&
+				init?.method !== "POST"
+			) {
+				return recipientsResponse([]);
+			}
+			if (
+				url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients" &&
+				init?.method === "POST"
+			) {
 				return new Response(
 					JSON.stringify({
 						data: [
@@ -207,7 +227,9 @@ describe("SourcePdfUploadPanel", () => {
 		fireEvent.change(screen.getByLabelText("Partner email"), {
 			target: { value: "grace@example.com" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: "Add recipients" }));
+		const addButton = screen.getByRole("button", { name: "Add recipients" });
+		await waitFor(() => expect(addButton.hasAttribute("disabled")).toBe(false));
+		fireEvent.click(addButton);
 
 		await screen.findByText("Recipients added");
 		const link = screen.getByRole("link", { name: /Continue to prepare fields/ });
@@ -397,6 +419,10 @@ function sourcePdfMissingResponse() {
 		}),
 		{ status: 404 },
 	);
+}
+
+function recipientsResponse(recipients: unknown[]) {
+	return new Response(JSON.stringify({ data: recipients }), { status: 200 });
 }
 
 function renderWithQueryClient(ui: ReactElement) {

@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
 import {
+	buildSenderChangeRequestEmail,
+	deliverTransactionalEmail,
+	type EmailDeliveryOptions,
+	toAbsoluteDeliveryUrl,
+} from "./email-delivery";
+import {
 	type ChangeRequestSigningRequest,
 	type ChangeRequestSigningResult,
 	EnvelopeSchema,
@@ -19,6 +25,7 @@ export class SigningChangeRequestError extends Error {
 export async function requestSigningChanges(
 	token: SignerToken,
 	input: ChangeRequestSigningRequest,
+	options: { emailDelivery?: EmailDeliveryOptions } = {},
 ): Promise<ChangeRequestSigningResult> {
 	const db = getDb();
 	const [envelopeRow] = await db
@@ -29,6 +36,18 @@ export async function requestSigningChanges(
 	const envelope = envelopeRow ? EnvelopeSchema.parse(envelopeRow) : null;
 	if (!envelope) throw new Error("Envelope not found");
 	if (envelope.status !== "sent") throw new SigningChangeRequestError("ENVELOPE_NOT_SENT");
+	const revisionUploadUrl = buildRevisionUploadUrl(token.envelopeId, input.comment);
+
+	if (options.emailDelivery) {
+		await deliverTransactionalEmail(
+			buildSenderChangeRequestEmail({
+				email: envelope.createdBy,
+				revisionUrl: toAbsoluteDeliveryUrl(revisionUploadUrl, options.emailDelivery),
+				comment: input.comment,
+			}),
+			options.emailDelivery,
+		);
+	}
 
 	await db
 		.update(envelopes)
@@ -42,7 +61,7 @@ export async function requestSigningChanges(
 			tokenId: token.id,
 			email: envelope.createdBy,
 			kind: "change_request",
-			fallbackUrl: buildRevisionUploadUrl(token.envelopeId, input.comment),
+			fallbackUrl: revisionUploadUrl,
 		})
 		.returning();
 	await db

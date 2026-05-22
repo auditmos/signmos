@@ -1,9 +1,22 @@
 import { Send } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+const turnstileScriptUrl = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+
+type TurnstileApi = {
+	render: (container: HTMLElement, options: { sitekey: string }) => string | undefined;
+	remove?: (widgetId: string) => void;
+};
+
+declare global {
+	interface Window {
+		turnstile?: TurnstileApi;
+	}
+}
 
 interface StartEnvelopePageProps {
 	turnstileSiteKey?: string;
@@ -47,13 +60,50 @@ export function StartEnvelopePage({
 	const [email, setEmail] = useState("");
 	const [state, setState] = useState<StartState>({ status: "idle" });
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
+	const turnstileContainerRef = useRef<HTMLDivElement>(null);
+	const activeTurnstileSiteKey = turnstileSiteKey?.trim() ?? "";
+	const activeTestTurnstileToken = testTurnstileToken.trim();
+	const hasTurnstileConfig =
+		activeTurnstileSiteKey.length > 0 || activeTestTurnstileToken.length > 0;
+
+	useEffect(() => {
+		const container = turnstileContainerRef.current;
+		if (!activeTurnstileSiteKey || !container) return;
+
+		let disposed = false;
+		let widgetId: string | undefined;
+
+		const renderTurnstile = () => {
+			if (disposed || widgetId || !window.turnstile) return;
+			widgetId = window.turnstile.render(container, { sitekey: activeTurnstileSiteKey });
+		};
+
+		const script = getOrCreateTurnstileScript();
+		script.addEventListener("load", renderTurnstile);
+		renderTurnstile();
+
+		return () => {
+			disposed = true;
+			script.removeEventListener("load", renderTurnstile);
+			if (widgetId) window.turnstile?.remove?.(widgetId);
+		};
+	}, [activeTurnstileSiteKey]);
 
 	async function submitStart(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		setState({ status: "submitting" });
 		const formData = new FormData(event.currentTarget);
 		const widgetToken = formData.get("cf-turnstile-response");
-		const turnstileToken = typeof widgetToken === "string" ? widgetToken : testTurnstileToken;
+		const turnstileToken = readTurnstileToken(widgetToken, activeTestTurnstileToken);
+		if (!turnstileToken) {
+			setState({
+				status: "error",
+				message: activeTurnstileSiteKey
+					? "Complete the Turnstile challenge before starting."
+					: "Turnstile is not configured for this environment.",
+			});
+			return;
+		}
 
 		try {
 			const response = await fetch("/api/envelopes/sender-start", {
@@ -122,11 +172,19 @@ export function StartEnvelopePage({
 							/>
 						</div>
 
-						{turnstileSiteKey ? (
+						{activeTurnstileSiteKey ? (
 							<div className="min-h-16">
-								<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
-								<div className="cf-turnstile" data-sitekey={turnstileSiteKey} />
+								<div ref={turnstileContainerRef} className="cf-turnstile" />
 							</div>
+						) : null}
+
+						{!hasTurnstileConfig ? (
+							<Alert variant="destructive" role="alert">
+								<AlertTitle>Turnstile is not configured</AlertTitle>
+								<AlertDescription>
+									Set TURNSTILE_SITE_KEY in .dev.vars and restart the dev server.
+								</AlertDescription>
+							</Alert>
 						) : null}
 
 						{state.status === "error" ? (
@@ -145,7 +203,11 @@ export function StartEnvelopePage({
 							</Alert>
 						) : null}
 
-						<Button type="submit" className="w-full" disabled={state.status === "submitting"}>
+						<Button
+							type="submit"
+							className="w-full"
+							disabled={state.status === "submitting" || !hasTurnstileConfig}
+						>
 							<Send className="mr-2 size-4" />
 							{state.status === "submitting" ? "Starting..." : "Start envelope"}
 						</Button>
@@ -154,6 +216,25 @@ export function StartEnvelopePage({
 			</section>
 		</main>
 	);
+}
+
+function getOrCreateTurnstileScript(): HTMLScriptElement {
+	const existingScript = document.querySelector<HTMLScriptElement>(
+		`script[src="${turnstileScriptUrl}"]`,
+	);
+	if (existingScript) return existingScript;
+
+	const script = document.createElement("script");
+	script.src = turnstileScriptUrl;
+	script.async = true;
+	script.defer = true;
+	document.head.appendChild(script);
+	return script;
+}
+
+function readTurnstileToken(widgetToken: FormDataEntryValue | null, fallbackToken: string): string {
+	const completedWidgetToken = typeof widgetToken === "string" ? widgetToken.trim() : "";
+	return completedWidgetToken || fallbackToken;
 }
 
 function isSenderStartSuccess(value: unknown): value is SenderStartSuccess {

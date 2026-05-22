@@ -112,6 +112,7 @@ function selectRows(table: unknown) {
 	if (table === state.recipientsTable) return state.recipients;
 	if (table === state.fieldsTable) return state.fields;
 	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
+	if (table === state.fieldValuesTable) return state.fieldValues;
 	if (table === state.emailSendRecordsTable) return state.emailSends;
 	if (table === state.signatureProfilesTable) return state.signatureProfiles;
 	return [];
@@ -254,6 +255,26 @@ describe("signing flow API", () => {
 	});
 
 	it("opens a valid magic link without internal login and returns only assigned fields", async () => {
+		state.fields.push({
+			id: "50000000-0000-4000-8000-000000000003",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			recipientId: "20000000-0000-4000-8000-000000000002",
+			type: "signature",
+			page: 1,
+			x: 72,
+			y: 224,
+			width: 180,
+			height: 48,
+			createdAt: new Date("2026-05-20T07:06:00.000Z"),
+		});
+		state.fieldValues.push({
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			recipientId: "20000000-0000-4000-8000-000000000002",
+			fieldId: "50000000-0000-4000-8000-000000000003",
+			value: "Grace Hopper",
+			completedAt: new Date("2026-05-20T07:07:00.000Z"),
+		});
+
 		const response = await apiHono.request("/api/signing/valid-token", {
 			headers: { "x-now": "2026-05-20T07:03:00.000Z" },
 		});
@@ -280,6 +301,20 @@ describe("signing flow API", () => {
 						page: 1,
 					}),
 				],
+				previewFields: expect.arrayContaining([
+					expect.objectContaining({
+						id: "50000000-0000-4000-8000-000000000001",
+						recipientName: "Ada Lovelace",
+						value: null,
+						assignedToCurrentSigner: true,
+					}),
+					expect.objectContaining({
+						id: "50000000-0000-4000-8000-000000000003",
+						recipientName: "Grace Hopper",
+						value: "Grace Hopper",
+						assignedToCurrentSigner: false,
+					}),
+				]),
 				signaturePreference: null,
 			},
 		});

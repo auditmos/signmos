@@ -37,6 +37,12 @@ interface SenderSigningEmailInput {
 	signingUrl: string;
 }
 
+interface SenderChangeRequestEmailInput {
+	email: string;
+	revisionUrl: string;
+	comment: string;
+}
+
 interface ResendConfig {
 	apiKey: string;
 	fromEmail: string;
@@ -116,6 +122,17 @@ export function buildSenderSigningEmail(input: SenderSigningEmailInput): Transac
 		subject: "Sign your document",
 		text: `Hi ${name},\n\nYour document is ready for your signature:\n${input.signingUrl}\n\nThis link expires in 7 days.`,
 		html: `<p>Hi ${escapeHtml(name)},</p><p>Your document is ready for your signature.</p><p><a href="${escapeHtml(input.signingUrl)}">Open signing page</a></p><p>This link expires in 7 days.</p>`,
+	};
+}
+
+export function buildSenderChangeRequestEmail(
+	input: SenderChangeRequestEmailInput,
+): TransactionalEmail {
+	return {
+		to: input.email,
+		subject: "Changes requested on your document",
+		text: `A signer requested changes before completing your document.\n\nComment:\n${input.comment}\n\nUpload a revised PDF here:\n${input.revisionUrl}`,
+		html: `<p>A signer requested changes before completing your document.</p><p><strong>Comment:</strong></p><p>${escapeHtml(input.comment)}</p><p><a href="${escapeHtml(input.revisionUrl)}">Upload revised PDF</a></p>`,
 	};
 }
 

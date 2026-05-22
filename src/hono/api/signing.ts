@@ -1,9 +1,12 @@
+import type { Context } from "hono";
 import {
 	ChangeRequestSigningRequestSchema,
 	CompleteSigningRequestSchema,
 	completeSigning,
 	DeclineSigningRequestSchema,
 	declineSigning,
+	type EmailDeliveryEnv,
+	EmailDeliveryError,
 	getCompletedDocumentLinkForSignerToken,
 	getEnvelopeStatus,
 	getSignerFinalDocument,
@@ -198,8 +201,15 @@ signingEndpoint.post("/:token/change-request", async (c) => {
 	}
 
 	try {
-		return c.json({ data: await requestSigningChanges(token, parsed.data) });
+		return c.json({
+			data: await requestSigningChanges(token, parsed.data, {
+				emailDelivery: getEmailDeliveryOptions(c),
+			}),
+		});
 	} catch (error) {
+		if (error instanceof EmailDeliveryError) {
+			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
+		}
 		if (error instanceof SigningChangeRequestError) {
 			return c.json(
 				{
@@ -303,6 +313,52 @@ async function getUsableToken(tokenValue: string, nowHeader: string | undefined)
 
 function parseNow(nowHeader: string | undefined): Date {
 	return new Date(nowHeader ?? Date.now());
+}
+
+function getEmailDeliveryOptions(c: Context<{ Bindings: Env }>) {
+	return {
+		env: c.env as EmailDeliveryEnv | undefined,
+		baseUrl: getDeliveryBaseUrl(c),
+	};
+}
+
+function getDeliveryBaseUrl(c: Context<{ Bindings: Env }>): string {
+	const env = c.env as EmailDeliveryEnv | undefined;
+	return env?.APP_BASE_URL?.trim() || new URL(c.req.url).origin;
+}
+
+function emailDeliveryErrorBody(error: EmailDeliveryError, env: EmailDeliveryEnv | undefined) {
+	const body: {
+		error: {
+			code: "EMAIL_DELIVERY_FAILED";
+			message: string;
+			providerStatus?: number;
+			providerMessage?: string;
+		};
+	} = {
+		error: {
+			code: "EMAIL_DELIVERY_FAILED",
+			message: "Email provider rejected the message",
+		},
+	};
+	if (env?.CLOUDFLARE_ENV !== "production") {
+		body.error.providerStatus = error.status;
+		body.error.providerMessage = parseProviderMessage(error.responseText);
+	}
+	return body;
+}
+
+function parseProviderMessage(responseText: string): string {
+	try {
+		const parsed: unknown = JSON.parse(responseText);
+		if (parsed && typeof parsed === "object" && "message" in parsed) {
+			const message = parsed.message;
+			if (typeof message === "string" && message.trim()) return message;
+		}
+	} catch {
+		// Fall back to the raw provider response below.
+	}
+	return responseText.slice(0, 500);
 }
 
 export default signingEndpoint;

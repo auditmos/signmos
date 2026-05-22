@@ -286,6 +286,14 @@ describe("partner verification delivery", () => {
 						type: "signature",
 					}),
 				],
+				previewFields: [
+					expect.objectContaining({
+						id: "50000000-0000-4000-8000-000000000001",
+						recipientName: "Ada Lovelace",
+						value: null,
+						assignedToCurrentSigner: true,
+					}),
+				],
 				signaturePreference: null,
 			},
 		});

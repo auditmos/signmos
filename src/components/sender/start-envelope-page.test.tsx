@@ -7,6 +7,102 @@ describe("StartEnvelopePage", () => {
 		vi.stubGlobal("crypto", { randomUUID: () => "form-idempotency-key" });
 	});
 
+	it("blocks sender start when Turnstile is not configured", () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<StartEnvelopePage />);
+
+		const alert = screen.getByRole("alert");
+		const startButton = screen.getByRole("button", { name: "Start envelope" });
+
+		expect(alert.textContent).toContain("Turnstile is not configured");
+		expect((startButton as HTMLButtonElement).disabled).toBe(true);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("renders the Turnstile widget when the API is loaded", async () => {
+		const renderTurnstile = vi.fn((container: HTMLElement) => {
+			const iframe = document.createElement("iframe");
+			iframe.title = "Turnstile challenge";
+			container.appendChild(iframe);
+			return "widget-id";
+		});
+		vi.stubGlobal("turnstile", { render: renderTurnstile });
+
+		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+
+		await waitFor(() =>
+			expect(renderTurnstile).toHaveBeenCalledWith(expect.any(HTMLElement), {
+				sitekey: "site-key",
+			}),
+		);
+		expect(screen.getByTitle("Turnstile challenge")).toBeTruthy();
+	});
+
+	it("requires a completed Turnstile challenge when the widget has no response", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+
+		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
+		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
+		fireEvent.click(screen.getByRole("button", { name: "Start envelope" }));
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain("Complete the Turnstile challenge");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("submits the completed Turnstile widget response", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							status: "awaiting_verification",
+							sender: {
+								name: "Ada Lovelace",
+								email: "ada@example.com",
+							},
+							verification: {
+								email: "ada@example.com",
+								expiresAt: "2026-05-21T09:30:00.000Z",
+							},
+						},
+					}),
+					{ status: 201 },
+				),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+
+		const widgetResponse = document.createElement("input");
+		widgetResponse.type = "hidden";
+		widgetResponse.name = "cf-turnstile-response";
+		widgetResponse.value = "widget-pass";
+		screen.getByRole("form", { name: "Start envelope" }).appendChild(widgetResponse);
+
+		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
+		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
+		fireEvent.click(screen.getByRole("button", { name: "Start envelope" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/envelopes/sender-start",
+			expect.objectContaining({
+				body: JSON.stringify({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+					turnstileToken: "widget-pass",
+				}),
+			}),
+		);
+	});
+
 	it("submits sender details and shows sent-email confirmation without a verification link", async () => {
 		// Assumptions for issue #23:
 		// - The normal sender-start UI is not a developer/debug surface.

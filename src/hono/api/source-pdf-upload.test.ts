@@ -241,6 +241,41 @@ describe("source PDF upload API", () => {
 		});
 	});
 
+	it("streams the persisted source PDF content for browser previews", async () => {
+		const pdfBytes = new TextEncoder().encode("%PDF-1.7 preview\n%%EOF");
+		state.sourceDocuments.push({
+			id: "10000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			r2Key: "envelopes/00000000-0000-4000-8000-000000000001/source-v1.pdf",
+			version: 1,
+			sha256: "a".repeat(64),
+			byteSize: pdfBytes.byteLength,
+			contentType: "application/pdf",
+			uploadedBy: "ada@example.com",
+			uploadedAt: new Date("2026-05-21T09:10:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf/content?senderSessionToken=verified-sender-token",
+			{},
+			{
+				DOCUMENTS_BUCKET: {
+					get: async (key: string) => ({
+						arrayBuffer: async () => {
+							expect(key).toBe("envelopes/00000000-0000-4000-8000-000000000001/source-v1.pdf");
+							return pdfBytes.buffer;
+						},
+					}),
+				},
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("application/pdf");
+		expect(response.headers.get("content-disposition")).toBe("inline");
+		expect(new TextDecoder().decode(await response.arrayBuffer())).toBe("%PDF-1.7 preview\n%%EOF");
+	});
+
 	it("returns an actionable source PDF missing response for a verified sender session", async () => {
 		const response = await apiHono.request(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",

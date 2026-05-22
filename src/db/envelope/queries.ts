@@ -10,6 +10,7 @@ import {
 	EnvelopeFieldSchema,
 	EnvelopeSchema,
 	type Recipient,
+	type RecipientCreateInput,
 	RecipientSchema,
 	type SourceDocument,
 	SourceDocumentSchema,
@@ -157,8 +158,7 @@ export async function addRecipients(
 	input: AddRecipientsRequest,
 ): Promise<Recipient[]> {
 	const db = getDb();
-	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
-	if (!envelope) throw new Error("Envelope not found");
+	await assertDraftEnvelope(envelopeId);
 
 	const rows = await db
 		.insert(envelopeRecipients)
@@ -172,6 +172,49 @@ export async function addRecipients(
 		)
 		.returning();
 	return rows.map((recipient) => RecipientSchema.parse(recipient));
+}
+
+export async function listRecipients(envelopeId: string): Promise<Recipient[]> {
+	const db = getDb();
+	return (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, envelopeId))
+			.limit(10)
+	).map((recipient) => RecipientSchema.parse(recipient));
+}
+
+export async function updateRecipient(
+	envelopeId: string,
+	recipientId: string,
+	input: RecipientCreateInput,
+): Promise<Recipient> {
+	const db = getDb();
+	await assertDraftEnvelope(envelopeId);
+	const recipient = await getRecipientInEnvelope(envelopeId, recipientId);
+	if (!recipient) throw new Error("Recipient not found");
+	await db
+		.update(envelopeRecipients)
+		.set({ name: input.name, email: input.email })
+		.where(
+			and(eq(envelopeRecipients.id, recipientId), eq(envelopeRecipients.envelopeId, envelopeId)),
+		);
+	return RecipientSchema.parse({ ...recipient, name: input.name, email: input.email });
+}
+
+export async function deleteRecipient(envelopeId: string, recipientId: string): Promise<Recipient> {
+	const db = getDb();
+	await assertDraftEnvelope(envelopeId);
+	const recipient = await getRecipientInEnvelope(envelopeId, recipientId);
+	if (!recipient) throw new Error("Recipient not found");
+	await db.delete(envelopeFields).where(eq(envelopeFields.recipientId, recipientId));
+	await db
+		.delete(envelopeRecipients)
+		.where(
+			and(eq(envelopeRecipients.id, recipientId), eq(envelopeRecipients.envelopeId, envelopeId)),
+		);
+	return recipient;
 }
 
 export async function addFields(
@@ -224,4 +267,21 @@ export async function listEnvelopeFields(envelopeId: string): Promise<EnvelopeFi
 			.where(eq(envelopeFields.envelopeId, envelopeId))
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
+}
+
+async function assertDraftEnvelope(envelopeId: string): Promise<void> {
+	const db = getDb();
+	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope) throw new Error("Envelope not found");
+	if (parsedEnvelope.status !== "draft") throw new Error("Envelope must be draft");
+}
+
+async function getRecipientInEnvelope(
+	envelopeId: string,
+	recipientId: string,
+): Promise<Recipient | null> {
+	return (
+		(await listRecipients(envelopeId)).find((recipient) => recipient.id === recipientId) ?? null
+	);
 }

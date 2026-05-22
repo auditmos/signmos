@@ -271,6 +271,25 @@ export const SignerTokenSchema = z.object({
 });
 export type SignerToken = z.infer<typeof SignerTokenSchema>;
 
+export const SignerSessionFieldSchema = z.object({
+	id: z.string().uuid(),
+	type: FieldTypeSchema,
+	page: z.number(),
+	x: z.number(),
+	y: z.number(),
+	width: z.number(),
+	height: z.number(),
+});
+export type SignerSessionField = z.infer<typeof SignerSessionFieldSchema>;
+
+export const SignerPreviewFieldSchema = SignerSessionFieldSchema.extend({
+	recipientId: z.string().uuid(),
+	recipientName: z.string().min(1),
+	value: z.string().nullable(),
+	assignedToCurrentSigner: z.boolean(),
+});
+export type SignerPreviewField = z.infer<typeof SignerPreviewFieldSchema>;
+
 export const SignerSessionSchema = z.object({
 	envelopeId: z.string().uuid(),
 	recipientId: z.string().uuid(),
@@ -279,17 +298,8 @@ export const SignerSessionSchema = z.object({
 		contentType: z.literal("application/pdf"),
 		downloadUrl: z.string().min(1),
 	}),
-	fields: z.array(
-		z.object({
-			id: z.string().uuid(),
-			type: FieldTypeSchema,
-			page: z.number(),
-			x: z.number(),
-			y: z.number(),
-			width: z.number(),
-			height: z.number(),
-		}),
-	),
+	fields: z.array(SignerSessionFieldSchema),
+	previewFields: z.array(SignerPreviewFieldSchema),
 	signaturePreference: SignatureProfileResponseSchema.nullable(),
 });
 export type SignerSession = z.infer<typeof SignerSessionSchema>;
@@ -373,6 +383,16 @@ export const EnvelopeFieldSchema = z.object({
 	createdAt: z.date(),
 });
 export type EnvelopeField = z.infer<typeof EnvelopeFieldSchema>;
+
+export const FieldValueSchema = z.object({
+	id: z.string().uuid().optional(),
+	envelopeId: z.string().uuid(),
+	recipientId: z.string().uuid(),
+	fieldId: z.string().uuid(),
+	value: z.string(),
+	completedAt: z.date().optional(),
+});
+export type FieldValue = z.infer<typeof FieldValueSchema>;
 
 export const FieldCreateSchema = z.object({
 	recipientId: z.string().uuid(),

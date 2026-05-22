@@ -173,6 +173,58 @@ describe("partner change requests", () => {
 		);
 	});
 
+	it("delivers a change request email through Resend when configured", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-email-1" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const response = await apiHono.request(
+			"/api/signing/verified-token/change-request",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-now": "2026-05-20T08:00:00.000Z",
+				},
+				body: JSON.stringify({ comment: "Please update the billing address." }),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://api.resend.com/emails",
+			expect.objectContaining({
+				method: "POST",
+				headers: expect.objectContaining({
+					authorization: "Bearer re_test",
+					"content-type": "application/json",
+				}),
+				body: expect.stringContaining("sender@example.com"),
+			}),
+		);
+		const [, init] = fetchMock.mock.calls[0] ?? [];
+		const body = JSON.parse(String(init?.body)) as {
+			to: string[];
+			subject: string;
+			html: string;
+			text: string;
+		};
+		expect(body.to).toEqual(["sender@example.com"]);
+		expect(body.subject).toBe("Changes requested on your document");
+		expect(body.html).toContain("https://signmos.example/source-pdf-upload");
+		expect(body.text).toContain("Please update the billing address.");
+		fetchMock.mockRestore();
+	});
+
 	it("requires a change request comment", async () => {
 		const response = await apiHono.request("/api/signing/verified-token/change-request", {
 			method: "POST",

@@ -39,6 +39,7 @@ type FieldPlacementWorkspaceProps = {
 	recipients: FieldEditorRecipient[];
 	signatureRecipientIds: Set<string>;
 	placedFields: EnvelopeFieldResponse[];
+	sourcePdfPreviewUrl?: string;
 	allSignaturesPlaced: boolean;
 	isSaving: boolean;
 	isSaveError: boolean;
@@ -61,6 +62,7 @@ export function FieldPlacementWorkspace({
 	recipients,
 	signatureRecipientIds,
 	placedFields,
+	sourcePdfPreviewUrl,
 	allSignaturesPlaced,
 	isSaving,
 	isSaveError,
@@ -73,13 +75,7 @@ export function FieldPlacementWorkspace({
 }: FieldPlacementWorkspaceProps) {
 	const activeRecipient = getActiveRecipient(recipients, signatureRecipientIds, values.recipientId);
 	const currentField = activeRecipient
-		? {
-				...values,
-				recipientId: activeRecipient.id,
-				type: "signature" as const,
-				width: signatureDimensions.width,
-				height: signatureDimensions.height,
-			}
+		? buildNextSignatureField(values, recipients, signatureRecipientIds, placedFields)
 		: null;
 
 	return (
@@ -88,6 +84,7 @@ export function FieldPlacementWorkspace({
 				recipients={recipients}
 				placedFields={placedFields}
 				currentField={currentField}
+				sourcePdfPreviewUrl={sourcePdfPreviewUrl}
 				activeRecipientName={activeRecipient?.name ?? "Signer"}
 				allSignaturesPlaced={allSignaturesPlaced}
 				previewRef={previewRef}
@@ -113,6 +110,7 @@ function PdfPlacementPreview({
 	recipients,
 	placedFields,
 	currentField,
+	sourcePdfPreviewUrl,
 	activeRecipientName,
 	allSignaturesPlaced,
 	previewRef,
@@ -123,6 +121,7 @@ function PdfPlacementPreview({
 	recipients: FieldEditorRecipient[];
 	placedFields: EnvelopeFieldResponse[];
 	currentField: PlacedField | null;
+	sourcePdfPreviewUrl?: string;
 	activeRecipientName: string;
 	allSignaturesPlaced: boolean;
 	previewRef: RefObject<HTMLFieldSetElement | null>;
@@ -150,6 +149,13 @@ function PdfPlacementPreview({
 				onMouseLeave={onStopDragging}
 			>
 				<legend className="sr-only">PDF page preview</legend>
+				{sourcePdfPreviewUrl ? (
+					<iframe
+						className="pointer-events-none absolute inset-0 z-0 h-full w-full border-0 bg-white"
+						src={sourcePdfPreviewUrl}
+						title="Uploaded source PDF preview"
+					/>
+				) : null}
 				{placedFields.map((field, index) => (
 					<FieldOverlay
 						key={field.id}
@@ -302,7 +308,7 @@ function FieldOverlay({
 	const isCompact = field.height < 40;
 	const palette = recipientOverlayPalette(colorIndex);
 	const className = cn(
-		"absolute flex justify-center overflow-hidden rounded border-2 px-1 tabular-nums",
+		"absolute z-10 flex justify-center overflow-hidden rounded border-2 px-1 tabular-nums",
 		palette,
 		isCurrent && "cursor-move ring-2 ring-slate-950/20",
 		isCompact ? "items-center text-[9px]" : "flex-col text-[10px] leading-tight",
@@ -353,15 +359,65 @@ export function buildNextSignatureField(
 	values: PlacedField,
 	recipients: FieldEditorRecipient[],
 	signatureRecipientIds: Set<string>,
+	placedFields: EnvelopeFieldResponse[] = [],
 ): PlacedField | null {
 	const activeRecipient = getActiveRecipient(recipients, signatureRecipientIds, values.recipientId);
 	if (!activeRecipient) return null;
+	return moveFromOccupiedCoordinates(
+		{
+			...values,
+			recipientId: activeRecipient.id,
+			type: "signature",
+			width: signatureDimensions.width,
+			height: signatureDimensions.height,
+		},
+		placedFields,
+	);
+}
+
+function moveFromOccupiedCoordinates(
+	field: PlacedField,
+	placedFields: EnvelopeFieldResponse[],
+): PlacedField {
+	const occupiedCoordinates = new Set(
+		placedFields.map((placedField) => `${placedField.x}:${placedField.y}`),
+	);
+	if (!occupiedCoordinates.has(`${field.x}:${field.y}`)) return field;
+
+	const gap = 24;
+	let nextY = field.y + field.height + gap;
+	while (nextY <= pdfPage.height - field.height) {
+		if (!occupiedCoordinates.has(`${field.x}:${nextY}`)) {
+			return {
+				...field,
+				y: nextY,
+			};
+		}
+		nextY += field.height + gap;
+	}
+
+	let nextX = field.x + field.width + gap;
+	while (nextX <= pdfPage.width - field.width) {
+		if (!occupiedCoordinates.has(`${nextX}:${field.y}`)) {
+			return {
+				...field,
+				x: nextX,
+			};
+		}
+		nextX += field.width + gap;
+	}
+
+	const previousY = field.y - field.height - gap;
+	if (previousY >= 0 && !occupiedCoordinates.has(`${field.x}:${previousY}`)) {
+		return {
+			...field,
+			y: previousY,
+		};
+	}
+
 	return {
-		...values,
-		recipientId: activeRecipient.id,
-		type: "signature",
-		width: signatureDimensions.width,
-		height: signatureDimensions.height,
+		...field,
+		y: Math.max(0, field.y - field.height - gap),
 	};
 }
 

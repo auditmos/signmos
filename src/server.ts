@@ -19,7 +19,7 @@ export default {
 		}
 
 		return handler.fetch(request, {
-			context: { fromFetch: true },
+			context: { fromFetch: true, turnstileSiteKey: env.TURNSTILE_SITE_KEY },
 		});
 	},
 };

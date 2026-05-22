@@ -64,7 +64,7 @@ export function EnvelopeFieldEditor({
 			recipientId: recipients[0]?.id ?? defaultFieldValues.recipientId,
 		},
 		onSubmit: async ({ value }) => {
-			const field = buildNextSignatureField(value, recipients, signatureRecipientIds);
+			const field = buildNextSignatureField(value, recipients, signatureRecipientIds, placedFields);
 			if (!field) return;
 			await saveMutation.mutateAsync(field);
 		},
@@ -128,6 +128,7 @@ export function EnvelopeFieldEditor({
 						recipients={recipients}
 						signatureRecipientIds={signatureRecipientIds}
 						placedFields={placedFields}
+						sourcePdfPreviewUrl={buildSourcePdfPreviewUrl(envelopeId, senderSessionToken)}
 						allSignaturesPlaced={allSignaturesPlaced}
 						isSaving={saveMutation.isPending}
 						isSaveError={saveMutation.isError}
@@ -210,4 +211,14 @@ function authHeaders(senderSessionToken: string | undefined): Record<string, str
 		"Content-Type": "application/json",
 		"x-internal-user-id": "ui-user",
 	};
+}
+
+export function buildSourcePdfPreviewUrl(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+): string {
+	const params = new URLSearchParams();
+	if (senderSessionToken) params.set("senderSessionToken", senderSessionToken);
+	const query = params.size > 0 ? `?${params.toString()}` : "";
+	return `/api/envelopes/${envelopeId}/source-pdf/content${query}#toolbar=0&navpanes=0&scrollbar=0&page=1`;
 }

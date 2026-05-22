@@ -1,10 +1,23 @@
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, UserPlus } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Pencil, Trash2, UserPlus } from "lucide-react";
+import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	addRecipientPair,
+	buildPrepareUrl,
+	deleteRecipientRequest,
+	fetchRecipients,
+	fetchVerifiedSender,
+	findSenderRecipient,
+	type RecipientFormValues,
+	type RecipientResponse,
+	recipientsQueryKey,
+	updateRecipientRequest,
+} from "./source-pdf-recipients";
 import {
 	type SourcePdfStatus,
 	UploadSourcePdfForm,
@@ -17,35 +30,6 @@ export interface SourcePdfUploadPanelProps {
 	senderName?: string;
 	senderEmail?: string;
 }
-
-type SenderVerificationSuccess = {
-	data: {
-		envelopeId: string;
-		sender: {
-			name: string;
-			email: string;
-		};
-	};
-};
-
-type RecipientResponse = {
-	id: string;
-	envelopeId: string;
-	name: string;
-	email: string;
-};
-
-type RecipientsSuccess = { data: RecipientResponse[] };
-type ApiError = { error: { message: string } };
-
-type RecipientFormValues = {
-	senderName: string;
-	senderEmail: string;
-	partnerName: string;
-	partnerEmail: string;
-};
-
-type RecipientsResult = { recipients: RecipientResponse[]; prepareUrl: string };
 
 export function SourcePdfUploadPanel(props: SourcePdfUploadPanelProps) {
 	return (
@@ -62,6 +46,8 @@ function AddRecipientsForm({
 	senderName: verifiedSenderName = "",
 	senderEmail: verifiedSenderEmail = "",
 }: SourcePdfUploadPanelProps) {
+	const queryClient = useQueryClient();
+	const [isEditingPartner, setIsEditingPartner] = useState(false);
 	const hasSenderProps = Boolean(verifiedSenderName && verifiedSenderEmail);
 	const senderQuery = useQuery({
 		queryKey: ["sender-verification", envelopeId, senderSessionToken],
@@ -77,16 +63,60 @@ function AddRecipientsForm({
 	const sourcePdfReady = sourcePdfQuery.data?.status === "ready";
 	const sourcePdfError =
 		sourcePdfQuery.error instanceof Error ? sourcePdfQuery.error.message : null;
+	const recipientsQuery = useQuery({
+		queryKey: recipientsQueryKey(envelopeId, senderSessionToken),
+		queryFn: () => fetchRecipients(envelopeId, senderSessionToken),
+		enabled: Boolean(envelopeId && senderSessionToken && sourcePdfReady),
+		staleTime: 30_000,
+	});
 	const recipientsMutation = useMutation({
 		mutationFn: (values: RecipientFormValues) =>
 			addRecipientPair({
 				envelopeId,
 				senderSessionToken,
+				existingRecipients: currentRecipients,
 				senderName: senderRecipientName || values.senderName,
 				senderEmail: senderRecipientEmail || values.senderEmail,
 				partnerName: values.partnerName,
 				partnerEmail: values.partnerEmail,
 			}),
+		onSuccess: (result) => {
+			queryClient.setQueryData(
+				recipientsQueryKey(envelopeId, senderSessionToken),
+				result.recipients,
+			);
+		},
+	});
+	const updateMutation = useMutation({
+		mutationFn: (values: RecipientFormValues) => {
+			if (!partnerRecipient) throw new Error("Recipient is missing");
+			return updateRecipientRequest({
+				envelopeId,
+				senderSessionToken,
+				recipientId: partnerRecipient.id,
+				name: values.partnerName,
+				email: values.partnerEmail,
+			});
+		},
+		onSuccess: (recipient) => {
+			queryClient.setQueryData<RecipientResponse[]>(
+				recipientsQueryKey(envelopeId, senderSessionToken),
+				(existing = []) =>
+					existing.map((current) => (current.id === recipient.id ? recipient : current)),
+			);
+			setIsEditingPartner(false);
+		},
+	});
+	const deleteMutation = useMutation({
+		mutationFn: (recipientId: string) =>
+			deleteRecipientRequest({ envelopeId, senderSessionToken, recipientId }),
+		onSuccess: (recipient) => {
+			queryClient.setQueryData<RecipientResponse[]>(
+				recipientsQueryKey(envelopeId, senderSessionToken),
+				(existing = []) => existing.filter((current) => current.id !== recipient.id),
+			);
+			setIsEditingPartner(false);
+		},
 	});
 	const recipientsForm = useForm({
 		defaultValues: {
@@ -95,10 +125,31 @@ function AddRecipientsForm({
 			partnerName: "",
 			partnerEmail: "",
 		},
-		onSubmit: ({ value }) => recipientsMutation.mutateAsync(value),
+		onSubmit: ({ value }) =>
+			isEditingPartner && partnerRecipient
+				? updateMutation.mutateAsync(value)
+				: recipientsMutation.mutateAsync(value),
 	});
 	const recipientError =
-		recipientsMutation.error instanceof Error ? recipientsMutation.error.message : null;
+		recipientsMutation.error instanceof Error
+			? recipientsMutation.error.message
+			: updateMutation.error instanceof Error
+				? updateMutation.error.message
+				: deleteMutation.error instanceof Error
+					? deleteMutation.error.message
+					: null;
+	const currentRecipients = recipientsQuery.data ?? [];
+	const senderRecipient = findSenderRecipient(currentRecipients, senderRecipientEmail);
+	const partnerRecipient =
+		currentRecipients.find((recipient) => recipient.id !== senderRecipient?.id) ?? null;
+	const prepareRecipients =
+		senderRecipient && partnerRecipient ? [senderRecipient, partnerRecipient] : [];
+	const prepareUrl =
+		prepareRecipients.length === 2
+			? buildPrepareUrl(envelopeId, senderSessionToken, prepareRecipients)
+			: null;
+	const isMutating =
+		recipientsMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
 	return (
 		<form
@@ -108,6 +159,7 @@ function AddRecipientsForm({
 				event.preventDefault();
 				event.stopPropagation();
 				if (!sourcePdfReady) return;
+				if (partnerRecipient && !isEditingPartner) return;
 				void recipientsForm.handleSubmit();
 			}}
 		>
@@ -159,35 +211,53 @@ function AddRecipientsForm({
 							</recipientsForm.Field>
 						</>
 					)}
-					<recipientsForm.Field name="partnerName">
-						{(field) => (
-							<div className="space-y-2">
-								<Label htmlFor="partner-name">Partner name</Label>
-								<Input
-									id="partner-name"
-									value={field.state.value}
-									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
-									required
-								/>
-							</div>
-						)}
-					</recipientsForm.Field>
-					<recipientsForm.Field name="partnerEmail">
-						{(field) => (
-							<div className="space-y-2">
-								<Label htmlFor="partner-email">Partner email</Label>
-								<Input
-									id="partner-email"
-									type="email"
-									value={field.state.value}
-									onBlur={field.handleBlur}
-									onChange={(event) => field.handleChange(event.target.value)}
-									required
-								/>
-							</div>
-						)}
-					</recipientsForm.Field>
+					{recipientsQuery.isLoading ? (
+						<p className="text-muted-foreground text-sm sm:col-span-2">Loading recipients.</p>
+					) : null}
+					{partnerRecipient && !isEditingPartner ? (
+						<PartnerSummary
+							recipient={partnerRecipient}
+							isPending={isMutating}
+							onEdit={() => {
+								recipientsForm.setFieldValue("partnerName", partnerRecipient.name);
+								recipientsForm.setFieldValue("partnerEmail", partnerRecipient.email);
+								setIsEditingPartner(true);
+							}}
+							onDelete={() => deleteMutation.mutate(partnerRecipient.id)}
+						/>
+					) : (
+						<>
+							<recipientsForm.Field name="partnerName">
+								{(field) => (
+									<div className="space-y-2">
+										<Label htmlFor="partner-name">Partner name</Label>
+										<Input
+											id="partner-name"
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(event) => field.handleChange(event.target.value)}
+											required
+										/>
+									</div>
+								)}
+							</recipientsForm.Field>
+							<recipientsForm.Field name="partnerEmail">
+								{(field) => (
+									<div className="space-y-2">
+										<Label htmlFor="partner-email">Partner email</Label>
+										<Input
+											id="partner-email"
+											type="email"
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(event) => field.handleChange(event.target.value)}
+											required
+										/>
+									</div>
+								)}
+							</recipientsForm.Field>
+						</>
+					)}
 				</div>
 
 				{recipientError ? (
@@ -199,12 +269,21 @@ function AddRecipientsForm({
 
 				<SourcePdfRequirementAlert status={sourcePdfQuery.data} errorMessage={sourcePdfError} />
 
-				{recipientsMutation.data ? <RecipientsAdded result={recipientsMutation.data} /> : null}
+				{partnerRecipient ? (
+					<RecipientsAdded recipients={prepareRecipients} prepareUrl={prepareUrl} />
+				) : null}
 
 				<RecipientActions
-					isPending={recipientsMutation.isPending}
-					isDisabled={senderQuery.isLoading || sourcePdfQuery.isLoading || !sourcePdfReady}
-					result={recipientsMutation.data}
+					isPending={isMutating}
+					isDisabled={
+						senderQuery.isLoading ||
+						sourcePdfQuery.isLoading ||
+						recipientsQuery.isLoading ||
+						!sourcePdfReady ||
+						Boolean(partnerRecipient && !isEditingPartner)
+					}
+					isEditing={Boolean(isEditingPartner && partnerRecipient)}
+					prepareUrl={prepareUrl}
 				/>
 			</div>
 		</form>
@@ -240,26 +319,60 @@ function SourcePdfRequirementAlert({
 function RecipientActions({
 	isPending,
 	isDisabled,
-	result,
+	isEditing,
+	prepareUrl,
 }: {
 	isPending: boolean;
 	isDisabled: boolean;
-	result?: RecipientsResult;
+	isEditing: boolean;
+	prepareUrl: string | null;
 }) {
 	return (
 		<div className="flex flex-wrap gap-2">
 			<Button type="submit" disabled={isPending || isDisabled}>
 				<UserPlus className="mr-2 size-4" />
-				{isPending ? "Adding..." : "Add recipients"}
+				{isPending ? "Saving..." : isEditing ? "Save recipient" : "Add recipients"}
 			</Button>
-			{result ? (
+			{prepareUrl ? (
 				<Button asChild variant="outline">
-					<a href={result.prepareUrl}>
+					<a href={prepareUrl}>
 						Continue to prepare fields
 						<ArrowRight className="ml-2 size-4" />
 					</a>
 				</Button>
 			) : null}
+		</div>
+	);
+}
+
+function PartnerSummary({
+	recipient,
+	isPending,
+	onEdit,
+	onDelete,
+}: {
+	recipient: RecipientResponse;
+	isPending: boolean;
+	onEdit: () => void;
+	onDelete: () => void;
+}) {
+	return (
+		<div className="space-y-3 rounded-md border bg-muted/30 p-3 sm:col-span-2">
+			<div>
+				<p className="font-medium text-sm">Partner</p>
+				<p className="text-sm">{recipient.name}</p>
+				<p className="text-muted-foreground text-sm">{recipient.email}</p>
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<Button type="button" size="sm" variant="outline" onClick={onEdit} disabled={isPending}>
+					<Pencil className="mr-2 size-4" />
+					Edit recipient
+				</Button>
+				<Button type="button" size="sm" variant="outline" onClick={onDelete} disabled={isPending}>
+					<Trash2 className="mr-2 size-4" />
+					Delete recipient
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -274,96 +387,21 @@ function SenderSummary({ name, email }: { name: string; email: string }) {
 	);
 }
 
-function RecipientsAdded({ result }: { result: RecipientsResult }) {
+function RecipientsAdded({
+	recipients,
+	prepareUrl,
+}: {
+	recipients: RecipientResponse[];
+	prepareUrl: string | null;
+}) {
+	const [sender, partner] = recipients;
 	return (
 		<Alert>
 			<AlertTitle>Recipients added</AlertTitle>
 			<AlertDescription>
-				{result.recipients[0]?.email} and {result.recipients[1]?.email}
+				{sender?.email} and {partner?.email}
+				{prepareUrl ? null : ". Add a partner before preparing fields."}
 			</AlertDescription>
 		</Alert>
 	);
-}
-
-function isSenderVerificationSuccess(value: unknown): value is SenderVerificationSuccess {
-	if (!value || typeof value !== "object" || !("data" in value)) return false;
-	const data = value.data;
-	return Boolean(data && typeof data === "object" && "sender" in data);
-}
-
-function isRecipientsSuccess(value: unknown): value is RecipientsSuccess {
-	if (!value || typeof value !== "object" || !("data" in value)) return false;
-	return Array.isArray(value.data);
-}
-
-function isApiError(value: unknown): value is ApiError {
-	if (!value || typeof value !== "object" || !("error" in value)) return false;
-	const error = value.error;
-	return Boolean(error && typeof error === "object" && "message" in error);
-}
-
-async function fetchVerifiedSender(
-	senderSessionToken: string,
-	envelopeId: string,
-): Promise<SenderVerificationSuccess["data"]> {
-	const response = await fetch(`/api/envelopes/${envelopeId}/sender-session`, {
-		headers: { "x-sender-session-token": senderSessionToken },
-	});
-	const json: unknown = await response.json().catch(() => null);
-	if (!response.ok || !isSenderVerificationSuccess(json) || json.data.envelopeId !== envelopeId) {
-		throw new Error("Unable to load sender details");
-	}
-	return json.data;
-}
-
-async function addRecipientPair(input: {
-	envelopeId: string;
-	senderSessionToken: string;
-	senderName: string;
-	senderEmail: string;
-	partnerName: string;
-	partnerEmail: string;
-}): Promise<RecipientsResult> {
-	const response = await fetch(`/api/envelopes/${input.envelopeId}/recipients`, {
-		method: "POST",
-		headers: {
-			"content-type": "application/json",
-			"x-sender-session-token": input.senderSessionToken,
-		},
-		body: JSON.stringify({
-			recipients: [
-				{ name: input.senderName, email: input.senderEmail },
-				{ name: input.partnerName, email: input.partnerEmail },
-			],
-		}),
-	});
-	const json: unknown = await response.json().catch(() => null);
-	if (!response.ok || !isRecipientsSuccess(json) || json.data.length < 2) {
-		const message = isApiError(json) ? json.error.message : "Unable to add recipients";
-		throw new Error(message);
-	}
-	return {
-		recipients: json.data,
-		prepareUrl: buildPrepareUrl(input.envelopeId, input.senderSessionToken, json.data),
-	};
-}
-
-function buildPrepareUrl(
-	envelopeId: string,
-	senderSessionToken: string,
-	recipients: RecipientResponse[],
-): string {
-	const [sender, partner] = recipients;
-	if (!sender || !partner) return "/envelope-fields";
-	const params = new URLSearchParams({
-		envelopeId,
-		recipientId: sender.id,
-		name: sender.name,
-		email: sender.email,
-		partnerRecipientId: partner.id,
-		partnerName: partner.name,
-		partnerEmail: partner.email,
-		senderSessionToken,
-	});
-	return `/envelope-fields?${params.toString()}`;
 }

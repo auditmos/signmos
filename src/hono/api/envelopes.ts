@@ -6,6 +6,7 @@ import {
 	addRecipients,
 	controlEnvelope,
 	createEnvelope,
+	deleteRecipient,
 	type EmailDeliveryEnv,
 	EmailDeliveryError,
 	EnvelopeActionRequestSchema,
@@ -17,6 +18,8 @@ import {
 	getFinalDocument,
 	getLatestSourcePdfDocument,
 	listEnvelopeFields,
+	listRecipients,
+	RecipientCreateSchema,
 	recordSourcePdfUploadRejection,
 	resendInvitation,
 	resolveVerifiedSenderSession,
@@ -31,6 +34,7 @@ import {
 	toEnvelopeResponse,
 	toRecipientResponse,
 	toSourceDocumentResponse,
+	updateRecipient,
 	uploadSourcePdfDocument,
 	verifySenderToken,
 } from "@/db/envelope";
@@ -401,6 +405,40 @@ envelopesEndpoint.get("/:id/source-pdf", async (c) => {
 	return c.json({ data: toSourceDocumentResponse(document) });
 });
 
+envelopesEndpoint.get("/:id/source-pdf/content", async (c) => {
+	const userId = await getEnvelopeActor(c, c.req.param("id"));
+	if (!userId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const document = await getLatestSourcePdfDocument(c.req.param("id"));
+	if (!document) {
+		return c.json(sourcePdfMissingBody(), 404);
+	}
+
+	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
+	const object = await bucket?.get(document.r2Key);
+	if (!object) {
+		return c.json(sourcePdfMissingBody(), 404);
+	}
+
+	return new Response(await object.arrayBuffer(), {
+		headers: {
+			"cache-control": "no-store",
+			"content-disposition": "inline",
+			"content-type": document.contentType,
+		},
+	});
+});
+
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	const envelopeId = c.req.param("id");
 	const uploadedBy =
@@ -505,6 +543,24 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	}
 });
 
+envelopesEndpoint.get("/:id/recipients", async (c) => {
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
+	if (!createdBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const recipients = await listRecipients(c.req.param("id"));
+	return c.json({ data: recipients.map(toRecipientResponse) });
+});
+
 envelopesEndpoint.post("/:id/recipients", async (c) => {
 	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
 	if (!createdBy) {
@@ -535,6 +591,57 @@ envelopesEndpoint.post("/:id/recipients", async (c) => {
 
 	const recipients = await addRecipients(c.req.param("id"), parsed.data);
 	return c.json({ data: recipients.map(toRecipientResponse) }, 201);
+});
+
+envelopesEndpoint.patch("/:id/recipients/:recipientId", async (c) => {
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
+	if (!createdBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const parsed = RecipientCreateSchema.safeParse(await c.req.json());
+	if (!parsed.success) return c.json(recipientMutationInvalidBody(), 400);
+
+	try {
+		const recipient = await updateRecipient(
+			c.req.param("id"),
+			c.req.param("recipientId"),
+			parsed.data,
+		);
+		return c.json({ data: toRecipientResponse(recipient) });
+	} catch (error) {
+		return recipientMutationErrorResponse(error, c);
+	}
+});
+
+envelopesEndpoint.delete("/:id/recipients/:recipientId", async (c) => {
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
+	if (!createdBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	try {
+		const recipient = await deleteRecipient(c.req.param("id"), c.req.param("recipientId"));
+		return c.json({ data: toRecipientResponse(recipient) });
+	} catch (error) {
+		return recipientMutationErrorResponse(error, c);
+	}
 });
 
 envelopesEndpoint.post("/:id/recipients/:recipientId/resend", async (c) => {
@@ -679,7 +786,7 @@ async function getEnvelopeActor(
 	const internalUserId = c.req.header("x-internal-user-id");
 	if (internalUserId) return internalUserId;
 	return getVerifiedSenderUploadEmail(
-		c.req.header("x-sender-session-token"),
+		c.req.header("x-sender-session-token") ?? c.req.query("senderSessionToken"),
 		envelopeId,
 		c.req.header("x-now"),
 	);
@@ -746,6 +853,43 @@ function sourcePdfMissingBody() {
 			allowedActions: ["upload_source_pdf"],
 		},
 	};
+}
+
+function recipientMutationInvalidBody() {
+	return {
+		error: {
+			code: "INVALID_RECIPIENT",
+			message: "Recipient must include a valid name and email",
+		},
+	};
+}
+
+function recipientMutationErrorResponse(error: unknown, c: Context<{ Bindings: Env }>) {
+	const message = error instanceof Error ? error.message : "";
+	if (message === "Envelope must be draft") {
+		return c.json(
+			{
+				error: {
+					code: "ENVELOPE_NOT_DRAFT",
+					message: "Recipients can only be changed while the envelope is draft",
+					allowedActions: getEnvelopeAllowedActions("draft"),
+				},
+			},
+			409,
+		);
+	}
+	if (message === "Recipient not found") {
+		return c.json(
+			{
+				error: {
+					code: "RECIPIENT_NOT_FOUND",
+					message: "Recipient was not found on this envelope",
+				},
+			},
+			404,
+		);
+	}
+	throw error;
 }
 
 function parseProviderMessage(responseText: string): string {

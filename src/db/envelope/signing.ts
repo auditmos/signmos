@@ -10,8 +10,8 @@ import {
 	type Envelope,
 	EnvelopeFieldSchema,
 	EnvelopeSchema,
+	FieldValueSchema,
 	getEnvelopeAllowedActions,
-	type Recipient,
 	RecipientSchema,
 	SignatureProfileSchema,
 	type SignerSession,
@@ -56,13 +56,28 @@ export async function resolveSignerToken(token: string): Promise<SignerToken | n
 
 export async function getSignerSession(token: SignerToken): Promise<SignerSession> {
 	const db = getDb();
-	const fields = (
+	const allFields = (
 		await db
 			.select()
 			.from(envelopeFields)
-			.where(eq(envelopeFields.recipientId, token.recipientId))
+			.where(eq(envelopeFields.envelopeId, token.envelopeId))
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
+	const fields = allFields.filter((field) => field.recipientId === token.recipientId);
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, token.envelopeId))
+			.limit(10)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const fieldValueRows = (
+		await db
+			.select()
+			.from(fieldValues)
+			.where(eq(fieldValues.envelopeId, token.envelopeId))
+			.limit(100)
+	).map((value) => FieldValueSchema.parse(value));
 	const sourceDocumentsForEnvelope = (
 		await db
 			.select()
@@ -72,10 +87,14 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 	).map((document) => SourceDocumentSchema.parse(document));
 	const sourceDocument = latestSourceDocument(sourceDocumentsForEnvelope);
 	if (!sourceDocument) throw new Error("Envelope source PDF required");
-	const recipient = await getRecipientForSigner(token.recipientId);
+	const recipient = recipients.find((candidate) => candidate.id === token.recipientId) ?? null;
 	const signaturePreference = recipient
 		? await getLatestSignaturePreferenceForEmail(recipient.email)
 		: null;
+	const recipientNames = new Map(
+		recipients.map((candidate) => [candidate.id, candidate.name] as const),
+	);
+	const fieldValuesById = new Map(fieldValueRows.map((value) => [value.fieldId, value.value]));
 
 	await db
 		.insert(auditEvents)
@@ -103,6 +122,19 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 			y: field.y,
 			width: field.width,
 			height: field.height,
+		})),
+		previewFields: allFields.map((field) => ({
+			id: field.id,
+			recipientId: field.recipientId,
+			recipientName: recipientNames.get(field.recipientId) ?? "Signer",
+			type: field.type,
+			page: field.page,
+			x: field.x,
+			y: field.y,
+			width: field.width,
+			height: field.height,
+			value: fieldValuesById.get(field.id) ?? null,
+			assignedToCurrentSigner: field.recipientId === token.recipientId,
 		})),
 		signaturePreference: signaturePreference
 			? toSignatureProfileResponse(signaturePreference)
@@ -348,17 +380,6 @@ async function rememberPartnerSignaturePreference(input: {
 					},
 		)
 		.returning();
-}
-
-async function getRecipientForSigner(recipientId: string): Promise<Recipient | null> {
-	const db = getDb();
-	const rows = await db
-		.select()
-		.from(envelopeRecipients)
-		.where(eq(envelopeRecipients.id, recipientId))
-		.limit(10);
-	const recipients = rows.map((recipient) => RecipientSchema.parse(recipient));
-	return recipients.find((recipient) => recipient.id === recipientId) ?? null;
 }
 
 async function getLatestSignaturePreferenceForEmail(email: string) {

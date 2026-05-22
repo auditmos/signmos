@@ -2,9 +2,71 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { EnvelopeFieldEditor } from "./field-editor";
+import { buildSourcePdfPreviewUrl, EnvelopeFieldEditor } from "./field-editor";
+import { buildNextSignatureField, signatureDimensions } from "./field-placement-workspace";
 
 describe("EnvelopeFieldEditor", () => {
+	it("builds a sender-authorized uploaded PDF preview URL", () => {
+		expect(
+			buildSourcePdfPreviewUrl("00000000-0000-4000-8000-000000000001", "verified-sender-token"),
+		).toBe(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf/content?senderSessionToken=verified-sender-token#toolbar=0&navpanes=0&scrollbar=0&page=1",
+		);
+	});
+
+	it("moves the next signer default placeholder when the previous coordinates are occupied", () => {
+		const recipients = [
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				name: "Ada Lovelace",
+				email: "ada@example.com",
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				name: "Grace Hopper",
+				email: "grace@example.com",
+			},
+		];
+
+		const nextField = buildNextSignatureField(
+			{
+				recipientId: recipients[0]?.id ?? "",
+				type: "signature",
+				page: 1,
+				x: 72,
+				y: 144,
+				width: signatureDimensions.width,
+				height: signatureDimensions.height,
+			},
+			recipients,
+			new Set([recipients[0]?.id ?? ""]),
+			[
+				{
+					id: "50000000-0000-4000-8000-000000000001",
+					envelopeId: "00000000-0000-4000-8000-000000000001",
+					recipientId: recipients[0]?.id ?? "",
+					type: "signature",
+					page: 1,
+					x: 72,
+					y: 144,
+					width: signatureDimensions.width,
+					height: signatureDimensions.height,
+					createdAt: "2026-05-20T07:05:00.000Z",
+				},
+			],
+		);
+
+		expect(nextField).toEqual({
+			recipientId: recipients[1]?.id,
+			type: "signature",
+			page: 1,
+			x: 72,
+			y: 216,
+			width: signatureDimensions.width,
+			height: signatureDimensions.height,
+		});
+	});
+
 	it("persists field placement by dragging the field on the visual PDF preview", async () => {
 		const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
 			if (
@@ -66,6 +128,9 @@ describe("EnvelopeFieldEditor", () => {
 			toJSON: () => ({}),
 		});
 		expect(preview).toBeTruthy();
+		expect(screen.getByTitle("Uploaded source PDF preview").getAttribute("src")).toBe(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf/content#toolbar=0&navpanes=0&scrollbar=0&page=1",
+		);
 		expect(screen.queryByLabelText("X")).toBeNull();
 		expect(screen.queryByLabelText("Y")).toBeNull();
 		expect(screen.queryByLabelText("Width")).toBeNull();

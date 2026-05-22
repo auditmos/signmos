@@ -53,7 +53,7 @@ describe("SignerPage", () => {
 			"/api/signing/valid-token/source-pdf",
 		);
 		expect(screen.getByTitle("Source PDF preview").getAttribute("src")).toBe(
-			"/api/signing/valid-token/source-pdf",
+			"/api/signing/valid-token/source-pdf#toolbar=0&navpanes=0&scrollbar=0&page=1",
 		);
 		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
@@ -76,6 +76,75 @@ describe("SignerPage", () => {
 					rememberSignature: false,
 				}),
 			}),
+		);
+	});
+
+	it("overlays completed sender values and partner placeholders on the PDF preview", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					data: {
+						envelopeId: "00000000-0000-4000-8000-000000000001",
+						recipientId: "20000000-0000-4000-8000-000000000002",
+						sourceDocument: {
+							version: 1,
+							contentType: "application/pdf",
+							downloadUrl: "/api/signing/valid-token/source-pdf",
+						},
+						fields: [
+							{
+								id: "field-partner",
+								type: "signature",
+								page: 1,
+								x: 72,
+								y: 224,
+								width: 180,
+								height: 48,
+							},
+						],
+						previewFields: [
+							{
+								id: "field-sender",
+								recipientId: "20000000-0000-4000-8000-000000000001",
+								recipientName: "Tomasz Kowalczyk",
+								type: "signature",
+								page: 1,
+								x: 72,
+								y: 144,
+								width: 180,
+								height: 48,
+								value: "Tomasz Kowalczyk",
+								assignedToCurrentSigner: false,
+							},
+							{
+								id: "field-partner",
+								recipientId: "20000000-0000-4000-8000-000000000002",
+								recipientName: "Tom",
+								type: "signature",
+								page: 1,
+								x: 72,
+								y: 224,
+								width: 180,
+								height: 48,
+								value: null,
+								assignedToCurrentSigner: true,
+							},
+						],
+						signaturePreference: null,
+					},
+				}),
+				{ status: 200 },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		expect(
+			(await screen.findByLabelText("Tomasz Kowalczyk signature value")).textContent,
+		).toContain("Tomasz Kowalczyk");
+		expect(screen.getByLabelText("Tom signature placeholder").textContent).toContain(
+			"signature here",
 		);
 	});
 

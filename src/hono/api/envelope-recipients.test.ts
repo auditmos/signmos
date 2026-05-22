@@ -185,10 +185,23 @@ vi.mock("@/db/setup", () => ({
 			}),
 		}),
 		update: (table: unknown) => ({
-			set: (value: { status?: "sent" | "completed"; sentBy?: string; sentAt?: Date }) => ({
+			set: (value: {
+				status?: "sent" | "completed";
+				sentBy?: string;
+				sentAt?: Date;
+				name?: string;
+				email?: string;
+			}) => ({
 				where: async () => {
 					if (table === state.envelopesTable) {
 						state.envelopes[0] = { ...state.envelopes[0], ...value };
+					}
+					if (table === state.recipientsTable && (value.name || value.email)) {
+						state.recipients = state.recipients.map((recipient) => ({
+							...recipient,
+							name: value.name ?? recipient.name,
+							email: value.email ?? recipient.email,
+						}));
 					}
 					if (table === state.recipientsTable && value.status) {
 						const status = value.status;
@@ -200,6 +213,13 @@ vi.mock("@/db/setup", () => ({
 					return [];
 				},
 			}),
+		}),
+		delete: (table: unknown) => ({
+			where: async () => {
+				if (table === state.fieldsTable) state.fields.length = 0;
+				if (table === state.recipientsTable) state.recipients.length = 0;
+				return [];
+			},
 		}),
 	}),
 }));
@@ -338,6 +358,74 @@ describe("envelope recipient API", () => {
 				},
 			],
 		});
+	});
+
+	it("lists, edits, and deletes draft recipients for the verified sender", async () => {
+		state.recipients.push({
+			id: "20000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Grace Typo",
+			email: "typo@example.com",
+			status: "pending",
+			createdAt: new Date("2026-05-20T07:02:00.000Z"),
+		});
+		state.fields.push({
+			id: "50000000-0000-4000-8000-000000000099",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			recipientId: "20000000-0000-4000-8000-000000000001",
+			type: "signature",
+			page: 1,
+			x: 72,
+			y: 144,
+			width: 180,
+			height: 48,
+			createdAt: new Date("2026-05-20T07:03:00.000Z"),
+		});
+
+		const listed = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients",
+			{ headers: { "x-internal-user-id": "user_123" } },
+		);
+		expect(listed.status).toBe(200);
+		await expect(listed.json()).resolves.toEqual({
+			data: [
+				expect.objectContaining({
+					id: "20000000-0000-4000-8000-000000000001",
+					name: "Grace Typo",
+					email: "typo@example.com",
+				}),
+			],
+		});
+
+		const edited = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000001",
+			{
+				method: "PATCH",
+				headers: {
+					"x-internal-user-id": "user_123",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ name: "Grace Hopper", email: "grace@example.com" }),
+			},
+		);
+		expect(edited.status).toBe(200);
+		await expect(edited.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				name: "Grace Hopper",
+				email: "grace@example.com",
+			}),
+		});
+
+		const deleted = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000001",
+			{
+				method: "DELETE",
+				headers: { "x-internal-user-id": "user_123" },
+			},
+		);
+		expect(deleted.status).toBe(200);
+		expect(state.recipients).toHaveLength(0);
+		expect(state.fields).toHaveLength(0);
 	});
 
 	it("rejects invalid emails and recipient batches above 10 with stable errors", async () => {

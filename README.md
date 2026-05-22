@@ -35,8 +35,8 @@ Known product gaps:
 ```bash
 pnpm install
 cp .example.vars .dev.vars
-# Fill DATABASE_HOST, DATABASE_USERNAME, DATABASE_PASSWORD, TURNSTILE_SECRET_KEY,
-# and VITE_TURNSTILE_SITE_KEY in .dev.vars.
+# Fill DATABASE_HOST, DATABASE_USERNAME, DATABASE_PASSWORD,
+# TURNSTILE_SITE_KEY, and TURNSTILE_SECRET_KEY in .dev.vars.
 
 pnpm cf-typegen
 pnpm db:migrate:dev
@@ -55,7 +55,7 @@ pnpm dev
 ```
 
 Manual browser development uses Cloudflare Turnstile development keys from `.dev.vars`:
-`TURNSTILE_SECRET_KEY` for the API verifier and `VITE_TURNSTILE_SITE_KEY` for the sender
+`TURNSTILE_SECRET_KEY` for the API verifier and `TURNSTILE_SITE_KEY` for the sender
 start form widget. `TURNSTILE_TEST_BYPASS=true` is reserved for automated tests and
 debug-only API calls, not normal browser smoke runs.
 
