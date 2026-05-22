@@ -37,6 +37,7 @@ describe("SignerPage", () => {
 								},
 								{ id: "field-2", type: "date", page: 1, x: 300, y: 144, width: 120, height: 32 },
 							],
+							signaturePreference: null,
 						},
 					}),
 					{ status: 200 },
@@ -54,7 +55,7 @@ describe("SignerPage", () => {
 		expect(screen.getByTitle("Source PDF preview").getAttribute("src")).toBe(
 			"/api/signing/valid-token/source-pdf",
 		);
-		fireEvent.change(screen.getByLabelText("Typed signature"), {
+		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
 		});
 		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
@@ -67,8 +68,96 @@ describe("SignerPage", () => {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					signatureName: "Ada Lovelace",
 					date: "2026-05-20",
+					signature: {
+						kind: "typed",
+						typedText: "Ada Lovelace",
+						typedFont: "cursive",
+					},
+					rememberSignature: false,
+				}),
+			}),
+		);
+	});
+
+	it("allows switching between typed and drawn signatures with explicit unchecked remember consent", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
+							fields: [
+								{
+									id: "field-1",
+									type: "signature",
+									page: 1,
+									x: 72,
+									y: 144,
+									width: 180,
+									height: 48,
+								},
+							],
+							signaturePreference: {
+								id: "60000000-0000-4000-8000-000000000001",
+								envelopeId: "00000000-0000-4000-8000-000000000099",
+								createdBy: "ada@example.com",
+								kind: "typed",
+								label: "Ada saved typed",
+								svgPath: null,
+								typedText: "Ada Saved",
+								typedFont: "serif",
+								selected: true,
+								createdAt: "2026-05-20T09:00:00.000Z",
+							},
+						},
+					}),
+					{ status: 200 },
+				),
+			)
+			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("signature");
+		expect(screen.getByLabelText("Typed signature text")).toHaveProperty("value", "Ada Saved");
+		expect(screen.getByLabelText("Signature font")).toHaveProperty("value", "serif");
+		const rememberCheckbox = screen.getByLabelText("Remember signature for future envelopes");
+		expect(rememberCheckbox).toHaveProperty("checked", false);
+
+		fireEvent.click(screen.getByRole("button", { name: "Choose drawn signature" }));
+		expect(screen.getByLabelText("Draw signature pad")).toBeTruthy();
+		expect(screen.queryByLabelText("Typed signature text")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "Choose typed signature" }));
+		fireEvent.change(screen.getByLabelText("Typed signature text"), {
+			target: { value: "Ada New" },
+		});
+		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
+		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+		expect(fetchMock).toHaveBeenLastCalledWith(
+			"/api/signing/valid-token/complete",
+			expect.objectContaining({
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					date: "2026-05-20",
+					signature: {
+						kind: "typed",
+						typedText: "Ada New",
+						typedFont: "serif",
+					},
+					rememberSignature: false,
 				}),
 			}),
 		);
@@ -120,7 +209,7 @@ describe("SignerPage", () => {
 		render(<SignerPage token="valid-token" />);
 
 		await screen.findByText("signature");
-		fireEvent.change(screen.getByLabelText("Typed signature"), {
+		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
 		});
 		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });

@@ -1,8 +1,13 @@
-import { Check, FileText, MessageSquare, X } from "lucide-react";
+import { FileText, MessageSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	type CompleteSigningPayload,
+	PartnerSignatureForm,
+	type PartnerSignaturePreference,
+} from "./partner-signature-form";
 
 interface SignerField {
 	id: string;
@@ -23,6 +28,7 @@ interface SignerSession {
 		downloadUrl: string;
 	};
 	fields: SignerField[];
+	signaturePreference: PartnerSignaturePreference | null;
 }
 
 interface SigningError {
@@ -36,8 +42,6 @@ interface SignerPageProps {
 
 export function SignerPage({ token }: SignerPageProps) {
 	const [session, setSession] = useState<SignerSession | null>(null);
-	const [signatureName, setSignatureName] = useState("");
-	const [date, setDate] = useState("");
 	const [changeComment, setChangeComment] = useState("");
 	const [reason, setReason] = useState("");
 	const [comment, setComment] = useState("");
@@ -65,12 +69,11 @@ export function SignerPage({ token }: SignerPageProps) {
 		};
 	}, [token]);
 
-	async function completeSigning(event: React.FormEvent<HTMLFormElement>) {
-		event.preventDefault();
+	async function completeSigning(payload: CompleteSigningPayload) {
 		const response = await fetch(`/api/signing/${token}/complete`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ signatureName, date }),
+			body: JSON.stringify(payload),
 		});
 		if (response.ok) {
 			setMessage("Signing complete");
@@ -167,37 +170,12 @@ export function SignerPage({ token }: SignerPageProps) {
 							))
 						)}
 					</div>
-					<form onSubmit={completeSigning} className="grid gap-4 md:grid-cols-3">
-						<div className="space-y-2">
-							<Label htmlFor="signatureName">Typed signature</Label>
-							<Input
-								id="signatureName"
-								value={signatureName}
-								onChange={(event) => setSignatureName(event.target.value)}
-								required
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="signingDate">Signing date</Label>
-							<Input
-								id="signingDate"
-								type="date"
-								value={date}
-								onChange={(event) => setDate(event.target.value)}
-								required
-							/>
-						</div>
-						<div className="flex items-end">
-							<Button
-								type="submit"
-								className="w-full"
-								disabled={changeRequested || session.fields.length === 0}
-							>
-								<Check className="h-4 w-4" />
-								Complete signing
-							</Button>
-						</div>
-					</form>
+					<PartnerSignatureForm
+						key={session.signaturePreference?.id ?? "new-partner-signature"}
+						initialPreference={session.signaturePreference}
+						disabled={changeRequested || session.fields.length === 0}
+						onSubmit={completeSigning}
+					/>
 					<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
 						<div className="space-y-2 md:col-span-2">
 							<Label htmlFor="changeComment">Change request comment</Label>

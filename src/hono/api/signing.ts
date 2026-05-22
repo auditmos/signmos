@@ -132,7 +132,7 @@ signingEndpoint.post("/:token/complete", async (c) => {
 			{
 				error: {
 					code: "INVALID_SIGNING_COMPLETION",
-					message: "Signature name and signing date are required",
+					message: "Signature and signing date are required",
 				},
 			},
 			400,

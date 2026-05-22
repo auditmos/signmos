@@ -290,13 +290,35 @@ export const SignerSessionSchema = z.object({
 			height: z.number(),
 		}),
 	),
+	signaturePreference: SignatureProfileResponseSchema.nullable(),
 });
 export type SignerSession = z.infer<typeof SignerSessionSchema>;
 
-export const CompleteSigningRequestSchema = z.object({
-	signatureName: z.string().min(1),
-	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
+export const CompleteSigningSignatureSchema = z.discriminatedUnion("kind", [
+	z.object({
+		kind: z.literal("typed"),
+		typedText: z.string().trim().min(1).max(120),
+		typedFont: z.string().trim().min(1).max(80).default("cursive"),
+	}),
+	z.object({
+		kind: z.literal("drawn"),
+		label: z.string().trim().min(1).max(120).default("Drawn signature"),
+		svgPath: z.string().trim().min(1),
+	}),
+]);
+export type CompleteSigningSignature = z.infer<typeof CompleteSigningSignatureSchema>;
+
+export const CompleteSigningRequestSchema = z
+	.object({
+		signatureName: z.string().trim().min(1).optional(),
+		signature: CompleteSigningSignatureSchema.optional(),
+		rememberSignature: z.boolean().default(false),
+		date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+	})
+	.refine((input) => input.signature || input.signatureName, {
+		message: "Signature is required",
+		path: ["signature"],
+	});
 export type CompleteSigningRequest = z.infer<typeof CompleteSigningRequestSchema>;
 
 export const CompleteSigningResultSchema = z.object({

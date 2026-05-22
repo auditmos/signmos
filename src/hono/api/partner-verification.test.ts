@@ -286,6 +286,7 @@ describe("partner verification delivery", () => {
 						type: "signature",
 					}),
 				],
+				signaturePreference: null,
 			},
 		});
 		expect(state.tokens[0]?.verifiedAt).toEqual(new Date("2026-05-20T08:05:00.000Z"));

@@ -42,7 +42,7 @@ export async function createSignatureProfile(input: {
 		.insert(signatureProfiles)
 		.values({
 			envelopeId: input.envelopeId,
-			createdBy: input.createdBy,
+			createdBy: normalizeSignatureProfileActor(input.createdBy),
 			kind: input.profile.kind,
 			label: input.profile.label,
 			svgPath: input.profile.kind === "drawn" ? input.profile.svgPath : null,
@@ -66,11 +66,20 @@ export async function getLatestSelectedSignatureProfile(
 			.where(eq(signatureProfiles.createdBy, createdBy))
 			.limit(100)
 	).map((profile) => SignatureProfileSchema.parse(profile));
+	const normalizedCreatedBy = normalizeSignatureProfileActor(createdBy);
 	return (
 		profiles
-			.filter((profile) => profile.createdBy === createdBy && profile.selected)
+			.filter(
+				(profile) =>
+					normalizeSignatureProfileActor(profile.createdBy) === normalizedCreatedBy &&
+					profile.selected,
+			)
 			.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
 	);
+}
+
+function normalizeSignatureProfileActor(actor: string): string {
+	return actor.trim().toLowerCase();
 }
 
 export async function createDefaultFieldPlacements(input: {

@@ -5,6 +5,7 @@ import {
 	envelopeRecipients,
 	envelopes,
 	fieldValues,
+	signatureProfiles,
 	signerTokens,
 	sourceDocuments,
 } from "@/db/envelope";
@@ -19,6 +20,7 @@ const state = vi.hoisted(() => ({
 	fieldValuesTable: null as unknown,
 	auditEventsTable: null as unknown,
 	emailSendRecordsTable: null as unknown,
+	signatureProfilesTable: null as unknown,
 	envelopes: [
 		{
 			id: "00000000-0000-4000-8000-000000000001",
@@ -101,6 +103,7 @@ const state = vi.hoisted(() => ({
 	fieldValues: [] as unknown[],
 	auditEvents: [] as unknown[],
 	emailSends: [] as Array<Record<string, unknown>>,
+	signatureProfiles: [] as Array<Record<string, unknown>>,
 }));
 
 function selectRows(table: unknown) {
@@ -110,6 +113,7 @@ function selectRows(table: unknown) {
 	if (table === state.fieldsTable) return state.fields;
 	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
 	if (table === state.emailSendRecordsTable) return state.emailSends;
+	if (table === state.signatureProfilesTable) return state.signatureProfiles;
 	return [];
 }
 
@@ -125,6 +129,15 @@ function insertRows(table: unknown, rows: unknown[]) {
 	if (table === state.emailSendRecordsTable) {
 		state.emailSends.push(...(rows as Array<Record<string, unknown>>));
 		return rows;
+	}
+	if (table === state.signatureProfilesTable) {
+		const inserted = (rows as Array<Record<string, unknown>>).map((row, index) => ({
+			id: `60000000-0000-4000-8000-${String(state.signatureProfiles.length + index + 1).padStart(12, "0")}`,
+			createdAt: new Date("2026-05-20T08:00:00.000Z"),
+			...row,
+		}));
+		state.signatureProfiles.push(...inserted);
+		return inserted;
 	}
 	return [];
 }
@@ -169,6 +182,7 @@ describe("signing flow API", () => {
 		state.fieldValuesTable = fieldValues;
 		state.auditEventsTable = auditEvents;
 		state.emailSendRecordsTable = emailSendRecords;
+		state.signatureProfilesTable = signatureProfiles;
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
@@ -236,6 +250,7 @@ describe("signing flow API", () => {
 		state.fieldValues.length = 0;
 		state.auditEvents.length = 0;
 		state.emailSends.length = 0;
+		state.signatureProfiles.length = 0;
 	});
 
 	it("opens a valid magic link without internal login and returns only assigned fields", async () => {
@@ -265,7 +280,56 @@ describe("signing flow API", () => {
 						page: 1,
 					}),
 				],
+				signaturePreference: null,
 			},
+		});
+	});
+
+	it("loads an existing saved partner signature as the default for the same email", async () => {
+		state.signatureProfiles.push(
+			{
+				id: "60000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000099",
+				createdBy: "ADA@example.com",
+				kind: "drawn",
+				label: "Older drawn",
+				svgPath: "M 1 1 L 2 2",
+				typedText: null,
+				typedFont: null,
+				selected: true,
+				createdAt: new Date("2026-05-19T09:00:00.000Z"),
+			},
+			{
+				id: "60000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000098",
+				createdBy: "ada@example.com",
+				kind: "typed",
+				label: "Ada reusable typed",
+				svgPath: null,
+				typedText: "Ada Reused",
+				typedFont: "serif",
+				selected: true,
+				createdAt: new Date("2026-05-21T09:00:00.000Z"),
+			},
+		);
+
+		const response = await apiHono.request("/api/signing/valid-token", {
+			headers: { "x-now": "2026-05-20T07:03:00.000Z" },
+		});
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				recipientId: "20000000-0000-4000-8000-000000000001",
+				signaturePreference: expect.objectContaining({
+					id: "60000000-0000-4000-8000-000000000002",
+					createdBy: "ada@example.com",
+					kind: "typed",
+					label: "Ada reusable typed",
+					typedText: "Ada Reused",
+					typedFont: "serif",
+				}),
+			}),
 		});
 	});
 
@@ -297,8 +361,13 @@ describe("signing flow API", () => {
 				"x-now": "2026-05-20T08:00:00.000Z",
 			},
 			body: JSON.stringify({
-				signatureName: "Ada Lovelace",
 				date: "2026-05-20",
+				signature: {
+					kind: "typed",
+					typedText: "Ada Lovelace",
+					typedFont: "cursive",
+				},
+				rememberSignature: false,
 			}),
 		});
 
@@ -331,6 +400,106 @@ describe("signing flow API", () => {
 				expect.objectContaining({ eventType: "field.value.completed" }),
 			]),
 		);
+		expect(state.signatureProfiles).toHaveLength(0);
+	});
+
+	it("completes signing with a drawn signature payload", async () => {
+		const response = await apiHono.request("/api/signing/valid-token/complete", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({
+				date: "2026-05-20",
+				signature: {
+					kind: "drawn",
+					label: "Ada drawn",
+					svgPath: "M 12 36 L 48 20 L 96 42",
+				},
+				rememberSignature: false,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(state.fieldValues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					fieldId: "50000000-0000-4000-8000-000000000001",
+					value: "M 12 36 L 48 20 L 96 42",
+				}),
+				expect.objectContaining({
+					fieldId: "50000000-0000-4000-8000-000000000002",
+					value: "2026-05-20",
+				}),
+			]),
+		);
+		expect(state.signatureProfiles).toHaveLength(0);
+	});
+
+	it("remembers a typed partner signature only when explicit consent is selected", async () => {
+		const response = await apiHono.request("/api/signing/valid-token/complete", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({
+				date: "2026-05-20",
+				signature: {
+					kind: "typed",
+					typedText: "Ada Remembered",
+					typedFont: "serif",
+				},
+				rememberSignature: true,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(state.signatureProfiles).toEqual([
+			expect.objectContaining({
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				createdBy: "ada@example.com",
+				kind: "typed",
+				label: "Typed signature",
+				svgPath: null,
+				typedText: "Ada Remembered",
+				typedFont: "serif",
+				selected: true,
+			}),
+		]);
+	});
+
+	it("remembers a drawn partner signature with the reusable SVG path", async () => {
+		const response = await apiHono.request("/api/signing/valid-token/complete", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({
+				date: "2026-05-20",
+				signature: {
+					kind: "drawn",
+					label: "Ada drawn",
+					svgPath: "M 12 36 L 48 20 L 96 42",
+				},
+				rememberSignature: true,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		expect(state.signatureProfiles).toEqual([
+			expect.objectContaining({
+				createdBy: "ada@example.com",
+				kind: "drawn",
+				label: "Ada drawn",
+				svgPath: "M 12 36 L 48 20 L 96 42",
+				typedText: null,
+				typedFont: null,
+				selected: true,
+			}),
+		]);
 	});
 
 	it("notifies the sender when the partner completes after sender-first signing", async () => {

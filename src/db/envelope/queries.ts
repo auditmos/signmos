@@ -1,37 +1,24 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
-import { finalizeCompletedEnvelope } from "./finalization";
 import {
 	type AddFieldsRequest,
 	type AddRecipientsRequest,
 	type AttachSourceDocumentInput,
-	type CompleteSigningRequest,
-	type CompleteSigningResult,
 	type CreateEnvelopeInput,
-	type DeclineSigningRequest,
-	type DeclineSigningResult,
 	type Envelope,
 	type EnvelopeField,
 	EnvelopeFieldSchema,
 	EnvelopeSchema,
-	getEnvelopeAllowedActions,
 	type Recipient,
 	RecipientSchema,
-	type SignerSession,
-	type SignerToken,
-	SignerTokenSchema,
 	type SourceDocument,
 	SourceDocumentSchema,
 } from "./schema";
 import {
-	auditEvents,
-	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
-	fieldValues,
 	idempotencyRecords,
-	signerTokens,
 	sourceDocuments,
 } from "./table";
 
@@ -46,20 +33,6 @@ export interface CreateEnvelopeResult {
 export interface AttachSourceDocumentResult {
 	document: SourceDocument;
 	reused: boolean;
-}
-
-export class SigningCompletionBlockedError extends Error {
-	constructor(public readonly status: Envelope["status"]) {
-		super("Envelope is not open for completion");
-		this.name = "SigningCompletionBlockedError";
-	}
-}
-
-export class SigningNoAssignedFieldsError extends Error {
-	constructor() {
-		super("No signing fields are assigned to this recipient");
-		this.name = "SigningNoAssignedFieldsError";
-	}
 }
 
 export class SignaturePlaceholderLimitError extends Error {
@@ -199,220 +172,6 @@ export async function addRecipients(
 		)
 		.returning();
 	return rows.map((recipient) => RecipientSchema.parse(recipient));
-}
-
-export async function resolveSignerToken(token: string): Promise<SignerToken | null> {
-	const db = getDb();
-	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
-	const found = tokens[0];
-	return found ? SignerTokenSchema.parse(found) : null;
-}
-
-export async function getSignerSession(token: SignerToken): Promise<SignerSession> {
-	const db = getDb();
-	const fields = (
-		await db
-			.select()
-			.from(envelopeFields)
-			.where(eq(envelopeFields.recipientId, token.recipientId))
-			.limit(100)
-	).map((field) => EnvelopeFieldSchema.parse(field));
-	const sourceDocumentsForEnvelope = (
-		await db
-			.select()
-			.from(sourceDocuments)
-			.where(eq(sourceDocuments.envelopeId, token.envelopeId))
-			.limit(100)
-	).map((document) => SourceDocumentSchema.parse(document));
-	const sourceDocument = latestSourceDocument(sourceDocumentsForEnvelope);
-	if (!sourceDocument) throw new Error("Envelope source PDF required");
-
-	await db
-		.insert(auditEvents)
-		.values({
-			envelopeId: token.envelopeId,
-			recipientId: token.recipientId,
-			eventType: "partner.signing.viewed",
-			message: null,
-		})
-		.returning();
-
-	return {
-		envelopeId: token.envelopeId,
-		recipientId: token.recipientId,
-		sourceDocument: {
-			version: sourceDocument.version,
-			contentType: sourceDocument.contentType,
-			downloadUrl: `/api/signing/${token.token}/source-pdf`,
-		},
-		fields: fields.map((field) => ({
-			id: field.id,
-			type: field.type,
-			page: field.page,
-			x: field.x,
-			y: field.y,
-			width: field.width,
-			height: field.height,
-		})),
-	};
-}
-
-export async function getSignerSourceDocument(token: SignerToken): Promise<SourceDocument | null> {
-	const db = getDb();
-	const documents = (
-		await db
-			.select()
-			.from(sourceDocuments)
-			.where(eq(sourceDocuments.envelopeId, token.envelopeId))
-			.limit(100)
-	).map((document) => SourceDocumentSchema.parse(document));
-	return latestSourceDocument(documents);
-}
-
-function latestSourceDocument(documents: SourceDocument[]): SourceDocument | null {
-	return [...documents].sort((left, right) => right.version - left.version)[0] ?? null;
-}
-
-export async function completeSigning(
-	token: SignerToken,
-	input: CompleteSigningRequest,
-	options: { documentsBucket?: R2Bucket } = {},
-): Promise<CompleteSigningResult> {
-	const db = getDb();
-	const [envelope] = await db
-		.select()
-		.from(envelopes)
-		.where(eq(envelopes.id, token.envelopeId))
-		.limit(1);
-	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
-	if (!parsedEnvelope) throw new Error("Envelope not found");
-	if (parsedEnvelope.status !== "sent") {
-		throw new SigningCompletionBlockedError(parsedEnvelope.status);
-	}
-
-	const fields = (
-		await db
-			.select()
-			.from(envelopeFields)
-			.where(eq(envelopeFields.recipientId, token.recipientId))
-			.limit(100)
-	).map((field) => EnvelopeFieldSchema.parse(field));
-	if (fields.length === 0) throw new SigningNoAssignedFieldsError();
-
-	await db
-		.insert(fieldValues)
-		.values(
-			fields.map((field) => ({
-				envelopeId: token.envelopeId,
-				recipientId: token.recipientId,
-				fieldId: field.id,
-				value: field.type === "signature" ? input.signatureName : input.date,
-			})),
-		)
-		.returning();
-	await db
-		.insert(auditEvents)
-		.values([
-			{
-				envelopeId: token.envelopeId,
-				recipientId: token.recipientId,
-				eventType: "field.value.completed",
-				message: input.signatureName,
-			},
-			{
-				envelopeId: token.envelopeId,
-				recipientId: token.recipientId,
-				eventType: "recipient.completed",
-				message: null,
-			},
-		])
-		.returning();
-	await db
-		.update(envelopeRecipients)
-		.set({ status: "completed" })
-		.where(eq(envelopeRecipients.id, token.recipientId));
-
-	const recipients = (
-		await db
-			.select()
-			.from(envelopeRecipients)
-			.where(eq(envelopeRecipients.envelopeId, token.envelopeId))
-			.limit(10)
-	).map((recipient) => RecipientSchema.parse(recipient));
-	const envelopeStatus = recipients.every(
-		(recipient) => recipient.id === token.recipientId || recipient.status === "completed",
-	)
-		? "completed"
-		: "sent";
-	if (envelopeStatus === "completed") {
-		await db
-			.update(envelopes)
-			.set({ status: "completed" })
-			.where(eq(envelopes.id, token.envelopeId));
-		await db
-			.insert(emailSendRecords)
-			.values({
-				envelopeId: token.envelopeId,
-				recipientId: token.recipientId,
-				tokenId: token.id,
-				email: parsedEnvelope.createdBy,
-				kind: "partner_signed",
-				fallbackUrl: buildSenderSigningNotificationUrl(token.envelopeId),
-			})
-			.returning();
-		await finalizeCompletedEnvelope(token.envelopeId, options);
-	}
-
-	return {
-		envelopeId: token.envelopeId,
-		recipientId: token.recipientId,
-		recipientStatus: "completed",
-		envelopeStatus,
-	};
-}
-
-function buildSenderSigningNotificationUrl(envelopeId: string): string {
-	return `/envelope-fields?envelopeId=${envelopeId}`;
-}
-
-export function getSigningBlockedAllowedActions(status: Envelope["status"]): string[] {
-	return getEnvelopeAllowedActions(status);
-}
-
-export async function declineSigning(
-	token: SignerToken,
-	input: DeclineSigningRequest,
-): Promise<DeclineSigningResult> {
-	const db = getDb();
-	const events = [
-		{
-			envelopeId: token.envelopeId,
-			recipientId: token.recipientId,
-			eventType: "recipient.declined",
-			message: input.reason,
-		},
-	];
-	if (input.comment) {
-		events.push({
-			envelopeId: token.envelopeId,
-			recipientId: token.recipientId,
-			eventType: "recipient.comment",
-			message: input.comment,
-		});
-	}
-	await db.insert(auditEvents).values(events).returning();
-	await db
-		.update(envelopeRecipients)
-		.set({ status: "declined" })
-		.where(eq(envelopeRecipients.id, token.recipientId));
-	await db.update(envelopes).set({ status: "declined" }).where(eq(envelopes.id, token.envelopeId));
-
-	return {
-		envelopeId: token.envelopeId,
-		recipientId: token.recipientId,
-		recipientStatus: "declined",
-		envelopeStatus: "declined",
-	};
 }
 
 export async function addFields(
