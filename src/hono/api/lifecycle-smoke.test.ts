@@ -283,7 +283,7 @@ describe("agent lifecycle smoke path", () => {
 			recipientId,
 			email: "ada@example.com",
 			token: verificationToken,
-			url: `/api/signing/verifications/${verificationToken}`,
+			url: `/signing-verifications/${verificationToken}`,
 			expiresAt: expect.any(String),
 		});
 		expect(verificationToken).toBeTruthy();

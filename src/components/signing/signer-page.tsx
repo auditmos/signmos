@@ -72,7 +72,14 @@ export function SignerPage({ token }: SignerPageProps) {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ signatureName, date }),
 		});
-		setMessage(response.ok ? "Signing complete" : "Unable to complete signing");
+		if (response.ok) {
+			setMessage("Signing complete");
+			return;
+		}
+		const body = (await response.json().catch((): { error?: SigningError } => ({}))) as {
+			error?: SigningError;
+		};
+		setMessage(body.error?.message ?? "Unable to complete signing");
 	}
 
 	async function declineSigning(event: React.FormEvent<HTMLFormElement>) {
@@ -181,7 +188,11 @@ export function SignerPage({ token }: SignerPageProps) {
 							/>
 						</div>
 						<div className="flex items-end">
-							<Button type="submit" className="w-full" disabled={changeRequested}>
+							<Button
+								type="submit"
+								className="w-full"
+								disabled={changeRequested || session.fields.length === 0}
+							>
 								<Check className="h-4 w-4" />
 								Complete signing
 							</Button>

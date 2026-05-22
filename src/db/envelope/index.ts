@@ -1,6 +1,7 @@
 export * from "./change-requests";
 export * from "./controls";
 export * from "./delivery";
+export * from "./email-delivery";
 export * from "./finalization";
 export * from "./partner-verification";
 export * from "./preparation";

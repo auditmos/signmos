@@ -202,6 +202,66 @@ describe("source PDF upload API", () => {
 		]);
 	});
 
+	it("returns the persisted source PDF for a verified sender session", async () => {
+		state.sourceDocuments.push({
+			id: "10000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			r2Key: "envelopes/00000000-0000-4000-8000-000000000001/source-v1.pdf",
+			version: 1,
+			sha256: "a".repeat(64),
+			byteSize: 10,
+			contentType: "application/pdf",
+			uploadedBy: "ada@example.com",
+			uploadedAt: new Date("2026-05-21T09:10:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",
+			{
+				headers: {
+					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
+				},
+			},
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: {
+				id: "10000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				r2Key: "envelopes/00000000-0000-4000-8000-000000000001/source-v1.pdf",
+				version: 1,
+				sha256: "a".repeat(64),
+				byteSize: 10,
+				contentType: "application/pdf",
+				uploadedBy: "ada@example.com",
+				uploadedAt: "2026-05-21T09:10:00.000Z",
+			},
+		});
+	});
+
+	it("returns an actionable source PDF missing response for a verified sender session", async () => {
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",
+			{
+				headers: {
+					"x-sender-session-token": "verified-sender-token",
+					"x-now": "2026-05-21T09:10:00.000Z",
+				},
+			},
+		);
+
+		expect(response.status).toBe(404);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "SOURCE_PDF_NOT_FOUND",
+				message: "Upload a source PDF before preparing or sending this envelope",
+				allowedActions: ["upload_source_pdf"],
+			},
+		});
+	});
+
 	it("rejects empty, duplicate, and over-limit uploads with stable errors and audit evidence", async () => {
 		const bucket = {
 			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {

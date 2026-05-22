@@ -1,72 +1,106 @@
-import { FileText, Save } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-
-interface FieldEditorRecipient {
-	id: string;
-	name: string;
-	email: string;
-}
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FileText } from "lucide-react";
+import type { MouseEvent, PointerEvent } from "react";
+import { useRef } from "react";
+import {
+	buildNextSignatureField,
+	type EnvelopeFieldResponse,
+	type FieldEditorRecipient,
+	FieldPlacementWorkspace,
+	type PlacedField,
+	pdfPage,
+	signatureDimensions,
+} from "./field-placement-workspace";
 
 interface EnvelopeFieldEditorProps {
 	envelopeId: string;
 	recipients: FieldEditorRecipient[];
+	senderSessionToken?: string;
 }
 
-type FieldType = "signature" | "date";
-
-type PlacedField = {
-	recipientId: string;
-	type: FieldType;
-	page: number;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
+const defaultFieldValues: PlacedField = {
+	recipientId: "",
+	type: "signature",
+	page: 1,
+	x: 72,
+	y: 144,
+	width: signatureDimensions.width,
+	height: signatureDimensions.height,
 };
 
-const pdfPage = {
-	width: 612,
-	height: 792,
-} as const;
+export function EnvelopeFieldEditor({
+	envelopeId,
+	recipients,
+	senderSessionToken,
+}: EnvelopeFieldEditorProps) {
+	const previewRef = useRef<HTMLFieldSetElement | null>(null);
+	const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+	const queryClient = useQueryClient();
+	const fieldsQuery = useQuery({
+		queryKey: fieldQueryKey(envelopeId, senderSessionToken),
+		queryFn: () => fetchFields(envelopeId, senderSessionToken),
+		staleTime: 30_000,
+	});
+	const placedFields = fieldsQuery.data ?? [];
+	const signatureRecipientIds = new Set(
+		placedFields.filter((field) => field.type === "signature").map((field) => field.recipientId),
+	);
+	const allSignaturesPlaced =
+		recipients.length > 0 &&
+		recipients.every((recipient) => signatureRecipientIds.has(recipient.id));
+	const saveMutation = useMutation({
+		mutationFn: (field: PlacedField) => saveField(envelopeId, senderSessionToken, field),
+		onSuccess: (fields) => {
+			queryClient.setQueryData<EnvelopeFieldResponse[]>(
+				fieldQueryKey(envelopeId, senderSessionToken),
+				(existing = []) => [...existing, ...fields],
+			);
+		},
+	});
+	const form = useForm({
+		defaultValues: {
+			...defaultFieldValues,
+			recipientId: recipients[0]?.id ?? defaultFieldValues.recipientId,
+		},
+		onSubmit: async ({ value }) => {
+			const field = buildNextSignatureField(value, recipients, signatureRecipientIds);
+			if (!field) return;
+			await saveMutation.mutateAsync(field);
+		},
+	});
 
-export function EnvelopeFieldEditor({ envelopeId, recipients }: EnvelopeFieldEditorProps) {
-	const [type, setType] = useState<FieldType>("signature");
-	const [recipientId, setRecipientId] = useState(recipients[0]?.id ?? "");
-	const [page, setPage] = useState(1);
-	const [x, setX] = useState(72);
-	const [y, setY] = useState(144);
-	const [width, setWidth] = useState(180);
-	const [height, setHeight] = useState(48);
-	const [error, setError] = useState<string | null>(null);
-	const [message, setMessage] = useState<string | null>(null);
-	const [placedFields, setPlacedFields] = useState<PlacedField[]>([]);
-
-	const selectedRecipient = recipients.find((recipient) => recipient.id === recipientId);
-	const currentField: PlacedField = { recipientId, type, page, x, y, width, height };
-
-	async function saveField(event: React.FormEvent<HTMLFormElement>) {
+	function startDragging(
+		event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>,
+		field: PlacedField,
+	) {
+		const point = pointFromPreview(event, previewRef.current);
+		dragOffsetRef.current = {
+			x: point.x - field.x,
+			y: point.y - field.y,
+		};
+		if ("pointerId" in event) event.currentTarget.setPointerCapture?.(event.pointerId);
 		event.preventDefault();
-		setError(null);
-		setMessage(null);
-		const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"x-internal-user-id": "ui-user",
-			},
-			body: JSON.stringify({
-				fields: [{ recipientId, type, page, x, y, width, height }],
-			}),
-		});
-		if (!response.ok) setError("Unable to save field");
-		if (response.ok) {
-			setPlacedFields((fields) => [...fields, currentField]);
-			setMessage("Field saved");
-		}
+	}
+
+	function continueDragging(
+		event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>,
+		field: PlacedField,
+	) {
+		if (!dragOffsetRef.current) return;
+		const point = pointFromPreview(event, previewRef.current);
+		form.setFieldValue(
+			"x",
+			clamp(Math.round(point.x - dragOffsetRef.current.x), 0, pdfPage.width - field.width),
+		);
+		form.setFieldValue(
+			"y",
+			clamp(Math.round(point.y - dragOffsetRef.current.y), 0, pdfPage.height - field.height),
+		);
+	}
+
+	function stopDragging() {
+		dragOffsetRef.current = null;
 	}
 
 	return (
@@ -74,159 +108,106 @@ export function EnvelopeFieldEditor({ envelopeId, recipients }: EnvelopeFieldEdi
 			<div className="mb-5 flex items-start gap-3">
 				<FileText className="mt-0.5 size-5 text-muted-foreground" />
 				<div>
-					<h2 className="text-balance font-semibold text-lg">Field placement</h2>
+					<h2 className="text-balance font-semibold text-lg">Signature placement</h2>
 					<p className="text-muted-foreground text-pretty text-sm">
-						Place signature and date fields on a PDF page.
+						Place one signature box for each signer. Completed signers are locked so duplicates
+						cannot be added.
 					</p>
 				</div>
 			</div>
-			<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-				<form onSubmit={saveField} className="grid gap-4 sm:grid-cols-2">
-					<div className="space-y-2">
-						<Label htmlFor="field-recipient">Recipient</Label>
-						<select
-							id="field-recipient"
-							value={recipientId}
-							onChange={(event) => setRecipientId(event.target.value)}
-							className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-						>
-							{recipients.map((recipient) => (
-								<option key={recipient.id} value={recipient.id}>
-									{recipient.name}
-								</option>
-							))}
-						</select>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="field-type">Type</Label>
-						<select
-							id="field-type"
-							value={type}
-							onChange={(event) => setType(event.target.value as FieldType)}
-							className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-						>
-							<option value="signature">Signature</option>
-							<option value="date">Date</option>
-						</select>
-					</div>
-					<NumberField id="field-page" label="Page" value={page} min={1} onChange={setPage} />
-					<NumberField id="field-x" label="X" value={x} min={0} onChange={setX} />
-					<NumberField id="field-y" label="Y" value={y} min={0} onChange={setY} />
-					<NumberField id="field-width" label="Width" value={width} min={1} onChange={setWidth} />
-					<NumberField
-						id="field-height"
-						label="Height"
-						value={height}
-						min={1}
-						onChange={setHeight}
+			{fieldsQuery.isLoading ? (
+				<p className="mb-4 text-muted-foreground text-sm">Loading existing placements.</p>
+			) : null}
+			{fieldsQuery.isError ? (
+				<p className="mb-4 text-destructive text-sm">Unable to load existing placements.</p>
+			) : null}
+			<form.Subscribe selector={(state) => state.values}>
+				{(values) => (
+					<FieldPlacementWorkspace
+						values={values}
+						recipients={recipients}
+						signatureRecipientIds={signatureRecipientIds}
+						placedFields={placedFields}
+						allSignaturesPlaced={allSignaturesPlaced}
+						isSaving={saveMutation.isPending}
+						isSaveError={saveMutation.isError}
+						previewRef={previewRef}
+						onSelectRecipient={(recipientId) => form.setFieldValue("recipientId", recipientId)}
+						onSubmit={() => void form.handleSubmit()}
+						onStartDragging={startDragging}
+						onContinueDragging={continueDragging}
+						onStopDragging={stopDragging}
 					/>
-					<div className="flex items-end">
-						<Button type="submit" className="w-full">
-							<Save className="size-4" />
-							Save field
-						</Button>
-					</div>
-					{error && <p className="text-destructive text-sm sm:col-span-2">{error}</p>}
-					{message && <p className="text-muted-foreground text-sm sm:col-span-2">{message}</p>}
-				</form>
-				<div>
-					<fieldset
-						aria-label="PDF page preview"
-						className="relative aspect-[612/792] w-full overflow-hidden rounded-lg border bg-white text-slate-950 shadow-sm"
-					>
-						<legend className="sr-only">PDF page preview</legend>
-						{placedFields.map((field, index) => (
-							<FieldOverlay
-								key={`${field.recipientId}-${field.type}-${field.page}-${index}`}
-								field={field}
-								recipientName={getRecipientName(recipients, field.recipientId)}
-								isCurrent={false}
-							/>
-						))}
-						<FieldOverlay
-							field={currentField}
-							recipientName={selectedRecipient?.name ?? "Recipient"}
-							isCurrent={true}
-						/>
-					</fieldset>
-					{placedFields.length === 0 && (
-						<p className="mt-3 text-muted-foreground text-sm">Save a field to pin it here.</p>
-					)}
-				</div>
-			</div>
+				)}
+			</form.Subscribe>
 		</section>
 	);
 }
 
-function FieldOverlay({
-	field,
-	recipientName,
-	isCurrent,
-}: {
-	field: PlacedField;
-	recipientName: string;
-	isCurrent: boolean;
-}) {
-	const isCompact = field.height < 40;
-	return (
-		<div
-			aria-label={isCurrent ? "Current field preview" : `${recipientName} saved field preview`}
-			role="img"
-			className={cn(
-				"absolute flex justify-center overflow-hidden rounded border px-1 tabular-nums",
-				isCurrent
-					? "border-slate-950 bg-slate-950/10"
-					: "border-slate-500 bg-slate-100 text-slate-700",
-				isCompact ? "items-center text-[9px]" : "flex-col text-[10px] leading-tight",
-			)}
-			style={{
-				left: `${(field.x / pdfPage.width) * 100}%`,
-				top: `${(field.y / pdfPage.height) * 100}%`,
-				width: `${(field.width / pdfPage.width) * 100}%`,
-				height: `${(field.height / pdfPage.height) * 100}%`,
-			}}
-		>
-			{isCompact ? (
-				<span className="truncate font-medium">
-					{field.type} · {recipientName}
-				</span>
-			) : (
-				<>
-					<span className="truncate font-medium">{field.type}</span>
-					<span className="truncate">{recipientName}</span>
-				</>
-			)}
-		</div>
-	);
+async function fetchFields(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+): Promise<EnvelopeFieldResponse[]> {
+	const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
+		headers: authHeaders(senderSessionToken),
+	});
+	const payload = (await response.json().catch(() => ({}))) as {
+		data?: EnvelopeFieldResponse[];
+	};
+	if (!response.ok || !Array.isArray(payload.data)) {
+		throw new Error("Unable to load fields");
+	}
+	return payload.data;
 }
 
-function getRecipientName(recipients: FieldEditorRecipient[], recipientId: string): string {
-	return recipients.find((recipient) => recipient.id === recipientId)?.name ?? "Recipient";
+async function saveField(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+	field: PlacedField,
+): Promise<EnvelopeFieldResponse[]> {
+	const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
+		method: "POST",
+		headers: authHeaders(senderSessionToken),
+		body: JSON.stringify({ fields: [field] }),
+	});
+	const payload = (await response.json().catch(() => ({}))) as {
+		data?: EnvelopeFieldResponse[];
+	};
+	if (!response.ok || !Array.isArray(payload.data)) throw new Error("Unable to save field");
+	return payload.data;
 }
 
-function NumberField({
-	id,
-	label,
-	value,
-	min,
-	onChange,
-}: {
-	id: string;
-	label: string;
-	value: number;
-	min: number;
-	onChange: (value: number) => void;
-}) {
-	return (
-		<div className="space-y-2">
-			<Label htmlFor={id}>{label}</Label>
-			<Input
-				id={id}
-				type="number"
-				min={min}
-				value={value}
-				onChange={(event) => onChange(Number(event.target.value))}
-			/>
-		</div>
-	);
+function pointFromPreview(
+	event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>,
+	preview: HTMLFieldSetElement | null,
+): { x: number; y: number } {
+	const bounds = preview?.getBoundingClientRect();
+	if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+		return { x: event.clientX, y: event.clientY };
+	}
+	return {
+		x: (event.clientX - bounds.left) * (pdfPage.width / bounds.width),
+		y: (event.clientY - bounds.top) * (pdfPage.height / bounds.height),
+	};
+}
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(max, Math.max(min, value));
+}
+
+function fieldQueryKey(envelopeId: string, senderSessionToken: string | undefined) {
+	return ["envelope-fields", envelopeId, senderSessionToken] as const;
+}
+
+function authHeaders(senderSessionToken: string | undefined): Record<string, string> {
+	if (senderSessionToken) {
+		return {
+			"Content-Type": "application/json",
+			"x-sender-session-token": senderSessionToken,
+		};
+	}
+	return {
+		"Content-Type": "application/json",
+		"x-internal-user-id": "ui-user",
+	};
 }

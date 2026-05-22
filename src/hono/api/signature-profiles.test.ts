@@ -140,4 +140,66 @@ describe("signature profile API", () => {
 			},
 		});
 	});
+
+	it("returns the latest selected signature preference for the sender", async () => {
+		state.signatureProfiles.push(
+			{
+				id: "60000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000099",
+				createdBy: "ada@example.com",
+				kind: "drawn",
+				label: "Old drawn",
+				svgPath: "M 1 1 L 2 2",
+				typedText: null,
+				typedFont: null,
+				selected: true,
+				createdAt: new Date("2026-05-20T09:00:00.000Z"),
+			},
+			{
+				id: "60000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000098",
+				createdBy: "ada@example.com",
+				kind: "typed",
+				label: "Ada typed",
+				svgPath: null,
+				typedText: "Ada Lovelace",
+				typedFont: "cursive",
+				selected: true,
+				createdAt: new Date("2026-05-21T09:00:00.000Z"),
+			},
+			{
+				id: "60000000-0000-4000-8000-000000000003",
+				envelopeId: "00000000-0000-4000-8000-000000000097",
+				createdBy: "other@example.com",
+				kind: "typed",
+				label: "Other typed",
+				svgPath: null,
+				typedText: "Other Person",
+				typedFont: "serif",
+				selected: true,
+				createdAt: new Date("2026-05-22T09:00:00.000Z"),
+			},
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/signature-profiles/selected",
+			{
+				headers: {
+					"x-internal-user-id": "ada@example.com",
+				},
+			},
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				id: "60000000-0000-4000-8000-000000000002",
+				createdBy: "ada@example.com",
+				kind: "typed",
+				label: "Ada typed",
+				typedText: "Ada Lovelace",
+				typedFont: "cursive",
+			}),
+		});
+	});
 });

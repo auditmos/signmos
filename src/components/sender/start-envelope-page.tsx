@@ -36,6 +36,7 @@ type SenderStartError = {
 	error: {
 		code: string;
 		message: string;
+		providerMessage?: string;
 	};
 };
 
@@ -67,7 +68,7 @@ export function StartEnvelopePage({
 			const json: unknown = await response.json().catch(() => null);
 			if (!response.ok || !isSenderStartSuccess(json)) {
 				const message = isSenderStartError(json)
-					? json.error.message
+					? (json.error.providerMessage ?? json.error.message)
 					: "Unable to start the envelope";
 				setState({ status: "error", message });
 				return;

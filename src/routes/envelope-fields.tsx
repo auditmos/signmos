@@ -11,6 +11,7 @@ export const Route = createFileRoute("/envelope-fields")({
 		partnerRecipientId: z.string().optional(),
 		partnerName: z.string().optional(),
 		partnerEmail: z.string().optional(),
+		senderSessionToken: z.string().optional(),
 	}),
 	component: EnvelopeFieldsRoute,
 });
@@ -29,6 +30,7 @@ function EnvelopeFieldsRoute() {
 	return (
 		<EnvelopePreparationPage
 			envelopeId={search.envelopeId}
+			senderSessionToken={search.senderSessionToken}
 			recipients={
 				hasReviewEnvelope
 					? [

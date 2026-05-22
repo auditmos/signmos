@@ -23,7 +23,7 @@ describe("StartEnvelopePage", () => {
 							verification: {
 								email: "ada@example.com",
 								expiresAt: "2026-05-21T09:30:00.000Z",
-								fallbackUrl: "http://localhost/api/envelopes/sender-verifications/sender-token",
+								fallbackUrl: "http://localhost/sender-verifications/sender-token",
 							},
 						},
 					}),
@@ -40,7 +40,7 @@ describe("StartEnvelopePage", () => {
 
 		await screen.findByText("Check your email");
 		expect(screen.getByRole("link", { name: "Open verification link" }).getAttribute("href")).toBe(
-			"http://localhost/api/envelopes/sender-verifications/sender-token",
+			"http://localhost/sender-verifications/sender-token",
 		);
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 		expect(fetchMock).toHaveBeenCalledWith(

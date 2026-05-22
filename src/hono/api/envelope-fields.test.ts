@@ -42,6 +42,7 @@ const state = vi.hoisted(() => ({
 function selectRows(table: unknown) {
 	if (table === state.envelopesTable) return state.envelopes;
 	if (table === state.recipientsTable) return state.recipients;
+	if (table === state.fieldsTable) return state.fields;
 	return [];
 }
 
@@ -312,5 +313,91 @@ describe("envelope field API", () => {
 			},
 		});
 		expect(state.fields).toHaveLength(0);
+	});
+
+	it("lists existing fields so placement state survives reload", async () => {
+		state.fields.push({
+			id: "50000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			recipientId: "20000000-0000-4000-8000-000000000001",
+			type: "signature",
+			page: 1,
+			x: 72,
+			y: 144,
+			width: 180,
+			height: 48,
+			createdAt: new Date("2026-05-20T07:05:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/fields",
+			{
+				headers: {
+					"x-internal-user-id": "user_123",
+				},
+			},
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: [
+				expect.objectContaining({
+					id: "50000000-0000-4000-8000-000000000001",
+					recipientId: "20000000-0000-4000-8000-000000000001",
+					type: "signature",
+					x: 72,
+					y: 144,
+				}),
+			],
+		});
+	});
+
+	it("rejects more than one signature placeholder for the same signer", async () => {
+		state.fields.push({
+			id: "50000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			recipientId: "20000000-0000-4000-8000-000000000001",
+			type: "signature",
+			page: 1,
+			x: 72,
+			y: 144,
+			width: 180,
+			height: 48,
+			createdAt: new Date("2026-05-20T07:05:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/fields",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "user_123",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					fields: [
+						{
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							type: "signature",
+							page: 1,
+							x: 220,
+							y: 240,
+							width: 180,
+							height: 48,
+						},
+					],
+				}),
+			},
+		);
+
+		expect(response.status).toBe(409);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "SIGNATURE_PLACEHOLDER_LIMIT_REACHED",
+				message: "Each signer can have one signature placeholder",
+				allowedActions: ["add_fields"],
+			},
+		});
+		expect(state.fields).toHaveLength(1);
 	});
 });

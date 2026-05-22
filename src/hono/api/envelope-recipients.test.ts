@@ -1,5 +1,6 @@
 import {
 	emailSendRecords,
+	envelopeFields,
 	envelopeRecipients,
 	envelopes,
 	signerTokens,
@@ -10,6 +11,7 @@ import { apiHono } from "@/hono/api";
 const state = vi.hoisted(() => ({
 	envelopesTable: null as unknown,
 	recipientsTable: null as unknown,
+	fieldsTable: null as unknown,
 	sourceDocumentsTable: null as unknown,
 	signerTokensTable: null as unknown,
 	emailSendRecordsTable: null as unknown,
@@ -43,6 +45,18 @@ const state = vi.hoisted(() => ({
 		status: "pending" | "sent";
 		createdAt: Date;
 	}>,
+	fields: [] as Array<{
+		id: string;
+		envelopeId: string;
+		recipientId: string;
+		type: "signature" | "date";
+		page: number;
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		createdAt: Date;
+	}>,
 	tokens: [] as Array<{
 		id: string;
 		envelopeId: string;
@@ -58,7 +72,8 @@ const state = vi.hoisted(() => ({
 		recipientId: string;
 		tokenId: string;
 		email: string;
-		kind: "invitation" | "resend";
+		kind: string;
+		fallbackUrl?: string;
 		sentAt: Date;
 	}>,
 }));
@@ -67,6 +82,7 @@ function selectRows(table: unknown) {
 	if (table === state.envelopesTable) return state.envelopes;
 	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
 	if (table === state.recipientsTable) return state.recipients;
+	if (table === state.fieldsTable) return state.fields;
 	if (table === state.signerTokensTable) return state.tokens;
 	if (table === state.emailSendRecordsTable) return state.emailSends;
 	return [];
@@ -178,12 +194,15 @@ vi.mock("@/db/setup", () => ({
 
 describe("envelope recipient API", () => {
 	beforeEach(() => {
+		vi.restoreAllMocks();
 		state.envelopesTable = envelopes;
 		state.recipientsTable = envelopeRecipients;
+		state.fieldsTable = envelopeFields;
 		state.sourceDocumentsTable = sourceDocuments;
 		state.signerTokensTable = signerTokens;
 		state.emailSendRecordsTable = emailSendRecords;
 		state.recipients.length = 0;
+		state.fields.length = 0;
 		state.tokens.length = 0;
 		state.emailSends.length = 0;
 		state.envelopes[0] = {
@@ -194,6 +213,43 @@ describe("envelope recipient API", () => {
 			sentBy: null,
 			sentAt: null,
 		};
+		state.sourceDocuments[0] = {
+			id: "10000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			r2Key: "envelopes/00000000-0000-4000-8000-000000000001/source.pdf",
+			sha256: "a".repeat(64),
+			byteSize: 10,
+			contentType: "application/pdf",
+			uploadedBy: "user_123",
+			uploadedAt: new Date("2026-05-20T07:01:00.000Z"),
+		};
+		state.sourceDocuments.length = 1;
+		state.fields.push(
+			{
+				id: "50000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000001",
+				type: "signature",
+				page: 1,
+				x: 72,
+				y: 144,
+				width: 180,
+				height: 48,
+				createdAt: new Date("2026-05-20T07:03:00.000Z"),
+			},
+			{
+				id: "50000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000002",
+				type: "signature",
+				page: 1,
+				x: 72,
+				y: 220,
+				width: 180,
+				height: 48,
+				createdAt: new Date("2026-05-20T07:03:00.000Z"),
+			},
+		);
 	});
 
 	it("adds up to 10 recipients with valid names and emails", async () => {
@@ -294,7 +350,7 @@ describe("envelope recipient API", () => {
 		expect(state.recipients).toHaveLength(0);
 	});
 
-	it("sends a ready envelope to all recipients in parallel", async () => {
+	it("sends a ready envelope to all recipients with UI links", async () => {
 		state.recipients.push(
 			{
 				id: "20000000-0000-4000-8000-000000000001",
@@ -319,7 +375,7 @@ describe("envelope recipient API", () => {
 			{
 				method: "POST",
 				headers: {
-					"x-internal-user-id": "sender_123",
+					"x-internal-user-id": "ada@example.com",
 					"content-type": "application/json",
 				},
 				body: JSON.stringify({ action: "send" }),
@@ -331,7 +387,7 @@ describe("envelope recipient API", () => {
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				status: "sent",
-				sentBy: "sender_123",
+				sentBy: "ada@example.com",
 				tokenCount: 2,
 				emailSendCount: 2,
 				verificationLinks: [
@@ -339,23 +395,314 @@ describe("envelope recipient API", () => {
 						recipientId: "20000000-0000-4000-8000-000000000001",
 						email: "ada@example.com",
 						token: expect.any(String),
-						url: expect.stringMatching(/^\/api\/signing\/verifications\//),
+						url: expect.stringMatching(/^\/signing\//),
 						expiresAt: expect.any(String),
 					},
 					{
 						recipientId: "20000000-0000-4000-8000-000000000002",
 						email: "grace@example.com",
 						token: expect.any(String),
-						url: expect.stringMatching(/^\/api\/signing\/verifications\//),
+						url: expect.stringMatching(/^\/signing-verifications\//),
 						expiresAt: expect.any(String),
 					},
 				],
 			},
 		});
 		expect(state.envelopes[0]?.status).toBe("sent");
-		expect(state.envelopes[0]?.sentBy).toBe("sender_123");
+		expect(state.envelopes[0]?.sentBy).toBe("ada@example.com");
 		expect(state.tokens).toHaveLength(2);
-		expect(state.emailSends).toHaveLength(2);
+		expect(state.emailSends).toEqual([
+			expect.objectContaining({
+				email: "ada@example.com",
+				kind: "sender_signing",
+				fallbackUrl: expect.stringMatching(/^\/signing\//),
+			}),
+			expect.objectContaining({
+				email: "grace@example.com",
+				kind: "partner_verification",
+				fallbackUrl: expect.stringMatching(/^\/signing-verifications\//),
+			}),
+		]);
+	});
+
+	it("returns a stable send error when the envelope has no persisted source PDF", async () => {
+		state.sourceDocuments.length = 0;
+		state.recipients.push(
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Ada Lovelace",
+				email: "ada@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Grace Hopper",
+				email: "grace@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/actions",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "ada@example.com",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ action: "send" }),
+			},
+		);
+
+		expect(response.status).toBe(409);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "SOURCE_PDF_REQUIRED",
+				message: "Upload a source PDF before sending this envelope",
+				allowedActions: ["upload_source_pdf"],
+			},
+		});
+		expect(state.envelopes[0]?.status).toBe("draft");
+		expect(state.tokens).toHaveLength(0);
+		expect(state.emailSends).toHaveLength(0);
+	});
+
+	it("returns a stable send error when a recipient has no assigned fields", async () => {
+		state.fields = state.fields.filter(
+			(field) => field.recipientId === "20000000-0000-4000-8000-000000000001",
+		);
+		state.recipients.push(
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Ada Lovelace",
+				email: "ada@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Grace Hopper",
+				email: "grace@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/actions",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "ada@example.com",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ action: "send" }),
+			},
+		);
+
+		expect(response.status).toBe(409);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "RECIPIENT_FIELDS_REQUIRED",
+				message: "Place at least one field for every recipient before sending this envelope",
+				allowedActions: ["add_fields"],
+			},
+		});
+		expect(state.envelopes[0]?.status).toBe("draft");
+		expect(state.tokens).toHaveLength(0);
+		expect(state.emailSends).toHaveLength(0);
+	});
+
+	it("delivers different sender and partner email content through Resend", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-email" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		state.recipients.push(
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Ada Lovelace",
+				email: "ada@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Grace Hopper",
+				email: "grace@example.com",
+				status: "pending",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/actions",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "ada@example.com",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ action: "send" }),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		const bodies = fetchMock.mock.calls
+			.map((call) => JSON.parse(call[1]?.body as string))
+			.sort((left, right) => String(left.to[0]).localeCompare(String(right.to[0])));
+		expect(bodies).toEqual([
+			expect.objectContaining({
+				to: ["ada@example.com"],
+				subject: "Sign your document",
+				html: expect.stringContaining("https://signmos.example/signing/"),
+			}),
+			expect.objectContaining({
+				to: ["grace@example.com"],
+				subject: "Verify your email to sign this document",
+				html: expect.stringContaining("https://signmos.example/signing-verifications/"),
+			}),
+		]);
+		expect(bodies[0]?.html).not.toContain("/api/");
+		expect(bodies[1]?.html).not.toContain("/api/");
+
+		fetchMock.mockRestore();
+	});
+
+	it("delivers partner verification emails through Resend when configured", async () => {
+		// Assumptions for Resend delivery RED:
+		// - POST /api/envelopes/:id/actions remains the public send boundary.
+		// - A complete Resend config is api key + from email + reply-to email.
+		// - Missing Resend config keeps local fallback records without calling the network.
+		// - This slice covers partner verification delivery, not reminder schedules or webhooks.
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-email-1" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		state.recipients.push({
+			id: "20000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Ada Lovelace",
+			email: "ada@example.com",
+			status: "pending",
+			createdAt: new Date("2026-05-20T07:02:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/actions",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "sender_123",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ action: "send" }),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://api.resend.com/emails",
+			expect.objectContaining({
+				method: "POST",
+				headers: {
+					authorization: "Bearer re_test",
+					"content-type": "application/json",
+				},
+				body: expect.any(String),
+			}),
+		);
+		const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		expect(requestBody).toEqual(
+			expect.objectContaining({
+				from: "Signmos <sign@signmos.example>",
+				reply_to: "support@signmos.example",
+				to: ["ada@example.com"],
+				subject: "Verify your email to sign this document",
+			}),
+		);
+		expect(requestBody.html).toContain("https://signmos.example/signing-verifications/");
+		expect(state.emailSends).toEqual([
+			expect.objectContaining({
+				email: "ada@example.com",
+				kind: "partner_verification",
+				fallbackUrl: expect.stringMatching(/^\/signing-verifications\//),
+			}),
+		]);
+
+		fetchMock.mockRestore();
+	});
+
+	it("does not mark the envelope sent when configured Resend delivery fails", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response("domain not verified", { status: 422 }));
+		state.recipients.push({
+			id: "20000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Ada Lovelace",
+			email: "ada@example.com",
+			status: "pending",
+			createdAt: new Date("2026-05-20T07:02:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/actions",
+			{
+				method: "POST",
+				headers: {
+					"x-internal-user-id": "sender_123",
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({ action: "send" }),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(502);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "EMAIL_DELIVERY_FAILED",
+				message: "Email provider rejected the message",
+				providerStatus: 422,
+				providerMessage: "domain not verified",
+			},
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(state.envelopes[0]?.status).toBe("draft");
+		expect(state.emailSends).toHaveLength(0);
+
+		fetchMock.mockRestore();
 	});
 
 	it("manually resends an invitation without duplicating recipients", async () => {
@@ -408,9 +755,59 @@ describe("envelope recipient API", () => {
 		expect(state.emailSends[1]).toEqual(
 			expect.objectContaining({
 				kind: "resend",
-				fallbackUrl: `/api/signing/verifications/${state.tokens[1]?.token}`,
+				fallbackUrl: `/signing-verifications/${state.tokens[1]?.token}`,
 			}),
 		);
+	});
+
+	it("delivers manual resend invitations through Resend when configured", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-email-2" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		state.recipients.push({
+			id: "20000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			name: "Ada Lovelace",
+			email: "ada@example.com",
+			status: "sent",
+			createdAt: new Date("2026-05-20T07:02:00.000Z"),
+		});
+
+		const response = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000001/resend",
+			{
+				method: "POST",
+				headers: { "x-internal-user-id": "sender_123" },
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(201);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		expect(requestBody).toEqual(
+			expect.objectContaining({
+				to: ["ada@example.com"],
+				subject: "Verify your email to sign this document",
+			}),
+		);
+		expect(requestBody.html).toContain("https://signmos.example/signing-verifications/");
+		expect(state.emailSends).toEqual([
+			expect.objectContaining({
+				kind: "resend",
+				email: "ada@example.com",
+			}),
+		]);
+
+		fetchMock.mockRestore();
 	});
 
 	it("rejects expired signer tokens with a stable error", async () => {

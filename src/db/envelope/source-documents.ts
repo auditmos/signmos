@@ -121,6 +121,20 @@ export async function uploadSourcePdfDocument(
 	return { document, reused: false, revision };
 }
 
+export async function getLatestSourcePdfDocument(
+	envelopeId: string,
+): Promise<SourceDocument | null> {
+	const db = getDb();
+	const documents = (
+		await db
+			.select()
+			.from(sourceDocuments)
+			.where(eq(sourceDocuments.envelopeId, envelopeId))
+			.limit(100)
+	).map((document) => SourceDocumentSchema.parse(document));
+	return latestDocument(documents);
+}
+
 export async function recordSourcePdfUploadRejection(input: {
 	envelopeId: string;
 	eventType:

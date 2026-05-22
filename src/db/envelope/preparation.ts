@@ -55,6 +55,24 @@ export async function createSignatureProfile(input: {
 	return SignatureProfileSchema.parse(profile);
 }
 
+export async function getLatestSelectedSignatureProfile(
+	createdBy: string,
+): Promise<SignatureProfile | null> {
+	const db = getDb();
+	const profiles = (
+		await db
+			.select()
+			.from(signatureProfiles)
+			.where(eq(signatureProfiles.createdBy, createdBy))
+			.limit(100)
+	).map((profile) => SignatureProfileSchema.parse(profile));
+	return (
+		profiles
+			.filter((profile) => profile.createdBy === createdBy && profile.selected)
+			.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+	);
+}
+
 export async function createDefaultFieldPlacements(input: {
 	envelopeId: string;
 	request: DefaultFieldPlacementRequest;

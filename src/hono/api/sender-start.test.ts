@@ -199,7 +199,7 @@ describe("sender start API", () => {
 				verification: {
 					email: "ada@example.com",
 					expiresAt: expect.any(String),
-					fallbackUrl: expect.stringContaining("/api/envelopes/sender-verifications/"),
+					fallbackUrl: expect.stringContaining("/sender-verifications/"),
 				},
 			},
 		});
@@ -213,7 +213,7 @@ describe("sender start API", () => {
 			expect.objectContaining({
 				email: "ada@example.com",
 				kind: "sender_verification",
-				fallbackUrl: expect.stringContaining("/api/envelopes/sender-verifications/"),
+				fallbackUrl: expect.stringContaining("/sender-verifications/"),
 			}),
 		]);
 		expect(state.auditEvents).toEqual(
@@ -222,6 +222,115 @@ describe("sender start API", () => {
 				expect.objectContaining({ eventType: "sender.verification.sent" }),
 			]),
 		);
+	});
+
+	it("delivers sender verification emails through Resend when configured", async () => {
+		// Assumptions for sender verification delivery RED:
+		// - POST /api/envelopes/sender-start remains the public sender start boundary.
+		// - The sender receives a magic verification URL through Resend when config is complete.
+		// - The response still exposes a fallback URL for local recovery and tests.
+		// - Failed provider delivery must not silently look successful to the caller.
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-sender-email-1" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/sender-start",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"idempotency-key": "sender-start-resend-1",
+					"cf-connecting-ip": "203.0.113.10",
+				},
+				body: JSON.stringify({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+					turnstileToken: "test-pass",
+				}),
+			},
+			{
+				TURNSTILE_TEST_BYPASS: "true",
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(201);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"https://api.resend.com/emails",
+			expect.objectContaining({
+				method: "POST",
+				headers: {
+					authorization: "Bearer re_test",
+					"content-type": "application/json",
+				},
+				body: expect.any(String),
+			}),
+		);
+		const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		expect(requestBody).toEqual(
+			expect.objectContaining({
+				from: "Signmos <sign@signmos.example>",
+				reply_to: "support@signmos.example",
+				to: ["ada@example.com"],
+				subject: "Verify your email to start signing",
+			}),
+		);
+		expect(requestBody.html).toContain("https://signmos.example/sender-verifications/");
+
+		fetchMock.mockRestore();
+	});
+
+	it("returns provider details for sender email delivery failures outside production", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ message: "The auditmos.com domain is not verified" }), {
+				status: 403,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const response = await apiHono.request(
+			"/api/envelopes/sender-start",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"idempotency-key": "sender-start-resend-fails-1",
+					"cf-connecting-ip": "203.0.113.10",
+				},
+				body: JSON.stringify({
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+					turnstileToken: "test-pass",
+				}),
+			},
+			{
+				CLOUDFLARE_ENV: "dev",
+				TURNSTILE_TEST_BYPASS: "true",
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(502);
+		await expect(response.json()).resolves.toEqual({
+			error: {
+				code: "EMAIL_DELIVERY_FAILED",
+				message: "Email provider rejected the message",
+				providerStatus: 403,
+				providerMessage: "The auditmos.com domain is not verified",
+			},
+		});
+
+		fetchMock.mockRestore();
 	});
 
 	it("rejects missing or failed Turnstile and rate-limited IP or email attempts", async () => {
@@ -362,6 +471,44 @@ describe("sender start API", () => {
 			}),
 		]);
 
+		const reusedSession = await apiHono.request(
+			"/api/envelopes/sender-verifications/sender-token",
+			{
+				headers: { "x-now": "2026-05-21T09:31:00.000Z" },
+			},
+		);
+		expect(reusedSession.status).toBe(200);
+		await expect(reusedSession.json()).resolves.toMatchObject({
+			data: {
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				senderSessionToken: "sender-token",
+				sender: {
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+				},
+			},
+		});
+
+		const senderSession = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/sender-session",
+			{
+				headers: {
+					"x-sender-session-token": "sender-token",
+					"x-now": "2026-05-21T09:31:00.000Z",
+				},
+			},
+		);
+		expect(senderSession.status).toBe(200);
+		await expect(senderSession.json()).resolves.toEqual({
+			data: {
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				sender: {
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+				},
+			},
+		});
+
 		const invalid = await apiHono.request("/api/envelopes/sender-verifications/not-found");
 		expect(invalid.status).toBe(404);
 		await expect(invalid.json()).resolves.toEqual({
@@ -385,6 +532,15 @@ describe("sender start API", () => {
 			},
 		});
 		expect(state.envelopes[0]?.status).toBe("awaiting_verification");
+	});
+
+	it("redirects browser navigation from the sender verification API to the UI route", async () => {
+		const response = await apiHono.request("/api/envelopes/sender-verifications/sender-token", {
+			headers: { accept: "text/html,application/xhtml+xml" },
+		});
+
+		expect(response.status).toBe(302);
+		expect(response.headers.get("location")).toBe("/sender-verifications/sender-token");
 	});
 
 	it("exposes awaiting-verification and draft status with allowed next actions", async () => {

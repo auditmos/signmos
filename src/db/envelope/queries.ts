@@ -54,6 +54,20 @@ export class SigningCompletionBlockedError extends Error {
 	}
 }
 
+export class SigningNoAssignedFieldsError extends Error {
+	constructor() {
+		super("No signing fields are assigned to this recipient");
+		this.name = "SigningNoAssignedFieldsError";
+	}
+}
+
+export class SignaturePlaceholderLimitError extends Error {
+	constructor() {
+		super("Each signer can have one signature placeholder");
+		this.name = "SignaturePlaceholderLimitError";
+	}
+}
+
 export async function createEnvelope(input: CreateEnvelopeInput): Promise<CreateEnvelopeResult> {
 	const db = getDb();
 	if (input.idempotencyKey) {
@@ -282,6 +296,7 @@ export async function completeSigning(
 			.where(eq(envelopeFields.recipientId, token.recipientId))
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
+	if (fields.length === 0) throw new SigningNoAssignedFieldsError();
 
 	await db
 		.insert(fieldValues)
@@ -406,9 +421,32 @@ export async function addFields(
 		throw new Error("Field recipient not found");
 	}
 
+	const existingFields = await listEnvelopeFields(envelopeId);
+	const signatureRecipientIds = new Set(
+		existingFields.filter((field) => field.type === "signature").map((field) => field.recipientId),
+	);
+	for (const field of input.fields) {
+		if (field.type !== "signature") continue;
+		if (signatureRecipientIds.has(field.recipientId)) {
+			throw new SignaturePlaceholderLimitError();
+		}
+		signatureRecipientIds.add(field.recipientId);
+	}
+
 	const rows = await db
 		.insert(envelopeFields)
 		.values(input.fields.map((field) => ({ ...field, envelopeId })))
 		.returning();
 	return rows.map((field) => EnvelopeFieldSchema.parse(field));
+}
+
+export async function listEnvelopeFields(envelopeId: string): Promise<EnvelopeField[]> {
+	const db = getDb();
+	return (
+		await db
+			.select()
+			.from(envelopeFields)
+			.where(eq(envelopeFields.envelopeId, envelopeId))
+			.limit(100)
+	).map((field) => EnvelopeFieldSchema.parse(field));
 }

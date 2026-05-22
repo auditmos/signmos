@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import {
 	AddFieldsRequestSchema,
 	AddRecipientsRequestSchema,
@@ -5,6 +6,8 @@ import {
 	addRecipients,
 	controlEnvelope,
 	createEnvelope,
+	type EmailDeliveryEnv,
+	EmailDeliveryError,
 	EnvelopeActionRequestSchema,
 	EnvelopeControlError,
 	envelopeLifecycleActions,
@@ -12,11 +15,14 @@ import {
 	getEnvelopeFinalizationStatus,
 	getEnvelopeRetentionStatus,
 	getFinalDocument,
+	getLatestSourcePdfDocument,
+	listEnvelopeFields,
 	recordSourcePdfUploadRejection,
 	resendInvitation,
 	resolveVerifiedSenderSession,
 	SenderStartRateLimitError,
 	SenderStartRequestSchema,
+	SignaturePlaceholderLimitError,
 	SourcePdfUploadError,
 	sendEnvelope,
 	startSenderEnvelope,
@@ -79,12 +85,16 @@ envelopesEndpoint.post("/sender-start", async (c) => {
 			name: parsed.data.name,
 			email: parsed.data.email,
 			requestIp,
-			baseUrl: new URL(c.req.url).origin,
+			baseUrl: getDeliveryBaseUrl(c),
 			idempotencyKey: c.req.header("idempotency-key") ?? undefined,
 			now: parseNow(c.req.header("x-now")),
+			emailDelivery: getEmailDeliveryOptions(c),
 		});
 		return c.json({ data: result.response }, result.reused ? 200 : 201);
 	} catch (error) {
+		if (error instanceof EmailDeliveryError) {
+			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
+		}
 		if (error instanceof SenderStartRateLimitError) {
 			return c.json(
 				{
@@ -103,6 +113,11 @@ envelopesEndpoint.post("/sender-start", async (c) => {
 });
 
 envelopesEndpoint.get("/sender-verifications/:token", async (c) => {
+	const accept = c.req.header("accept") ?? "";
+	if (accept.includes("text/html")) {
+		return c.redirect(`/sender-verifications/${encodeURIComponent(c.req.param("token"))}`);
+	}
+
 	const result = await verifySenderToken(c.req.param("token"), parseNow(c.req.header("x-now")));
 	if (!result.ok) {
 		return c.json(
@@ -117,6 +132,35 @@ envelopesEndpoint.get("/sender-verifications/:token", async (c) => {
 	}
 
 	return c.json({ data: result.data });
+});
+
+envelopesEndpoint.get("/:id/sender-session", async (c) => {
+	const session = await resolveVerifiedSenderSession(
+		c.req.header("x-sender-session-token") ?? c.req.query("senderSessionToken") ?? "",
+		c.req.param("id"),
+		parseNow(c.req.header("x-now")),
+	);
+	if (!session) {
+		return c.json(
+			{
+				error: {
+					code: "SENDER_SESSION_FORBIDDEN",
+					message: "Verified sender access is required",
+				},
+			},
+			403,
+		);
+	}
+
+	return c.json({
+		data: {
+			envelopeId: session.envelopeId,
+			sender: {
+				name: session.name,
+				email: session.email,
+			},
+		},
+	});
 });
 
 envelopesEndpoint.post("/", async (c) => {
@@ -157,7 +201,7 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 		);
 	}
 
-	const sentBy = c.req.header("x-internal-user-id");
+	const sentBy = await getEnvelopeActor(c, c.req.param("id"));
 	if (!sentBy) {
 		return c.json(
 			{
@@ -170,8 +214,19 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 		);
 	}
 	if (parsed.data.action === "send") {
-		const result = await sendEnvelope(c.req.param("id"), sentBy);
-		return c.json({ data: result });
+		try {
+			const result = await sendEnvelope(c.req.param("id"), sentBy, {
+				emailDelivery: getEmailDeliveryOptions(c),
+			});
+			return c.json({ data: result });
+		} catch (error) {
+			if (error instanceof EmailDeliveryError) {
+				return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
+			}
+			const sendPrecondition = sendPreconditionErrorBody(error);
+			if (sendPrecondition) return c.json(sendPrecondition, 409);
+			throw error;
+		}
 	}
 
 	try {
@@ -276,6 +331,28 @@ envelopesEndpoint.get("/:id/final-pdf", async (c) => {
 	return new Response(await object.arrayBuffer(), {
 		headers: { "content-type": document.contentType },
 	});
+});
+
+envelopesEndpoint.get("/:id/source-pdf", async (c) => {
+	const userId = await getEnvelopeActor(c, c.req.param("id"));
+	if (!userId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const document = await getLatestSourcePdfDocument(c.req.param("id"));
+	if (!document) {
+		return c.json(sourcePdfMissingBody(), 404);
+	}
+
+	return c.json({ data: toSourceDocumentResponse(document) });
 });
 
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {
@@ -383,7 +460,7 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 });
 
 envelopesEndpoint.post("/:id/recipients", async (c) => {
-	const createdBy = c.req.header("x-internal-user-id");
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
 	if (!createdBy) {
 		return c.json(
 			{
@@ -428,12 +505,39 @@ envelopesEndpoint.post("/:id/recipients/:recipientId/resend", async (c) => {
 		);
 	}
 
-	const result = await resendInvitation(c.req.param("id"), c.req.param("recipientId"));
-	return c.json({ data: result }, 201);
+	try {
+		const result = await resendInvitation(c.req.param("id"), c.req.param("recipientId"), {
+			emailDelivery: getEmailDeliveryOptions(c),
+		});
+		return c.json({ data: result }, 201);
+	} catch (error) {
+		if (error instanceof EmailDeliveryError) {
+			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
+		}
+		throw error;
+	}
+});
+
+envelopesEndpoint.get("/:id/fields", async (c) => {
+	const userId = await getEnvelopeActor(c, c.req.param("id"));
+	if (!userId) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const fields = await listEnvelopeFields(c.req.param("id"));
+	return c.json({ data: fields.map(toEnvelopeFieldResponse) });
 });
 
 envelopesEndpoint.post("/:id/fields", async (c) => {
-	const userId = c.req.header("x-internal-user-id");
+	const userId = await getEnvelopeActor(c, c.req.param("id"));
 	if (!userId) {
 		return c.json(
 			{
@@ -491,9 +595,122 @@ envelopesEndpoint.post("/:id/fields", async (c) => {
 				400,
 			);
 		}
+		if (error instanceof SignaturePlaceholderLimitError) {
+			return c.json(
+				{
+					error: {
+						code: "SIGNATURE_PLACEHOLDER_LIMIT_REACHED",
+						message: "Each signer can have one signature placeholder",
+						allowedActions: ["add_fields"],
+					},
+				},
+				409,
+			);
+		}
 		throw error;
 	}
 	return c.json({ data: fields.map(toEnvelopeFieldResponse) }, 201);
 });
 
 export default envelopesEndpoint;
+
+function getEmailDeliveryOptions(c: Context<{ Bindings: Env }>) {
+	return {
+		env: c.env as EmailDeliveryEnv | undefined,
+		baseUrl: getDeliveryBaseUrl(c),
+	};
+}
+
+function getDeliveryBaseUrl(c: Context<{ Bindings: Env }>): string {
+	const env = c.env as EmailDeliveryEnv | undefined;
+	return env?.APP_BASE_URL?.trim() || new URL(c.req.url).origin;
+}
+
+async function getEnvelopeActor(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+): Promise<string | null> {
+	const internalUserId = c.req.header("x-internal-user-id");
+	if (internalUserId) return internalUserId;
+	return getVerifiedSenderUploadEmail(
+		c.req.header("x-sender-session-token"),
+		envelopeId,
+		c.req.header("x-now"),
+	);
+}
+
+function emailDeliveryErrorBody(error: EmailDeliveryError, env: EmailDeliveryEnv | undefined) {
+	const body: {
+		error: {
+			code: "EMAIL_DELIVERY_FAILED";
+			message: string;
+			providerStatus?: number;
+			providerMessage?: string;
+		};
+	} = {
+		error: {
+			code: "EMAIL_DELIVERY_FAILED",
+			message: "Email provider rejected the message",
+		},
+	};
+	if (env?.CLOUDFLARE_ENV !== "production") {
+		body.error.providerStatus = error.status;
+		body.error.providerMessage = parseProviderMessage(error.responseText);
+	}
+	return body;
+}
+
+function sendPreconditionErrorBody(error: unknown) {
+	const message = error instanceof Error ? error.message : "";
+	if (message === "Envelope source PDF required") {
+		return {
+			error: {
+				code: "SOURCE_PDF_REQUIRED",
+				message: "Upload a source PDF before sending this envelope",
+				allowedActions: ["upload_source_pdf"],
+			},
+		};
+	}
+	if (message === "Envelope recipients required") {
+		return {
+			error: {
+				code: "RECIPIENTS_REQUIRED",
+				message: "Add recipients before sending this envelope",
+				allowedActions: ["add_recipients"],
+			},
+		};
+	}
+	if (message === "Envelope recipient fields required") {
+		return {
+			error: {
+				code: "RECIPIENT_FIELDS_REQUIRED",
+				message: "Place at least one field for every recipient before sending this envelope",
+				allowedActions: ["add_fields"],
+			},
+		};
+	}
+	return null;
+}
+
+function sourcePdfMissingBody() {
+	return {
+		error: {
+			code: "SOURCE_PDF_NOT_FOUND",
+			message: "Upload a source PDF before preparing or sending this envelope",
+			allowedActions: ["upload_source_pdf"],
+		},
+	};
+}
+
+function parseProviderMessage(responseText: string): string {
+	try {
+		const parsed: unknown = JSON.parse(responseText);
+		if (parsed && typeof parsed === "object" && "message" in parsed) {
+			const message = parsed.message;
+			if (typeof message === "string" && message.trim()) return message;
+		}
+	} catch {
+		// Fall back to the raw provider response below.
+	}
+	return responseText.slice(0, 500);
+}

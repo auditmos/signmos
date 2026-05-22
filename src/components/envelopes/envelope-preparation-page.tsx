@@ -1,6 +1,8 @@
-import { FilePlus2 } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { FilePlus2, FileUp } from "lucide-react";
 import { useState } from "react";
 import { SignatureProfilePanel } from "@/components/sender/signature-profile-panel";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EnvelopeFieldEditor } from "./field-editor";
 
@@ -12,6 +14,7 @@ interface PreparationRecipient {
 
 interface EnvelopePreparationPageProps {
 	envelopeId?: string;
+	senderSessionToken?: string;
 	recipients?: PreparationRecipient[];
 }
 
@@ -29,6 +32,37 @@ type EnvelopeCreateResponse = {
 type RecipientsCreateResponse = {
 	data?: PreparationRecipient[];
 };
+type SendEnvelopeResponse = {
+	data?: {
+		emailSendCount?: number;
+	};
+	error?: {
+		code?: string;
+		message?: string;
+		providerMessage?: string;
+	};
+};
+type SourceDocumentResponse = {
+	id: string;
+	envelopeId: string;
+	r2Key: string;
+	version: number;
+	sha256: string;
+	byteSize: number;
+	contentType: "application/pdf";
+	uploadedBy: string;
+	uploadedAt: string;
+};
+type SourcePdfResponse = {
+	data?: SourceDocumentResponse;
+	error?: {
+		code?: string;
+		message?: string;
+	};
+};
+type SourcePdfStatus =
+	| { status: "ready"; document: SourceDocumentResponse }
+	| { status: "missing"; message: string };
 
 const defaultSender = {
 	name: "Ada Lovelace",
@@ -39,7 +73,11 @@ const defaultPartner = {
 	emailPrefix: "grace",
 };
 
-export function EnvelopePreparationPage({ envelopeId, recipients }: EnvelopePreparationPageProps) {
+export function EnvelopePreparationPage({
+	envelopeId,
+	senderSessionToken,
+	recipients,
+}: EnvelopePreparationPageProps) {
 	const [preparation, setPreparation] = useState<PreparationState | null>(
 		envelopeId && recipients && recipients.length >= 2 ? { envelopeId, recipients } : null,
 	);
@@ -93,10 +131,18 @@ export function EnvelopePreparationPage({ envelopeId, recipients }: EnvelopePrep
 				</div>
 				{preparation ? (
 					<>
-						<SignatureProfilePanel envelopeId={preparation.envelopeId} />
+						<SignatureProfilePanel
+							envelopeId={preparation.envelopeId}
+							senderSessionToken={senderSessionToken}
+						/>
 						<EnvelopeFieldEditor
 							envelopeId={preparation.envelopeId}
 							recipients={preparation.recipients}
+							senderSessionToken={senderSessionToken}
+						/>
+						<SendEnvelopePanel
+							envelopeId={preparation.envelopeId}
+							senderSessionToken={senderSessionToken}
 						/>
 					</>
 				) : (
@@ -119,6 +165,95 @@ export function EnvelopePreparationPage({ envelopeId, recipients }: EnvelopePrep
 	);
 }
 
+function SendEnvelopePanel({
+	envelopeId,
+	senderSessionToken,
+}: {
+	envelopeId: string;
+	senderSessionToken?: string;
+}) {
+	const sourcePdfQuery = useQuery({
+		queryKey: ["source-pdf", envelopeId, senderSessionToken],
+		queryFn: () => fetchSourcePdf(envelopeId, senderSessionToken),
+		staleTime: 30_000,
+	});
+	const sendMutation = useMutation({
+		mutationFn: () => sendEnvelopeRequest(envelopeId, senderSessionToken),
+	});
+	const sourcePdfStatus = sourcePdfQuery.data;
+	const sourcePdfReady = sourcePdfStatus?.status === "ready";
+	const sourcePdfMissing = sourcePdfStatus?.status === "missing";
+	const sourcePdfError =
+		sourcePdfQuery.error instanceof Error ? sourcePdfQuery.error.message : null;
+	const sendError = sendMutation.error instanceof Error ? sendMutation.error.message : null;
+	const sentEmailCount = sendMutation.data?.emailSendCount;
+	const uploadUrl = buildSourcePdfUploadUrl(envelopeId, senderSessionToken);
+
+	return (
+		<section className="rounded-lg border bg-card p-5 shadow-sm">
+			<div className="mb-4">
+				<h2 className="font-semibold text-lg">Send envelope</h2>
+				<p className="text-muted-foreground text-sm">
+					Send verification links to the recipients when fields are ready.
+				</p>
+			</div>
+			{sourcePdfQuery.isLoading ? (
+				<p className="mb-4 text-muted-foreground text-sm">Checking source PDF.</p>
+			) : null}
+			{sourcePdfMissing ? (
+				<Alert variant="destructive" role="alert" className="mb-4">
+					<AlertTitle>Source PDF required</AlertTitle>
+					<AlertDescription className="space-y-3">
+						<p>{sourcePdfStatus.message}</p>
+						<Button asChild size="sm" variant="outline">
+							<a href={uploadUrl}>
+								<FileUp className="mr-2 size-4" />
+								Upload PDF
+							</a>
+						</Button>
+					</AlertDescription>
+				</Alert>
+			) : null}
+			{sourcePdfReady ? (
+				<Alert className="mb-4">
+					<AlertTitle>Source PDF ready</AlertTitle>
+					<AlertDescription>
+						Version {sourcePdfStatus.document.version} · {sourcePdfStatus.document.byteSize} bytes
+					</AlertDescription>
+				</Alert>
+			) : null}
+			{sourcePdfError ? (
+				<Alert variant="destructive" role="alert" className="mb-4">
+					<AlertTitle>Source PDF check failed</AlertTitle>
+					<AlertDescription>{sourcePdfError}</AlertDescription>
+				</Alert>
+			) : null}
+			{sendError ? (
+				<Alert variant="destructive" role="alert" className="mb-4">
+					<AlertTitle>Send failed</AlertTitle>
+					<AlertDescription>{sendError}</AlertDescription>
+				</Alert>
+			) : null}
+			{sentEmailCount !== undefined ? (
+				<Alert className="mb-4">
+					<AlertTitle>Envelope sent</AlertTitle>
+					<AlertDescription>
+						Created {sentEmailCount} recipient email send record
+						{sentEmailCount === 1 ? "" : "s"}.
+					</AlertDescription>
+				</Alert>
+			) : null}
+			<Button
+				type="button"
+				onClick={() => sendMutation.mutate()}
+				disabled={sendMutation.isPending || sentEmailCount !== undefined || !sourcePdfReady}
+			>
+				{sendMutation.isPending ? "Sending..." : "Send envelope"}
+			</Button>
+		</section>
+	);
+}
+
 async function postJson<TResponse>(url: string, body: unknown): Promise<TResponse> {
 	const response = await fetch(url, {
 		method: "POST",
@@ -130,4 +265,69 @@ async function postJson<TResponse>(url: string, body: unknown): Promise<TRespons
 	});
 	if (!response.ok) throw new Error("Request failed");
 	return (await response.json()) as TResponse;
+}
+
+function authHeaders(senderSessionToken: string | undefined): Record<string, string> {
+	if (senderSessionToken) {
+		return {
+			"Content-Type": "application/json",
+			"x-sender-session-token": senderSessionToken,
+		};
+	}
+	return {
+		"Content-Type": "application/json",
+		"x-internal-user-id": "ui-user",
+	};
+}
+
+async function fetchSourcePdf(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+): Promise<SourcePdfStatus> {
+	const response = await fetch(`/api/envelopes/${envelopeId}/source-pdf`, {
+		headers: authHeaders(senderSessionToken),
+	});
+	const json = (await response.json().catch((): SourcePdfResponse => ({}))) as
+		| SourcePdfResponse
+		| undefined;
+	if (response.status === 404 && json?.error?.code === "SOURCE_PDF_NOT_FOUND") {
+		return {
+			status: "missing",
+			message:
+				json.error.message ?? "Upload a source PDF before preparing or sending this envelope",
+		};
+	}
+	if (!response.ok || !json?.data) {
+		throw new Error(json?.error?.message ?? "Unable to check the source PDF.");
+	}
+	return { status: "ready", document: json.data };
+}
+
+async function sendEnvelopeRequest(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+): Promise<{ emailSendCount: number }> {
+	const response = await fetch(`/api/envelopes/${envelopeId}/actions`, {
+		method: "POST",
+		headers: authHeaders(senderSessionToken),
+		body: JSON.stringify({ action: "send" }),
+	});
+	const json = (await response.json().catch((): SendEnvelopeResponse => ({}))) as
+		| SendEnvelopeResponse
+		| undefined;
+	if (!response.ok) {
+		throw new Error(
+			json?.error?.providerMessage ?? json?.error?.message ?? "Unable to send this envelope.",
+		);
+	}
+	return { emailSendCount: json?.data?.emailSendCount ?? 0 };
+}
+
+function buildSourcePdfUploadUrl(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+): string {
+	const params = new URLSearchParams({ envelopeId });
+	if (senderSessionToken) params.set("senderSessionToken", senderSessionToken);
+	return `/source-pdf-upload?${params.toString()}`;
 }

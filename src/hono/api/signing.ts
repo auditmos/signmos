@@ -14,6 +14,7 @@ import {
 	resolveSignerToken,
 	SigningChangeRequestError,
 	SigningCompletionBlockedError,
+	SigningNoAssignedFieldsError,
 	verifyPartnerToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
@@ -21,6 +22,11 @@ import { createHono } from "@/hono/factory";
 const signingEndpoint = createHono();
 
 signingEndpoint.get("/verifications/:token", async (c) => {
+	const accept = c.req.header("accept") ?? "";
+	if (accept.includes("text/html")) {
+		return c.redirect(`/signing-verifications/${encodeURIComponent(c.req.param("token"))}`);
+	}
+
 	const result = await verifyPartnerToken(c.req.param("token"), parseNow(c.req.header("x-now")));
 	if (!result.ok) {
 		return c.json(
@@ -149,6 +155,18 @@ signingEndpoint.post("/:token/complete", async (c) => {
 				409,
 			);
 		}
+		if (error instanceof SigningNoAssignedFieldsError) {
+			return c.json(
+				{
+					error: {
+						code: "NO_ASSIGNED_FIELDS",
+						message: "No signing fields are assigned to this recipient",
+						allowedActions: ["request_changes"],
+					},
+				},
+				409,
+			);
+		}
 		throw error;
 	}
 });
@@ -264,7 +282,7 @@ async function getUsableToken(tokenValue: string, nowHeader: string | undefined)
 				error: {
 					code: "PARTNER_VERIFICATION_REQUIRED",
 					message: "Partner email verification is required before signing",
-					verificationUrl: `/api/signing/verifications/${token.token}`,
+					verificationUrl: `/signing-verifications/${token.token}`,
 				},
 			},
 			{ status: 403 },

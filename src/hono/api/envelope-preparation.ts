@@ -1,7 +1,10 @@
+import type { Context } from "hono";
 import {
 	createDefaultFieldPlacements,
 	createSignatureProfile,
 	DefaultFieldPlacementRequestSchema,
+	getLatestSelectedSignatureProfile,
+	resolveVerifiedSenderSession,
 	SignatureProfileCreateRequestSchema,
 	toEnvelopeFieldResponse,
 	toSignatureProfileResponse,
@@ -11,7 +14,7 @@ import { createHono } from "@/hono/factory";
 const envelopePreparationEndpoint = createHono();
 
 envelopePreparationEndpoint.post("/:id/signature-profiles", async (c) => {
-	const createdBy = c.req.header("x-internal-user-id");
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
 	if (!createdBy) {
 		return c.json(
 			{
@@ -46,8 +49,26 @@ envelopePreparationEndpoint.post("/:id/signature-profiles", async (c) => {
 	return c.json({ data: toSignatureProfileResponse(profile) }, 201);
 });
 
+envelopePreparationEndpoint.get("/:id/signature-profiles/selected", async (c) => {
+	const createdBy = await getEnvelopeActor(c, c.req.param("id"));
+	if (!createdBy) {
+		return c.json(
+			{
+				error: {
+					code: "UNAUTHORIZED",
+					message: "Missing x-internal-user-id header",
+				},
+			},
+			401,
+		);
+	}
+
+	const profile = await getLatestSelectedSignatureProfile(createdBy);
+	return c.json({ data: profile ? toSignatureProfileResponse(profile) : null });
+});
+
 envelopePreparationEndpoint.post("/:id/fields/defaults", async (c) => {
-	const userId = c.req.header("x-internal-user-id");
+	const userId = await getEnvelopeActor(c, c.req.param("id"));
 	if (!userId) {
 		return c.json(
 			{
@@ -83,3 +104,19 @@ envelopePreparationEndpoint.post("/:id/fields/defaults", async (c) => {
 });
 
 export default envelopePreparationEndpoint;
+
+async function getEnvelopeActor(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+): Promise<string | null> {
+	const internalUserId = c.req.header("x-internal-user-id");
+	if (internalUserId) return internalUserId;
+	const senderSessionToken = c.req.header("x-sender-session-token");
+	if (!senderSessionToken) return null;
+	const session = await resolveVerifiedSenderSession(
+		senderSessionToken,
+		envelopeId,
+		new Date(c.req.header("x-now") ?? Date.now()),
+	);
+	return session?.email ?? null;
+}

@@ -74,6 +74,61 @@ describe("SignerPage", () => {
 		);
 	});
 
+	it("shows backend signing completion errors", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
+							fields: [
+								{
+									id: "field-1",
+									type: "signature",
+									page: 1,
+									x: 72,
+									y: 144,
+									width: 180,
+									height: 48,
+								},
+							],
+						},
+					}),
+					{ status: 200 },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						error: {
+							code: "NO_ASSIGNED_FIELDS",
+							message: "No signing fields are assigned to this recipient",
+						},
+					}),
+					{ status: 409 },
+				),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("signature");
+		fireEvent.change(screen.getByLabelText("Typed signature"), {
+			target: { value: "Ada Lovelace" },
+		});
+		fireEvent.change(screen.getByLabelText("Signing date"), { target: { value: "2026-05-20" } });
+		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
+
+		await screen.findByText("No signing fields are assigned to this recipient");
+	});
+
 	it("submits a change request comment from the signer page", async () => {
 		const fetchMock = vi
 			.fn()
@@ -101,6 +156,10 @@ describe("SignerPage", () => {
 
 		await screen.findByRole("link", { name: "Open source PDF" });
 		expect(screen.getByText("No assigned fields")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Complete signing" })).toHaveProperty(
+			"disabled",
+			true,
+		);
 		fireEvent.change(screen.getByLabelText("Change request comment"), {
 			target: { value: "Please update the billing address." },
 		});

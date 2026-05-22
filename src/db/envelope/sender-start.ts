@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
 import {
+	buildSenderVerificationEmail,
+	deliverTransactionalEmail,
+	type EmailDeliveryOptions,
+	isResendConfigured,
+} from "./email-delivery";
+import {
 	type Envelope,
 	getEnvelopeAllowedActions,
 	type SenderStartResponse,
@@ -40,6 +46,7 @@ interface StartSenderEnvelopeInput {
 	baseUrl: string;
 	idempotencyKey?: string;
 	now?: Date;
+	emailDelivery?: EmailDeliveryOptions;
 }
 
 interface StartSenderEnvelopeResult {
@@ -114,6 +121,12 @@ export async function startSenderEnvelope(
 	if (!verificationToken) throw new Error("Failed to create sender verification token");
 	const token = SenderVerificationTokenSchema.parse(verificationToken);
 	const fallbackUrl = buildSenderVerificationUrl(input.baseUrl, token.token);
+	await deliverSenderVerificationEmail({
+		email,
+		name: input.name,
+		fallbackUrl,
+		emailDelivery: input.emailDelivery,
+	});
 
 	await db
 		.insert(senderVerificationEmailRecords)
@@ -190,7 +203,7 @@ export async function verifySenderToken(
 	}
 
 	const token = SenderVerificationTokenSchema.parse(row);
-	if (token.expiresAt <= now) {
+	if (token.status !== "verified" && token.expiresAt <= now) {
 		return {
 			ok: false,
 			error: {
@@ -238,7 +251,7 @@ export async function verifySenderToken(
 export async function resolveVerifiedSenderSession(
 	tokenValue: string,
 	envelopeId: string,
-	now = new Date(),
+	_now = new Date(),
 ): Promise<VerifiedSenderSession | null> {
 	const db = getDb();
 	const tokens = await db
@@ -249,7 +262,7 @@ export async function resolveVerifiedSenderSession(
 	const tokenRow = tokens.find((candidate) => candidate.token === tokenValue);
 	if (!tokenRow) return null;
 	const token = SenderVerificationTokenSchema.parse(tokenRow);
-	if (token.status !== "verified" || token.envelopeId !== envelopeId || token.expiresAt <= now) {
+	if (token.status !== "verified" || token.envelopeId !== envelopeId) {
 		return null;
 	}
 
@@ -378,5 +391,22 @@ function toSenderStartResponse(input: {
 }
 
 function buildSenderVerificationUrl(baseUrl: string, token: string): string {
-	return new URL(`/api/envelopes/sender-verifications/${token}`, baseUrl).toString();
+	return new URL(`/sender-verifications/${token}`, baseUrl).toString();
+}
+
+async function deliverSenderVerificationEmail(input: {
+	email: string;
+	name: string;
+	fallbackUrl: string;
+	emailDelivery: EmailDeliveryOptions | undefined;
+}): Promise<void> {
+	if (!input.emailDelivery || !isResendConfigured(input.emailDelivery.env)) return;
+	await deliverTransactionalEmail(
+		buildSenderVerificationEmail({
+			email: input.email,
+			senderName: input.name,
+			verificationUrl: input.fallbackUrl,
+		}),
+		input.emailDelivery,
+	);
 }

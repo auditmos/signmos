@@ -168,7 +168,7 @@ describe("partner verification delivery", () => {
 	it("sends a prepared envelope as partner verification links with delivery metadata", async () => {
 		// Assumptions for issue #17 RED:
 		// - POST /api/envelopes/:id/actions with action=send remains the sender public boundary.
-		// - Send creates one token per partner and emails a verification URL, not a direct signing URL.
+		// - Send creates one token per partner and emails a UI verification URL, not an API URL.
 		// - The same token becomes a signing token only after GET /api/signing/verifications/:token.
 		// - Delivery metadata is observable through email_send_records rows, including fallbackUrl.
 		// - Resend itself is outside this slice; fallback links are the tested delivery output.
@@ -201,7 +201,7 @@ describe("partner verification delivery", () => {
 				recipientId: "20000000-0000-4000-8000-000000000001",
 				email: "ada@example.com",
 				token: expect.any(String),
-				url: expect.stringMatching(/^\/api\/signing\/verifications\//),
+				url: expect.stringMatching(/^\/signing-verifications\//),
 				expiresAt: expect.any(String),
 			},
 		]);
@@ -246,7 +246,7 @@ describe("partner verification delivery", () => {
 			error: {
 				code: "PARTNER_VERIFICATION_REQUIRED",
 				message: "Partner email verification is required before signing",
-				verificationUrl: "/api/signing/verifications/partner-token",
+				verificationUrl: "/signing-verifications/partner-token",
 			},
 		});
 
@@ -366,7 +366,7 @@ describe("partner verification delivery", () => {
 			tokenId: "30000000-0000-4000-8000-000000000001",
 			email: "ada@example.com",
 			kind: "partner_verification",
-			fallbackUrl: "/api/signing/verifications/existing-partner-token",
+			fallbackUrl: "/signing-verifications/existing-partner-token",
 			sentAt: new Date("2026-05-20T07:04:00.000Z"),
 		});
 
@@ -395,7 +395,7 @@ describe("partner verification delivery", () => {
 						recipientId: "20000000-0000-4000-8000-000000000001",
 						email: "ada@example.com",
 						token: "existing-partner-token",
-						url: "/api/signing/verifications/existing-partner-token",
+						url: "/signing-verifications/existing-partner-token",
 						expiresAt: "2026-05-27T07:03:00.000Z",
 					},
 				],

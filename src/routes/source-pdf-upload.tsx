@@ -6,6 +6,8 @@ export const Route = createFileRoute("/source-pdf-upload")({
 	validateSearch: z.object({
 		envelopeId: z.string().optional(),
 		senderSessionToken: z.string().optional(),
+		senderName: z.string().optional(),
+		senderEmail: z.string().optional(),
 	}),
 	component: SourcePdfUploadRoute,
 });
@@ -14,6 +16,8 @@ function SourcePdfUploadRoute() {
 	const search = Route.useSearch();
 	const envelopeId = search.envelopeId ?? "";
 	const senderSessionToken = search.senderSessionToken ?? "";
+	const senderName = search.senderName ?? "";
+	const senderEmail = search.senderEmail ?? "";
 
 	return (
 		<main className="min-h-dvh bg-background p-6">
@@ -24,7 +28,12 @@ function SourcePdfUploadRoute() {
 						Upload the PDF that will be prepared for signing.
 					</p>
 				</div>
-				<SourcePdfUploadPanel envelopeId={envelopeId} senderSessionToken={senderSessionToken} />
+				<SourcePdfUploadPanel
+					envelopeId={envelopeId}
+					senderSessionToken={senderSessionToken}
+					senderName={senderName}
+					senderEmail={senderEmail}
+				/>
 			</div>
 		</main>
 	);

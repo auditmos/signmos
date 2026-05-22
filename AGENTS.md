@@ -43,6 +43,7 @@ Open issue state changes, so do not hardcode issue status from memory.
 ## Non-Negotiables
 
 - Prefer deep modules: narrow public interfaces, more private implementation behind them.
+- On TanStack UI surfaces, default to TanStack Form for field state and validation, and TanStack Query mutations/queries for async server state. Use React `useState` only for truly local UI toggles or browser-only primitives that do not belong in Form/Query state; do not wire every textbox manually with `useState`.
 - Tests live next to source as `*.test.ts` or `*.test.tsx` and verify behavior through public boundaries.
 - Mock only external boundaries: DB, R2, network, time, randomness, browser APIs.
 - Do not edit generated files: `src/routeTree.gen.ts`, generated migrations, `worker-configuration.d.ts`, or `src/components/ui/*`.
