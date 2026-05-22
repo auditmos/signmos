@@ -1,5 +1,6 @@
 import {
 	auditEvents,
+	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
@@ -17,6 +18,7 @@ const state = vi.hoisted(() => ({
 	sourceDocumentsTable: null as unknown,
 	fieldValuesTable: null as unknown,
 	auditEventsTable: null as unknown,
+	emailSendRecordsTable: null as unknown,
 	envelopes: [
 		{
 			id: "00000000-0000-4000-8000-000000000001",
@@ -98,6 +100,7 @@ const state = vi.hoisted(() => ({
 	],
 	fieldValues: [] as unknown[],
 	auditEvents: [] as unknown[],
+	emailSends: [] as Array<Record<string, unknown>>,
 }));
 
 function selectRows(table: unknown) {
@@ -106,6 +109,7 @@ function selectRows(table: unknown) {
 	if (table === state.recipientsTable) return state.recipients;
 	if (table === state.fieldsTable) return state.fields;
 	if (table === state.sourceDocumentsTable) return state.sourceDocuments;
+	if (table === state.emailSendRecordsTable) return state.emailSends;
 	return [];
 }
 
@@ -116,6 +120,10 @@ function insertRows(table: unknown, rows: unknown[]) {
 	}
 	if (table === state.auditEventsTable) {
 		state.auditEvents.push(...rows);
+		return rows;
+	}
+	if (table === state.emailSendRecordsTable) {
+		state.emailSends.push(...(rows as Array<Record<string, unknown>>));
 		return rows;
 	}
 	return [];
@@ -160,6 +168,7 @@ describe("signing flow API", () => {
 		state.sourceDocumentsTable = sourceDocuments;
 		state.fieldValuesTable = fieldValues;
 		state.auditEventsTable = auditEvents;
+		state.emailSendRecordsTable = emailSendRecords;
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
@@ -226,6 +235,7 @@ describe("signing flow API", () => {
 		];
 		state.fieldValues.length = 0;
 		state.auditEvents.length = 0;
+		state.emailSends.length = 0;
 	});
 
 	it("opens a valid magic link without internal login and returns only assigned fields", async () => {
@@ -321,6 +331,97 @@ describe("signing flow API", () => {
 				expect.objectContaining({ eventType: "field.value.completed" }),
 			]),
 		);
+	});
+
+	it("notifies the sender when the partner completes after sender-first signing", async () => {
+		// Assumptions for issue #24:
+		// - Sender-first send has already completed the sender recipient.
+		// - The active signing token belongs to the partner.
+		// - The sender notification is represented by an email_send_records row.
+		state.envelopes[0] = {
+			id: "00000000-0000-4000-8000-000000000001",
+			status: "sent",
+			createdBy: "sender@example.com",
+			createdAt: new Date("2026-05-20T07:00:00.000Z"),
+			sentBy: "sender@example.com",
+			sentAt: new Date("2026-05-20T07:04:00.000Z"),
+		};
+		state.recipients = [
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Sender Person",
+				email: "sender@example.com",
+				status: "completed",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				name: "Grace Hopper",
+				email: "grace@example.com",
+				status: "sent",
+				createdAt: new Date("2026-05-20T07:02:00.000Z"),
+			},
+		];
+		state.fields = [
+			{
+				id: "50000000-0000-4000-8000-000000000003",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000002",
+				type: "signature",
+				page: 1,
+				x: 72,
+				y: 220,
+				width: 180,
+				height: 48,
+				createdAt: new Date("2026-05-20T07:05:00.000Z"),
+			},
+		];
+		state.tokens = [
+			{
+				id: "30000000-0000-4000-8000-000000000002",
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000002",
+				token: "valid-token",
+				status: "active",
+				expiresAt: new Date("2026-05-27T07:03:00.000Z"),
+				verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
+				createdAt: new Date("2026-05-20T07:03:00.000Z"),
+			},
+		];
+
+		const response = await apiHono.request("/api/signing/valid-token/complete", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"x-now": "2026-05-20T08:00:00.000Z",
+			},
+			body: JSON.stringify({
+				signatureName: "Grace Hopper",
+				date: "2026-05-20",
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: {
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000002",
+				recipientStatus: "completed",
+				envelopeStatus: "completed",
+			},
+		});
+		expect(state.emailSends).toEqual([
+			expect.objectContaining({
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000002",
+				tokenId: "30000000-0000-4000-8000-000000000002",
+				email: "sender@example.com",
+				kind: "partner_signed",
+				fallbackUrl: "/envelope-fields?envelopeId=00000000-0000-4000-8000-000000000001",
+			}),
+		]);
 	});
 
 	it("rejects completion when the signer has no assigned fields", async () => {

@@ -657,6 +657,7 @@ describe("sender start API", () => {
 				status: "awaiting_verification",
 				finalPdfAvailable: false,
 				allowedActions: ["verify_sender_email"],
+				pendingRecipients: [],
 			},
 		});
 
@@ -672,6 +673,7 @@ describe("sender start API", () => {
 				status: "draft",
 				finalPdfAvailable: false,
 				allowedActions: ["upload_source_pdf", "add_recipients", "add_fields", "send"],
+				pendingRecipients: [],
 			},
 		});
 	});

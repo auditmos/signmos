@@ -3,6 +3,8 @@ import {
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
+	fieldValues,
+	signatureProfiles,
 	signerTokens,
 	sourceDocuments,
 } from "@/db/envelope";
@@ -15,6 +17,8 @@ const state = vi.hoisted(() => ({
 	sourceDocumentsTable: null as unknown,
 	signerTokensTable: null as unknown,
 	emailSendRecordsTable: null as unknown,
+	fieldValuesTable: null as unknown,
+	signatureProfilesTable: null as unknown,
 	envelopes: [
 		{
 			id: "00000000-0000-4000-8000-000000000001",
@@ -42,7 +46,7 @@ const state = vi.hoisted(() => ({
 		envelopeId: string;
 		name: string;
 		email: string;
-		status: "pending" | "sent";
+		status: "pending" | "sent" | "completed";
 		createdAt: Date;
 	}>,
 	fields: [] as Array<{
@@ -76,6 +80,8 @@ const state = vi.hoisted(() => ({
 		fallbackUrl?: string;
 		sentAt: Date;
 	}>,
+	fieldValues: [] as Array<Record<string, unknown>>,
+	signatureProfiles: [] as Array<Record<string, unknown>>,
 }));
 
 function selectRows(table: unknown) {
@@ -85,6 +91,7 @@ function selectRows(table: unknown) {
 	if (table === state.fieldsTable) return state.fields;
 	if (table === state.signerTokensTable) return state.tokens;
 	if (table === state.emailSendRecordsTable) return state.emailSends;
+	if (table === state.signatureProfilesTable) return state.signatureProfiles;
 	return [];
 }
 
@@ -92,6 +99,10 @@ function insertRows(table: unknown, rows: unknown[]) {
 	if (table === state.recipientsTable) return insertRecipients(rows);
 	if (table === state.signerTokensTable) return insertTokens(rows);
 	if (table === state.emailSendRecordsTable) return insertEmailSends(rows);
+	if (table === state.fieldValuesTable) {
+		state.fieldValues.push(...(rows as Array<Record<string, unknown>>));
+		return rows;
+	}
 	return [];
 }
 
@@ -174,16 +185,17 @@ vi.mock("@/db/setup", () => ({
 			}),
 		}),
 		update: (table: unknown) => ({
-			set: (value: { status?: "sent"; sentBy?: string; sentAt?: Date }) => ({
+			set: (value: { status?: "sent" | "completed"; sentBy?: string; sentAt?: Date }) => ({
 				where: async () => {
 					if (table === state.envelopesTable) {
 						state.envelopes[0] = { ...state.envelopes[0], ...value };
 					}
-					if (table === state.recipientsTable) {
-						state.recipients = state.recipients.map((recipient) => ({
-							...recipient,
-							status: value.status ?? recipient.status,
-						}));
+					if (table === state.recipientsTable && value.status) {
+						const status = value.status;
+						const sentBy = state.envelopes[0]?.sentBy ?? state.recipients[0]?.email;
+						state.recipients = state.recipients.map((recipient) =>
+							applyRecipientStatusUpdate(recipient, status, sentBy),
+						);
 					}
 					return [];
 				},
@@ -191,6 +203,20 @@ vi.mock("@/db/setup", () => ({
 		}),
 	}),
 }));
+
+function applyRecipientStatusUpdate(
+	recipient: (typeof state.recipients)[number],
+	status: "sent" | "completed",
+	sentBy: string | undefined,
+): (typeof state.recipients)[number] {
+	if (status === "completed" && recipient.email === sentBy) {
+		return { ...recipient, status: "completed" };
+	}
+	if (status === "sent" && recipient.email !== sentBy) {
+		return { ...recipient, status: "sent" };
+	}
+	return recipient;
+}
 
 describe("envelope recipient API", () => {
 	beforeEach(() => {
@@ -201,10 +227,14 @@ describe("envelope recipient API", () => {
 		state.sourceDocumentsTable = sourceDocuments;
 		state.signerTokensTable = signerTokens;
 		state.emailSendRecordsTable = emailSendRecords;
+		state.fieldValuesTable = fieldValues;
+		state.signatureProfilesTable = signatureProfiles;
 		state.recipients.length = 0;
 		state.fields.length = 0;
 		state.tokens.length = 0;
 		state.emailSends.length = 0;
+		state.fieldValues.length = 0;
+		state.signatureProfiles.length = 0;
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "draft",
@@ -224,6 +254,18 @@ describe("envelope recipient API", () => {
 			uploadedAt: new Date("2026-05-20T07:01:00.000Z"),
 		};
 		state.sourceDocuments.length = 1;
+		state.signatureProfiles.push({
+			id: "60000000-0000-4000-8000-000000000001",
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			createdBy: "ada@example.com",
+			kind: "typed",
+			label: "Ada typed",
+			svgPath: null,
+			typedText: "Ada Lovelace",
+			typedFont: "cursive",
+			selected: true,
+			createdAt: new Date("2026-05-20T07:02:30.000Z"),
+		});
 		state.fields.push(
 			{
 				id: "50000000-0000-4000-8000-000000000001",
@@ -350,7 +392,12 @@ describe("envelope recipient API", () => {
 		expect(state.recipients).toHaveLength(0);
 	});
 
-	it("sends a ready envelope to all recipients with UI links", async () => {
+	it("persists sender completion before sending only the partner invitation", async () => {
+		// Assumptions for issue #24:
+		// - The sender is represented as a recipient whose email matches the sender actor.
+		// - Sending persists the sender's selected signature into assigned sender fields.
+		// - Partner invitation records are created only after sender field values are persisted.
+		// - The sender receives no self-sign token, signing link, or email send record.
 		state.recipients.push(
 			{
 				id: "20000000-0000-4000-8000-000000000001",
@@ -388,16 +435,9 @@ describe("envelope recipient API", () => {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				status: "sent",
 				sentBy: "ada@example.com",
-				tokenCount: 2,
-				emailSendCount: 2,
+				tokenCount: 1,
+				emailSendCount: 1,
 				verificationLinks: [
-					{
-						recipientId: "20000000-0000-4000-8000-000000000001",
-						email: "ada@example.com",
-						token: expect.any(String),
-						url: expect.stringMatching(/^\/signing\//),
-						expiresAt: expect.any(String),
-					},
 					{
 						recipientId: "20000000-0000-4000-8000-000000000002",
 						email: "grace@example.com",
@@ -410,19 +450,50 @@ describe("envelope recipient API", () => {
 		});
 		expect(state.envelopes[0]?.status).toBe("sent");
 		expect(state.envelopes[0]?.sentBy).toBe("ada@example.com");
-		expect(state.tokens).toHaveLength(2);
-		expect(state.emailSends).toEqual([
+		expect(state.recipients).toEqual([
+			expect.objectContaining({ email: "ada@example.com", status: "completed" }),
+			expect.objectContaining({ email: "grace@example.com", status: "sent" }),
+		]);
+		expect(state.fieldValues).toEqual([
 			expect.objectContaining({
-				email: "ada@example.com",
-				kind: "sender_signing",
-				fallbackUrl: expect.stringMatching(/^\/signing\//),
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000001",
+				fieldId: "50000000-0000-4000-8000-000000000001",
+				value: "Ada Lovelace",
 			}),
+		]);
+		expect(state.tokens).toHaveLength(1);
+		expect(state.tokens[0]).toEqual(
+			expect.objectContaining({ recipientId: "20000000-0000-4000-8000-000000000002" }),
+		);
+		expect(state.emailSends).toEqual([
 			expect.objectContaining({
 				email: "grace@example.com",
 				kind: "partner_verification",
 				fallbackUrl: expect.stringMatching(/^\/signing-verifications\//),
 			}),
 		]);
+
+		const statusResponse = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/status",
+		);
+		expect(statusResponse.status).toBe(200);
+		await expect(statusResponse.json()).resolves.toEqual({
+			data: {
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				status: "sent",
+				finalPdfAvailable: false,
+				allowedActions: ["view_signing_status", "resend_invitation", "cancel", "expire", "delete"],
+				pendingRecipients: [
+					{
+						id: "20000000-0000-4000-8000-000000000002",
+						name: "Grace Hopper",
+						email: "grace@example.com",
+						status: "sent",
+					},
+				],
+			},
+		});
 	});
 
 	it("returns a stable send error when the envelope has no persisted source PDF", async () => {
@@ -519,7 +590,7 @@ describe("envelope recipient API", () => {
 		expect(state.emailSends).toHaveLength(0);
 	});
 
-	it("delivers different sender and partner email content through Resend", async () => {
+	it("delivers only the partner invitation through Resend when the sender already signed", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(JSON.stringify({ id: "resend-email" }), {
 				status: 200,
@@ -564,24 +635,17 @@ describe("envelope recipient API", () => {
 		);
 
 		expect(response.status).toBe(200);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-		const bodies = fetchMock.mock.calls
-			.map((call) => JSON.parse(call[1]?.body as string))
-			.sort((left, right) => String(left.to[0]).localeCompare(String(right.to[0])));
-		expect(bodies).toEqual([
-			expect.objectContaining({
-				to: ["ada@example.com"],
-				subject: "Sign your document",
-				html: expect.stringContaining("https://signmos.example/signing/"),
-			}),
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		expect(body).toEqual(
 			expect.objectContaining({
 				to: ["grace@example.com"],
 				subject: "Verify your email to sign this document",
 				html: expect.stringContaining("https://signmos.example/signing-verifications/"),
 			}),
-		]);
-		expect(bodies[0]?.html).not.toContain("/api/");
-		expect(bodies[1]?.html).not.toContain("/api/");
+		);
+		expect(body.html).not.toContain("/api/");
+		expect(body.html).not.toContain("https://signmos.example/signing/");
 
 		fetchMock.mockRestore();
 	});

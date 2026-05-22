@@ -296,6 +296,11 @@ describe("PDF finalization", () => {
 		expect(finalPdf).toContain("recipient.completed");
 		expect(state.emailSendRecords).toEqual([
 			expect.objectContaining({
+				email: "sender@example.com",
+				kind: "partner_signed",
+				fallbackUrl: "/envelope-fields?envelopeId=00000000-0000-4000-8000-000000000001",
+			}),
+			expect.objectContaining({
 				email: "ada@example.com",
 				kind: "completion",
 				fallbackUrl: "/api/signing/valid-token/final-pdf",
@@ -342,6 +347,7 @@ describe("PDF finalization", () => {
 				status: "completed",
 				finalPdfAvailable: true,
 				allowedActions: ["download_final_pdf", "delete"],
+				pendingRecipients: [],
 			},
 		});
 

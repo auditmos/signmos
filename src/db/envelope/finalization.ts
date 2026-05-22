@@ -36,6 +36,12 @@ export interface EnvelopeFinalizationStatus {
 	status: Envelope["status"];
 	finalPdfAvailable: boolean;
 	allowedActions: string[];
+	pendingRecipients: Array<{
+		id: string;
+		name: string;
+		email: string;
+		status: "sent";
+	}>;
 }
 
 export async function finalizeCompletedEnvelope(
@@ -109,12 +115,30 @@ export async function getEnvelopeFinalizationStatus(
 		.from(finalDocuments)
 		.where(eq(finalDocuments.envelopeId, envelopeId))
 		.limit(1);
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, envelopeId))
+			.limit(100)
+	).map((recipient) => RecipientSchema.parse(recipient));
 
 	return {
 		envelopeId,
 		status: parsedEnvelope.status,
 		finalPdfAvailable: parsedEnvelope.status === "completed" && Boolean(finalDocument),
 		allowedActions: getEnvelopeAllowedActions(parsedEnvelope.status),
+		pendingRecipients:
+			parsedEnvelope.status === "sent"
+				? recipients
+						.filter((recipient) => recipient.status === "sent")
+						.map((recipient) => ({
+							id: recipient.id,
+							name: recipient.name,
+							email: recipient.email,
+							status: "sent",
+						}))
+				: [],
 	};
 }
 

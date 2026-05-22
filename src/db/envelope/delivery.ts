@@ -9,11 +9,15 @@ import {
 	toAbsoluteDeliveryUrl,
 } from "./email-delivery";
 import {
+	type EnvelopeField,
+	EnvelopeFieldSchema,
 	EnvelopeSchema,
 	type Recipient,
 	RecipientSchema,
 	type ResendInvitationResult,
 	type SendEnvelopeResult,
+	type SignatureProfile,
+	SignatureProfileSchema,
 	type SignerToken,
 	SignerTokenSchema,
 } from "./schema";
@@ -23,6 +27,8 @@ import {
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
+	fieldValues,
+	signatureProfiles,
 	signerTokens,
 	sourceDocuments,
 } from "./table";
@@ -66,11 +72,13 @@ export async function sendEnvelope(
 			.limit(10)
 	).map((recipient) => RecipientSchema.parse(recipient));
 	if (recipients.length === 0) throw new Error("Envelope recipients required");
-	const fields = await db
-		.select()
-		.from(envelopeFields)
-		.where(eq(envelopeFields.envelopeId, envelopeId))
-		.limit(100);
+	const fields = (
+		await db
+			.select()
+			.from(envelopeFields)
+			.where(eq(envelopeFields.envelopeId, envelopeId))
+			.limit(100)
+	).map((field) => EnvelopeFieldSchema.parse(field));
 	const recipientIdsWithFields = new Set(fields.map((field) => field.recipientId));
 	if (recipients.some((recipient) => !recipientIdsWithFields.has(recipient.id))) {
 		throw new Error("Envelope recipient fields required");
@@ -78,44 +86,58 @@ export async function sendEnvelope(
 
 	const issuedAt = new Date();
 	const expiresAt = new Date(issuedAt.getTime() + partnerVerificationTtlMs);
-	const tokens = await db
-		.insert(signerTokens)
-		.values(
-			recipients.map((recipient) => ({
-				envelopeId,
-				recipientId: recipient.id,
-				token: crypto.randomUUID(),
-				status: "active",
-				expiresAt,
-				verifiedAt: isSenderRecipient(recipient, sentBy) ? issuedAt : undefined,
-			})),
-		)
-		.returning();
+	const senderRecipients = recipients.filter((recipient) => isSenderRecipient(recipient, sentBy));
+	const partnerRecipients = recipients.filter((recipient) => !isSenderRecipient(recipient, sentBy));
+	await completeSenderRecipients({
+		envelopeId,
+		sentBy,
+		senderRecipients,
+		fields,
+		issuedAt,
+	});
+
+	const tokens =
+		partnerRecipients.length > 0
+			? await db
+					.insert(signerTokens)
+					.values(
+						partnerRecipients.map((recipient) => ({
+							envelopeId,
+							recipientId: recipient.id,
+							token: crypto.randomUUID(),
+							status: "active",
+							expiresAt,
+						})),
+					)
+					.returning()
+			: [];
 	const deliveryLinks = toDeliveryLinks(
-		recipients,
+		partnerRecipients,
 		tokens.map((token) => SignerTokenSchema.parse(token)),
 		sentBy,
 	);
-	await deliverRecipientEmails(recipients, deliveryLinks, options.emailDelivery);
+	await deliverRecipientEmails(partnerRecipients, deliveryLinks, options.emailDelivery);
 
-	await db
-		.insert(emailSendRecords)
-		.values(
-			recipients.map((recipient, index) => ({
-				envelopeId,
-				recipientId: recipient.id,
-				tokenId: tokens[index]?.id ?? "",
-				email: recipient.email,
-				kind: deliveryLinks[index]?.kind ?? "partner_verification",
-				fallbackUrl: deliveryLinks[index]?.url ?? "",
-			})),
-		)
-		.returning();
+	if (partnerRecipients.length > 0) {
+		await db
+			.insert(emailSendRecords)
+			.values(
+				partnerRecipients.map((recipient, index) => ({
+					envelopeId,
+					recipientId: recipient.id,
+					tokenId: tokens[index]?.id ?? "",
+					email: recipient.email,
+					kind: deliveryLinks[index]?.kind ?? "partner_verification",
+					fallbackUrl: deliveryLinks[index]?.url ?? "",
+				})),
+			)
+			.returning();
+	}
 	await db
 		.insert(auditEvents)
 		.values([
 			{ envelopeId, recipientId: null, eventType: "envelope.sent", message: sentBy },
-			...recipients.map((recipient) => ({
+			...partnerRecipients.map((recipient) => ({
 				envelopeId,
 				recipientId: recipient.id,
 				eventType: "partner.verification.sent",
@@ -128,17 +150,21 @@ export async function sendEnvelope(
 		.update(envelopes)
 		.set({ status: "sent", sentBy, sentAt: new Date() })
 		.where(eq(envelopes.id, envelopeId));
-	await db
-		.update(envelopeRecipients)
-		.set({ status: "sent" })
-		.where(eq(envelopeRecipients.envelopeId, envelopeId));
+	await Promise.all(
+		partnerRecipients.map((recipient) =>
+			db
+				.update(envelopeRecipients)
+				.set({ status: "sent" })
+				.where(eq(envelopeRecipients.id, recipient.id)),
+		),
+	);
 
 	return {
 		envelopeId,
 		status: "sent",
 		sentBy,
 		tokenCount: tokens.length,
-		emailSendCount: recipients.length,
+		emailSendCount: partnerRecipients.length,
 		verificationLinks: toPublicLinks(deliveryLinks),
 	};
 }
@@ -172,6 +198,79 @@ async function getExistingSendResult(
 		emailSendCount: sends.length,
 		verificationLinks: toPublicLinks(toDeliveryLinks(recipients, tokens, sentBy)),
 	};
+}
+
+async function completeSenderRecipients(input: {
+	envelopeId: string;
+	sentBy: string;
+	senderRecipients: Recipient[];
+	fields: EnvelopeField[];
+	issuedAt: Date;
+}): Promise<void> {
+	if (input.senderRecipients.length === 0) return;
+	const db = getDb();
+	const signatureValue = await getSenderSignatureValue(input.sentBy);
+	const completedAt = input.issuedAt.toISOString().slice(0, 10);
+
+	for (const recipient of input.senderRecipients) {
+		const recipientFields = input.fields.filter((field) => field.recipientId === recipient.id);
+		const values = recipientFields.map((field) => ({
+			envelopeId: input.envelopeId,
+			recipientId: recipient.id,
+			fieldId: field.id,
+			value: field.type === "signature" ? signatureValue : completedAt,
+		}));
+		if (values.length > 0) {
+			await db.insert(fieldValues).values(values).returning();
+		}
+		await db
+			.insert(auditEvents)
+			.values([
+				...recipientFields.map((field) => ({
+					envelopeId: input.envelopeId,
+					recipientId: recipient.id,
+					eventType: "field.value.completed",
+					message: field.type === "signature" ? signatureValue : completedAt,
+				})),
+				{
+					envelopeId: input.envelopeId,
+					recipientId: recipient.id,
+					eventType: "sender.completed",
+					message: input.sentBy,
+				},
+			])
+			.returning();
+		await db
+			.update(envelopeRecipients)
+			.set({ status: "completed" })
+			.where(eq(envelopeRecipients.id, recipient.id));
+	}
+}
+
+async function getSenderSignatureValue(sentBy: string): Promise<string> {
+	const db = getDb();
+	const profiles = (
+		await db
+			.select()
+			.from(signatureProfiles)
+			.where(eq(signatureProfiles.createdBy, sentBy))
+			.limit(100)
+	).map((profile) => SignatureProfileSchema.parse(profile));
+	const selectedProfile = latestSelectedProfile(profiles, sentBy);
+	if (!selectedProfile) throw new Error("Sender signature profile required");
+	if (selectedProfile.kind === "typed") return selectedProfile.typedText ?? selectedProfile.label;
+	return selectedProfile.svgPath ?? selectedProfile.label;
+}
+
+function latestSelectedProfile(
+	profiles: SignatureProfile[],
+	createdBy: string,
+): SignatureProfile | null {
+	return (
+		profiles
+			.filter((profile) => profile.createdBy === createdBy && profile.selected)
+			.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+	);
 }
 
 export async function resendInvitation(
@@ -262,9 +361,9 @@ function toDeliveryLinks(
 	tokens: SignerToken[],
 	sentBy: string,
 ): DeliveryLink[] {
-	return recipients.map((recipient) => {
-		const token = tokens.find((candidate) => candidate.recipientId === recipient.id);
-		if (!token) throw new Error("Sent envelope missing partner token");
+	return tokens.map((token) => {
+		const recipient = recipients.find((candidate) => candidate.id === token.recipientId);
+		if (!recipient) throw new Error("Sent envelope missing token recipient");
 		const kind = isSenderRecipient(recipient, sentBy) ? "sender_signing" : "partner_verification";
 		return {
 			recipientId: recipient.id,

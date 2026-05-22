@@ -25,6 +25,7 @@ import {
 } from "./schema";
 import {
 	auditEvents,
+	emailSendRecords,
 	envelopeFields,
 	envelopeRecipients,
 	envelopes,
@@ -348,6 +349,17 @@ export async function completeSigning(
 			.update(envelopes)
 			.set({ status: "completed" })
 			.where(eq(envelopes.id, token.envelopeId));
+		await db
+			.insert(emailSendRecords)
+			.values({
+				envelopeId: token.envelopeId,
+				recipientId: token.recipientId,
+				tokenId: token.id,
+				email: parsedEnvelope.createdBy,
+				kind: "partner_signed",
+				fallbackUrl: buildSenderSigningNotificationUrl(token.envelopeId),
+			})
+			.returning();
 		await finalizeCompletedEnvelope(token.envelopeId, options);
 	}
 
@@ -357,6 +369,10 @@ export async function completeSigning(
 		recipientStatus: "completed",
 		envelopeStatus,
 	};
+}
+
+function buildSenderSigningNotificationUrl(envelopeId: string): string {
+	return `/envelope-fields?envelopeId=${envelopeId}`;
 }
 
 export function getSigningBlockedAllowedActions(status: Envelope["status"]): string[] {

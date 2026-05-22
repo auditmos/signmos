@@ -306,6 +306,14 @@ describe("agent lifecycle smoke path", () => {
 				status: "sent",
 				finalPdfAvailable: false,
 				allowedActions: ["view_signing_status", "resend_invitation", "cancel", "expire", "delete"],
+				pendingRecipients: [
+					{
+						id: recipientId,
+						name: "Ada Lovelace",
+						email: "ada@example.com",
+						status: "sent",
+					},
+				],
 			},
 		});
 
@@ -323,6 +331,7 @@ describe("agent lifecycle smoke path", () => {
 				status: "changes_requested",
 				finalPdfAvailable: false,
 				allowedActions: ["upload_revised_source_pdf", "cancel", "expire", "delete"],
+				pendingRecipients: [],
 			},
 		});
 
@@ -393,6 +402,7 @@ describe("agent lifecycle smoke path", () => {
 				status: "completed",
 				finalPdfAvailable: true,
 				allowedActions: ["download_final_pdf", "delete"],
+				pendingRecipients: [],
 			},
 		});
 
