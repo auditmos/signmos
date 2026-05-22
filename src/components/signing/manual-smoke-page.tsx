@@ -17,11 +17,17 @@ interface SigningLink {
 	url: string;
 }
 
+interface CompletedDocumentLink {
+	url: string;
+	downloadUrl: string;
+}
+
 interface SmokeState {
 	envelopeId: string;
 	recipientId: string;
 	verificationLink: VerificationLink;
 	signingLink: SigningLink | null;
+	completedDocument: CompletedDocumentLink | null;
 	finalPdfAvailable: boolean;
 }
 
@@ -80,6 +86,7 @@ export function ManualSigningSmokePage() {
 			recipientId,
 			verificationLink,
 			signingLink: null,
+			completedDocument: null,
 			finalPdfAvailable: false,
 		});
 		setMessage("Envelope sent");
@@ -87,7 +94,9 @@ export function ManualSigningSmokePage() {
 
 	async function verifyPartner() {
 		if (!state) return;
-		const verified = await getJson<{ signingLink: SigningLink }>(state.verificationLink.url);
+		const verified = await getJson<{ signingLink: SigningLink }>(
+			`/api/signing/verifications/${state.verificationLink.token}`,
+		);
 		setState({ ...state, signingLink: verified.signingLink });
 		setMessage("Partner verified");
 	}
@@ -99,7 +108,14 @@ export function ManualSigningSmokePage() {
 		const status = await getJson<{ finalPdfAvailable: boolean }>(
 			`/api/envelopes/${state.envelopeId}/status`,
 		);
-		setState({ ...state, finalPdfAvailable: status.finalPdfAvailable });
+		let completedDocument: CompletedDocumentLink | null = null;
+		if (status.finalPdfAvailable) {
+			const completed = await getJson<{ completedDocument?: CompletedDocumentLink }>(
+				`/api/signing/${state.signingLink.token}`,
+			);
+			completedDocument = completed.completedDocument ?? null;
+		}
+		setState({ ...state, completedDocument, finalPdfAvailable: status.finalPdfAvailable });
 		setMessage(status.finalPdfAvailable ? "Final PDF is available" : "Signing complete");
 	}
 
@@ -162,18 +178,23 @@ export function ManualSigningSmokePage() {
 								</Button>
 							</div>
 						</form>
-						{state.finalPdfAvailable && (
-							<a
-								className="inline-flex items-center gap-2 text-primary underline"
-								href={
-									state.signingLink
-										? `/api/signing/${state.signingLink.token}/final-pdf`
-										: `/api/envelopes/${state.envelopeId}/final-pdf`
-								}
-							>
-								<FileText className="h-4 w-4" />
-								Download final PDF
-							</a>
+						{state.finalPdfAvailable && state.completedDocument && (
+							<div className="flex flex-wrap gap-3">
+								<a
+									className="inline-flex items-center gap-2 text-primary underline"
+									href={state.completedDocument.url}
+								>
+									<FileText className="h-4 w-4" />
+									View completed document
+								</a>
+								<a
+									className="inline-flex items-center gap-2 text-primary underline"
+									href={state.completedDocument.downloadUrl}
+								>
+									<FileText className="h-4 w-4" />
+									Download final PDF
+								</a>
+							</div>
 						)}
 					</div>
 				)}

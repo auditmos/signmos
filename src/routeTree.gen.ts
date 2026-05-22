@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SigningTokenRouteImport } from './routes/signing.$token'
 import { Route as SigningVerificationsTokenRouteImport } from './routes/signing-verifications.$token'
 import { Route as SenderVerificationsTokenRouteImport } from './routes/sender-verifications.$token'
+import { Route as CompletedDocumentsTokenRouteImport } from './routes/completed-documents.$token'
 
 const SourcePdfUploadRoute = SourcePdfUploadRouteImport.update({
   id: '/source-pdf-upload',
@@ -60,6 +61,11 @@ const SenderVerificationsTokenRoute =
     path: '/sender-verifications/$token',
     getParentRoute: () => rootRouteImport,
   } as any)
+const CompletedDocumentsTokenRoute = CompletedDocumentsTokenRouteImport.update({
+  id: '/completed-documents/$token',
+  path: '/completed-documents/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
+  '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
+  '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
+  '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/envelope-fields'
     | '/manual-signing-smoke'
     | '/source-pdf-upload'
+    | '/completed-documents/$token'
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/envelope-fields'
     | '/manual-signing-smoke'
     | '/source-pdf-upload'
+    | '/completed-documents/$token'
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/envelope-fields'
     | '/manual-signing-smoke'
     | '/source-pdf-upload'
+    | '/completed-documents/$token'
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
   ManualSigningSmokeRoute: typeof ManualSigningSmokeRoute
   SourcePdfUploadRoute: typeof SourcePdfUploadRoute
+  CompletedDocumentsTokenRoute: typeof CompletedDocumentsTokenRoute
   SenderVerificationsTokenRoute: typeof SenderVerificationsTokenRoute
   SigningVerificationsTokenRoute: typeof SigningVerificationsTokenRoute
   SigningTokenRoute: typeof SigningTokenRoute
@@ -194,6 +207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SenderVerificationsTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/completed-documents/$token': {
+      id: '/completed-documents/$token'
+      path: '/completed-documents/$token'
+      fullPath: '/completed-documents/$token'
+      preLoaderRoute: typeof CompletedDocumentsTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
   ManualSigningSmokeRoute: ManualSigningSmokeRoute,
   SourcePdfUploadRoute: SourcePdfUploadRoute,
+  CompletedDocumentsTokenRoute: CompletedDocumentsTokenRoute,
   SenderVerificationsTokenRoute: SenderVerificationsTokenRoute,
   SigningVerificationsTokenRoute: SigningVerificationsTokenRoute,
   SigningTokenRoute: SigningTokenRoute,

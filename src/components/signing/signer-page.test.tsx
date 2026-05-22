@@ -294,6 +294,34 @@ describe("SignerPage", () => {
 		);
 	});
 
+	it("shows completed document links when a signing link is already complete", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					data: {
+						completedDocument: {
+							url: "/completed-documents/90000000-0000-4000-8000-000000000001",
+							downloadUrl: "/api/final-documents/90000000-0000-4000-8000-000000000001/pdf",
+						},
+					},
+				}),
+				{ status: 200 },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SignerPage token="valid-token" />);
+
+		await screen.findByText("Document complete");
+		expect(screen.getByRole("link", { name: "View completed document" }).getAttribute("href")).toBe(
+			"/completed-documents/90000000-0000-4000-8000-000000000001",
+		);
+		expect(screen.getByRole("link", { name: "Download final PDF" }).getAttribute("href")).toBe(
+			"/api/final-documents/90000000-0000-4000-8000-000000000001/pdf",
+		);
+		expect(screen.queryByRole("button", { name: "Complete signing" })).toBeNull();
+	});
+
 	it("shows an expired signing-link message without signing controls", async () => {
 		const fetchMock = vi.fn().mockResolvedValueOnce(
 			new Response(

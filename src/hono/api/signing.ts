@@ -4,6 +4,7 @@ import {
 	completeSigning,
 	DeclineSigningRequestSchema,
 	declineSigning,
+	getCompletedDocumentLinkForSignerToken,
 	getEnvelopeStatus,
 	getSignerFinalDocument,
 	getSignerSession,
@@ -116,6 +117,9 @@ signingEndpoint.get("/:token/final-pdf", async (c) => {
 });
 
 signingEndpoint.get("/:token", async (c) => {
+	const completedDocument = await getCompletedDocumentLinkForSignerToken(c.req.param("token"));
+	if (completedDocument) return c.json({ data: { completedDocument } });
+
 	const token = await getUsableToken(c.req.param("token"), c.req.header("x-now"));
 	if (token instanceof Response) return token;
 

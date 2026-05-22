@@ -35,10 +35,12 @@ Stable primitives:
 | `GET /api/envelopes/{id}/status` | Path envelope ID. | `{ envelopeId, status, finalPdfAvailable, allowedActions }` | Public polling surface for pilot tests; no mutation. | N/A for known lifecycle errors |
 | `GET /api/envelopes/{id}/retention` | Header `x-internal-user-id`; optional `x-now`. | `{ envelopeId, status, retentionEligibleAt, retentionEligible }` | Sender/internal read. | `UNAUTHORIZED` |
 | `GET /api/envelopes/{id}/final-pdf` | Query `senderSessionToken` or header `x-sender-session-token`. | PDF response with `content-type: application/pdf`. | Requires verified sender process link; no mutation. | `FINAL_PDF_FORBIDDEN`, `FINAL_PDF_NOT_FOUND` |
+| `GET /api/final-documents/{token}` | Path final document token. | Completed-document view: `{ token, envelopeId, status: "completed", finalPdf, parties, history }` | Bearer final-document token; no sender/signer session required. History is user-facing, not raw audit rows. | `FINAL_PDF_NOT_FOUND` |
+| `GET /api/final-documents/{token}/pdf` | Path final document token. | PDF response with `content-type: application/pdf`. | Bearer final-document token; no sender/signer session required. | `FINAL_PDF_NOT_FOUND` |
 | `GET /api/signing/verifications/{token}` | Path token; optional `x-now`. | `{ envelopeId, recipientId, status: "verified", signingLink: { token, url }, verifiedAt }` | Public partner magic link. | `PARTNER_VERIFICATION_NOT_FOUND`, `EXPIRED_PARTNER_VERIFICATION` |
-| `GET /api/signing/{token}` | Path signing token; optional `x-now`. | `SignerSession`: `{ envelopeId, recipientId, sourceDocument: { version, contentType, downloadUrl }, fields }` | Requires verified, unexpired partner token. | `TOKEN_NOT_FOUND`, `ENVELOPE_DELETED`, `ENVELOPE_EXPIRED`, `EXPIRED_TOKEN`, `PARTNER_VERIFICATION_REQUIRED` |
+| `GET /api/signing/{token}` | Path signing token; optional `x-now`. | Active signer session or `{ completedDocument: { url, downloadUrl } }` when finalization is done. | Active sessions require verified, unexpired partner token; completed links route to final-document view. | `TOKEN_NOT_FOUND`, `ENVELOPE_DELETED`, `ENVELOPE_EXPIRED`, `EXPIRED_TOKEN`, `PARTNER_VERIFICATION_REQUIRED` |
 | `GET /api/signing/{token}/source-pdf` | Path signing token; optional `x-now`. | PDF response with `content-type: application/pdf`. | Same access checks as signer session. | `SOURCE_PDF_NOT_FOUND` plus signing access errors |
-| `POST /api/signing/{token}/complete` | `CompleteSigningRequest`: `{ signatureName, date }` where date is `YYYY-MM-DD`. | `CompleteSigningResult`: `{ envelopeId, recipientId, recipientStatus: "completed", envelopeStatus }` | Verified partner token; blocked while `changes_requested`, `expired`, or `deleted`. | `INVALID_SIGNING_COMPLETION`, `SIGNING_BLOCKED` plus signing access errors |
+| `POST /api/signing/{token}/complete` | `CompleteSigningRequest`: typed/drawn `signature` or legacy `signatureName`; client date is ignored if sent. | `CompleteSigningResult`: `{ envelopeId, recipientId, recipientStatus: "completed", envelopeStatus }` | Verified partner token; blocked while `changes_requested`, `expired`, or `deleted`. | `INVALID_SIGNING_COMPLETION`, `SIGNING_BLOCKED` plus signing access errors |
 | `POST /api/signing/{token}/change-request` | `ChangeRequestSigningRequest`: `{ comment }`. | `ChangeRequestSigningResult`: `{ envelopeId, recipientId, recipientStatus: "sent", envelopeStatus: "changes_requested", allowedActions }` | Verified partner token; retry after success is recoverable through `changes_requested` status. | `INVALID_CHANGE_REQUEST`, `SIGNING_BLOCKED` plus signing access errors |
 | `POST /api/signing/{token}/decline` | `DeclineSigningRequest`: `{ reason, comment? }`. | `DeclineSigningResult`: `{ envelopeId, recipientId, recipientStatus: "declined", envelopeStatus: "declined" }` | Verified partner token; terminal state blocks further signing. | `INVALID_SIGNING_DECLINE` plus signing access errors |
 | `GET /api/signing/{token}/final-pdf` | Path signing token; optional `x-now`. | PDF response with `content-type: application/pdf`. | Verified partner process link; unavailable until finalization. | `FINAL_PDF_NOT_FOUND` plus signing access errors |
@@ -111,7 +113,7 @@ Other mutating operations are retry-safe through explicit state checks:
 Run this command for the agent/API smoke:
 
 ```bash
-pnpm test src/hono/api/sender-start.test.ts src/hono/api/source-pdf-upload.test.ts src/hono/api/envelope-fields.test.ts src/hono/api/partner-verification.test.ts src/hono/api/lifecycle-smoke.test.ts src/hono/api/pdf-finalization.test.ts
+pnpm test src/hono/api/sender-start.test.ts src/hono/api/source-pdf-upload.test.ts src/hono/api/envelope-fields.test.ts src/hono/api/partner-verification.test.ts src/hono/api/lifecycle-smoke.test.ts src/hono/api/pdf-finalization.test.ts src/hono/api/completed-documents.test.ts
 ```
 
 Coverage by that command:
@@ -121,7 +123,7 @@ Coverage by that command:
 - Prepares explicit fields and default bottom-right fields.
 - Sends the envelope and verifies partner access.
 - Signs, polls status, handles change request, revision, resend, completion, and final PDF download.
-- Asserts final PDF data includes signature/date values, certificate text, checksum/hash, and process-link access controls.
+- Asserts final PDF data includes signature/date values, certificate text, checksum/hash, completed-view links, and bearer final-token access.
 
 ## Human Browser Smoke Checklist
 
@@ -135,7 +137,7 @@ Run with `TURNSTILE_TEST_BYPASS=true pnpm dev`, then capture the browser URL and
 6. Open the partner verification link, then `/signing/<token>`; verify the source PDF preview, assigned fields, empty-state behavior if no fields exist, and expired/deleted messages from test links when available.
 7. From the signer page, request changes with a comment; confirm the changes-requested state blocks completion and directs the sender to revise.
 8. Re-upload a revised PDF through `/source-pdf-upload`, prepare fields again, resend, verify partner again, complete signing, and poll until `Final PDF is available`.
-9. Download the final PDF from the signer or sender process link and verify the browser receives `application/pdf`.
+9. Open the completed-document view link, confirm party summary/history, and download the final PDF with the final-document token.
 
 ## UI State Coverage
 
@@ -146,7 +148,7 @@ Run with `TURNSTILE_TEST_BYPASS=true pnpm dev`, then capture the browser URL and
 | Validation error | `src/components/sender/start-envelope-page.test.tsx`, `src/components/sender/source-pdf-upload-panel.test.tsx`, and `src/components/sender/signature-profile-panel.test.tsx` cover actionable errors near the relevant action. |
 | Expired | `src/components/signing/signer-page.test.tsx` and `src/hono/api/partner-verification.test.ts` cover expired signing-link states without signing controls. |
 | Changes requested | `src/components/signing/signer-page.test.tsx`, `src/hono/api/change-request.test.ts`, and `src/hono/api/lifecycle-smoke.test.ts` cover request-comment submission, disabled completion, and `changes_requested` allowed actions. |
-| Completed | `src/components/signing/manual-smoke-page.test.tsx`, `src/hono/api/pdf-finalization.test.ts`, and `src/hono/api/lifecycle-smoke.test.ts` cover final PDF availability and download links. |
+| Completed | `src/components/completed-documents/completed-document-page.test.tsx`, `src/components/signing/signer-page.test.tsx`, `src/hono/api/completed-documents.test.ts`, `src/hono/api/pdf-finalization.test.ts`, and `src/hono/api/lifecycle-smoke.test.ts` cover completed view, final PDF availability, and download links. |
 | Deleted | `src/components/signing/signer-page.test.tsx` and `src/hono/api/envelope-controls.test.ts` cover deleted-document messaging with no PDF/signing controls. |
 
 ## PRD Validation Evidence Map

@@ -1,4 +1,5 @@
 export * from "./change-requests";
+export * from "./completed-documents";
 export * from "./controls";
 export * from "./delivery";
 export * from "./email-delivery";

@@ -136,12 +136,22 @@ function selectRows(table: unknown) {
 function insertRows(table: unknown, rows: Array<Record<string, unknown>>) {
 	if (table === state.fieldValuesTable) state.fieldValues.push(...rows);
 	if (table === state.auditEventsTable) state.auditEvents.push(...rows);
-	if (table === state.finalDocumentsTable) state.finalDocuments.push(...rows);
+	if (table === state.finalDocumentsTable) return insertFinalDocuments(rows);
 	if (table === state.emailSendRecordsTable) state.emailSendRecords.push(...rows);
 	if (table === state.senderVerificationEmailRecordsTable) {
 		state.senderVerificationEmailRecords.push(...rows);
 	}
 	return rows;
+}
+
+function insertFinalDocuments(rows: Array<Record<string, unknown>>) {
+	const inserted = rows.map((row, index) => ({
+		id: `90000000-0000-4000-8000-${String(state.finalDocuments.length + index + 1).padStart(12, "0")}`,
+		...row,
+		createdAt: new Date("2026-05-20T08:01:00.000Z"),
+	}));
+	state.finalDocuments.push(...inserted);
+	return inserted;
 }
 
 vi.mock("@/db/setup", () => ({
@@ -303,17 +313,20 @@ describe("PDF finalization", () => {
 			expect.objectContaining({
 				email: "ada@example.com",
 				kind: "completion",
-				fallbackUrl: "/api/signing/valid-token/final-pdf",
+				fallbackUrl: "/completed-documents/90000000-0000-4000-8000-000000000001",
 			}),
 		]);
 		expect(state.senderVerificationEmailRecords).toEqual([
 			expect.objectContaining({
 				email: "sender@example.com",
 				kind: "completion",
-				fallbackUrl:
-					"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",
+				fallbackUrl: "/completed-documents/90000000-0000-4000-8000-000000000001",
 			}),
 		]);
+		for (const record of [...state.emailSendRecords, ...state.senderVerificationEmailRecords]) {
+			expect(record).not.toHaveProperty("attachment");
+			expect(record).not.toHaveProperty("pdfAttachment");
+		}
 	});
 
 	it("reports final PDF availability and downloads through verified process links", async () => {
@@ -351,12 +364,16 @@ describe("PDF finalization", () => {
 			},
 		});
 
-		const unauthenticatedDownload = await apiHono.request(
-			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf",
+		const finalTokenDownload = await apiHono.request(
+			"/api/final-documents/90000000-0000-4000-8000-000000000001/pdf",
 			undefined,
 			{ DOCUMENTS_BUCKET: bucket },
 		);
-		expect(unauthenticatedDownload.status).toBe(403);
+		expect(finalTokenDownload.status).toBe(200);
+		expect(finalTokenDownload.headers.get("content-type")).toBe("application/pdf");
+		expect(new TextDecoder().decode(await finalTokenDownload.arrayBuffer())).toContain(
+			"completed artifact",
+		);
 
 		const senderDownload = await apiHono.request(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",

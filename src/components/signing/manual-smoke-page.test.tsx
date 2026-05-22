@@ -87,6 +87,19 @@ describe("ManualSigningSmokePage", () => {
 					}),
 					{ status: 200 },
 				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							completedDocument: {
+								url: "/completed-documents/90000000-0000-4000-8000-000000000001",
+								downloadUrl: "/api/final-documents/90000000-0000-4000-8000-000000000001/pdf",
+							},
+						},
+					}),
+					{ status: 200 },
+				),
 			);
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -104,8 +117,16 @@ describe("ManualSigningSmokePage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Complete in page" }));
 
 		await screen.findByText("Final PDF is available");
+		const completedDocumentLink = await screen.findByRole("link", {
+			name: "View completed document",
+		});
+		expect(completedDocumentLink.getAttribute("href")).toBe(
+			"/completed-documents/90000000-0000-4000-8000-000000000001",
+		);
 		const finalPdfLink = await screen.findByRole("link", { name: "Download final PDF" });
-		expect(finalPdfLink.getAttribute("href")).toBe("/api/signing/valid-token/final-pdf");
+		expect(finalPdfLink.getAttribute("href")).toBe(
+			"/api/final-documents/90000000-0000-4000-8000-000000000001/pdf",
+		);
 		expect(fetchMock.mock.calls[1]?.[0]).toBe(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",
 		);
@@ -130,5 +151,6 @@ describe("ManualSigningSmokePage", () => {
 				body: JSON.stringify({ signatureName: "Ada Lovelace", date: "2026-05-20" }),
 			}),
 		);
+		expect(fetchMock).toHaveBeenCalledWith("/api/signing/valid-token");
 	});
 });

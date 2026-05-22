@@ -102,8 +102,9 @@ export async function finalizeCompletedEnvelope(
 			contentType: "application/pdf",
 		})
 		.returning();
-	await recordCompletionNotifications(envelopeId);
-	return document ? FinalDocumentSchema.parse(document) : null;
+	const finalDocument = document ? FinalDocumentSchema.parse(document) : null;
+	await recordCompletionNotifications(envelopeId, finalDocument?.id);
+	return finalDocument;
 }
 
 export async function getEnvelopeFinalizationStatus(
@@ -246,8 +247,13 @@ function buildFinalPdf(
 	return pdf;
 }
 
-async function recordCompletionNotifications(envelopeId: string): Promise<void> {
+async function recordCompletionNotifications(
+	envelopeId: string,
+	finalDocumentToken: string | undefined,
+): Promise<void> {
+	if (!finalDocumentToken) return;
 	const db = getDb();
+	const completedDocumentUrl = `/completed-documents/${finalDocumentToken}`;
 	const recipients = (
 		await db
 			.select()
@@ -268,7 +274,7 @@ async function recordCompletionNotifications(envelopeId: string): Promise<void> 
 				tokenId: token.id,
 				email: recipient.email,
 				kind: "completion",
-				fallbackUrl: `/api/signing/${token.token}/final-pdf`,
+				fallbackUrl: completedDocumentUrl,
 			},
 		];
 	});
@@ -292,7 +298,7 @@ async function recordCompletionNotifications(envelopeId: string): Promise<void> 
 				tokenId: senderToken.id,
 				email: senderToken.email,
 				kind: "completion",
-				fallbackUrl: `/api/envelopes/${envelopeId}/final-pdf?senderSessionToken=${encodeURIComponent(senderToken.token)}`,
+				fallbackUrl: completedDocumentUrl,
 			})
 			.returning();
 	}

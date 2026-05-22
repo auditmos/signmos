@@ -28,6 +28,8 @@ describe("lifecycle API contract documentation", () => {
 			"GET /api/envelopes/{id}/status",
 			"GET /api/envelopes/{id}/retention",
 			"GET /api/envelopes/{id}/final-pdf",
+			"GET /api/final-documents/{token}",
+			"GET /api/final-documents/{token}/pdf",
 			"GET /api/signing/verifications/{token}",
 			"GET /api/signing/{token}",
 			"GET /api/signing/{token}/source-pdf",

@@ -1,4 +1,4 @@
-import { FileText, MessageSquare, X } from "lucide-react";
+import { CheckCircle2, Download, FileText, MessageSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,11 @@ interface SignerSession {
 	signaturePreference: PartnerSignaturePreference | null;
 }
 
+interface CompletedDocumentLink {
+	url: string;
+	downloadUrl: string;
+}
+
 interface SigningError {
 	message: string;
 	verificationUrl?: string;
@@ -42,6 +47,7 @@ interface SignerPageProps {
 
 export function SignerPage({ token }: SignerPageProps) {
 	const [session, setSession] = useState<SignerSession | null>(null);
+	const [completedDocument, setCompletedDocument] = useState<CompletedDocumentLink | null>(null);
 	const [changeComment, setChangeComment] = useState("");
 	const [reason, setReason] = useState("");
 	const [comment, setComment] = useState("");
@@ -55,13 +61,19 @@ export function SignerPage({ token }: SignerPageProps) {
 			.then(
 				(response) =>
 					response.json() as Promise<{
-						data?: SignerSession;
+						data?: SignerSession | { completedDocument: CompletedDocumentLink };
 						error?: SigningError;
 					}>,
 			)
 			.then((body) => {
 				if (!active) return;
 				setError(body.error ?? null);
+				if (body.data && "completedDocument" in body.data) {
+					setCompletedDocument(body.data.completedDocument);
+					setSession(null);
+					return;
+				}
+				setCompletedDocument(null);
 				setSession(body.data ?? null);
 			});
 		return () => {
@@ -124,7 +136,38 @@ export function SignerPage({ token }: SignerPageProps) {
 					)}
 				</div>
 			)}
-			{!session && !error && (
+			{completedDocument && (
+				<section className="rounded-md border p-4">
+					<div className="flex flex-wrap items-start justify-between gap-4">
+						<div className="space-y-1">
+							<p className="inline-flex items-center gap-2 font-medium">
+								<CheckCircle2 className="h-4 w-4 text-emerald-700" />
+								Document complete
+							</p>
+							<p className="text-sm text-muted-foreground">
+								The final document is ready for review and download.
+							</p>
+						</div>
+						<div className="flex flex-wrap gap-3">
+							<a
+								className="inline-flex h-10 items-center gap-2 rounded-md border px-4 text-sm font-medium"
+								href={completedDocument.url}
+							>
+								<FileText className="h-4 w-4" />
+								View completed document
+							</a>
+							<a
+								className="inline-flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+								href={completedDocument.downloadUrl}
+							>
+								<Download className="h-4 w-4" />
+								Download final PDF
+							</a>
+						</div>
+					</div>
+				</section>
+			)}
+			{!session && !error && !completedDocument && (
 				<div className="rounded-md border p-4 text-sm text-muted-foreground">
 					<p className="font-medium text-foreground">Loading signing session</p>
 					<p className="text-pretty">Fetching the document and assigned signing fields.</p>
