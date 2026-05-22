@@ -1,9 +1,27 @@
-Implement every open GitHub issue in auditmos/signmos one by one, using the tdd skill workflow for each issue, verified by issue-specific tests plus the project verification commands pnpm types, pnpm test, pnpm lint, and pnpm build, while preserving existing behavior and keeping each issue in its own focused commit.
+Ship a working, user-verifiable feature for every open issue in auditmos/signmos, 
+one issue per commit, verified by (a) issue-specific Vitest tests covering every AC 
+including numeric/resource bounds, (b) `pnpm types && pnpm test && pnpm lint && pnpm build` 
+all green, and (c) for any UI/API behavior, a manual agent-browser walkthrough of the 
+golden path with snapshot evidence, while preserving existing behavior and never 
+reverting unrelated user changes. 
 
-For each issue: fetch the issue with gh issue view, extract acceptance criteria including any numeric or resource bounds, check relevant docs/plans/lessons first, state assumptions before the first RED test, stop and ask if any AC is ambiguous, then use vertical TDD: one failing behavior test, minimal implementation to pass, repeat until all ACs are covered. Add or update co-located Vitest tests only at public module boundaries, mock only external boundaries, and keep every changed line traceable to a test or explicit AC.
+Use the tdd skill for each issue: `gh issue view` -> extract every AC (including 
+numeric bounds) -> check docs/plans/lessons first -> state assumptions -> stop and 
+ask if any AC is ambiguous -> vertical TDD slices (one failing behavior test -> 
+minimal code -> green, repeat). Co-locate Vitest tests at public module boundaries 
+only; mock only external boundaries; every changed line must trace to a test or 
+explicit AC. One focused commit per issue referencing the issue number; close via 
+`gh issue close` only after all checks pass. Do not push until explicitly asked. 
 
-After each issue reaches green: run pnpm types, pnpm test, pnpm lint, and pnpm build. Start the app with pnpm dev when UI/API behavior needs manual verification, and use agent-browser to open the local app, take snapshots, interact with the relevant workflow, and capture evidence. Do not mark an issue done unless the automated checks pass and any required manual browser path has been verified. When the issue is implemented and tested close this issue on GitHub using gh issue close.
+Between iterations, pick the next open issue by dependency order and smallest safe 
+vertical slice that still delivers an end-to-end working feature. If repo state is 
+dirty, inspect and preserve unrelated changes before starting. Do not quote timing 
+or resource numbers unless measured; for any script >5 min, require heartbeat output 
+or flag its absence. 
 
-Commit after each completed issue with a focused message referencing the issue number. Do not combine unrelated issues in one commit. Do not push until all currently targeted issues are complete unless explicitly asked. If an issue cannot be completed, stop that issue with a status table listing each AC as verified, failing, blocked, or not tested, include command/browser evidence, explain the blocker, and continue only if another independent issue can be safely handled.
-
-Between iterations, choose the next open issue by dependency order and smallest safe vertical slice. If repo state is dirty before starting an issue, inspect it and preserve unrelated user changes. Never revert user changes. Do not quote performance or duration estimates unless measured. For long-running scripts over five minutes, ensure heartbeat/progress output or report that it is missing before relying on the run.
+If blocked on an issue, stop that issue and report a status table per AC 
+(verified / failing / blocked / not tested) with command + browser evidence and the 
+blocker. Continue only with another independent issue that can be safely handled. 
+Completion of the overall goal requires every targeted issue closed with all 
+verification surfaces green, OR a final audit listing every remaining issue's 
+blocker and the input needed to unlock it.
