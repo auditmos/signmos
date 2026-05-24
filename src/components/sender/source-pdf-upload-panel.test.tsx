@@ -28,6 +28,7 @@ describe("SourcePdfUploadPanel", () => {
 			<SourcePdfUploadPanel
 				envelopeId="00000000-0000-4000-8000-000000000001"
 				senderSessionToken="verified-sender-token"
+				signingMode="me_and_another_signer"
 				senderName="Ada Lovelace"
 				senderEmail="ada@example.com"
 			/>,
@@ -56,6 +57,31 @@ describe("SourcePdfUploadPanel", () => {
 		);
 	});
 
+	it("keeps the single-signer upload step free of partner-recipient fields", async () => {
+		const fetchMock = vi.fn(async (url: string | URL | Request) => {
+			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf") {
+				return sourcePdfMissingResponse();
+			}
+			throw new Error(`Unexpected fetch ${String(url)}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		renderWithQueryClient(
+			<SourcePdfUploadPanel
+				envelopeId="00000000-0000-4000-8000-000000000001"
+				senderSessionToken="verified-sender-token"
+				signingMode="only_me"
+				senderName="Ada Lovelace"
+				senderEmail="ada@example.com"
+			/>,
+		);
+
+		await screen.findByRole("button", { name: "Select a PDF first" });
+		expect(screen.queryByRole("form", { name: "Add recipients" })).toBeNull();
+		expect(screen.queryByLabelText("Partner name")).toBeNull();
+		expect(screen.queryByLabelText("Partner email")).toBeNull();
+	});
+
 	it("shows persisted source PDF metadata after reload", async () => {
 		const fetchMock = vi.fn(async (url: string | URL | Request) => {
 			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf") {
@@ -69,6 +95,7 @@ describe("SourcePdfUploadPanel", () => {
 			<SourcePdfUploadPanel
 				envelopeId="00000000-0000-4000-8000-000000000001"
 				senderSessionToken="verified-sender-token"
+				signingMode="me_and_another_signer"
 				senderName="Ada Lovelace"
 				senderEmail="ada@example.com"
 			/>,
@@ -213,6 +240,7 @@ describe("SourcePdfUploadPanel", () => {
 			<SourcePdfUploadPanel
 				envelopeId="00000000-0000-4000-8000-000000000001"
 				senderSessionToken="verified-sender-token"
+				signingMode="me_and_another_signer"
 				senderName="Ada Lovelace"
 				senderEmail="ada@example.com"
 			/>,

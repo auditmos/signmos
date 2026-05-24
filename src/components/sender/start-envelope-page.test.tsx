@@ -7,6 +7,71 @@ describe("StartEnvelopePage", () => {
 		vi.stubGlobal("crypto", { randomUUID: () => "form-idempotency-key" });
 	});
 
+	it("renders the single-signer mode selector with Only me selected by default", () => {
+		// Assumptions for issue #29:
+		// - The public landing page owns the human-visible mode choice.
+		// - "Only me" maps to the single-signer start path and is selected by default.
+		// - "Me and another signer" maps to the existing two-person flow.
+		// - PDF upload, saved signatures, document history, and final PDF behavior stay out of scope.
+		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+
+		expect((screen.getByRole("radio", { name: "Only me" }) as HTMLInputElement).checked).toBe(true);
+		expect(
+			(screen.getByRole("radio", { name: "Me and another signer" }) as HTMLInputElement).checked,
+		).toBe(false);
+	});
+
+	it("keeps sender details while switching modes and submits the selected mode", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							status: "awaiting_verification",
+							signingMode: "me_and_another_signer",
+							sender: {
+								name: "Ada Lovelace",
+								email: "ada@example.com",
+							},
+							allowedActions: ["verify_sender_email"],
+							verification: {
+								email: "ada@example.com",
+								expiresAt: "2026-05-21T09:30:00.000Z",
+							},
+						},
+					}),
+					{ status: 201 },
+				),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+
+		const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+		const emailInput = screen.getByLabelText("Email") as HTMLInputElement;
+		fireEvent.change(nameInput, { target: { value: "Ada Lovelace" } });
+		fireEvent.change(emailInput, { target: { value: "ada@example.com" } });
+		fireEvent.click(screen.getByRole("radio", { name: "Me and another signer" }));
+
+		expect(nameInput.value).toBe("Ada Lovelace");
+		expect(emailInput.value).toBe("ada@example.com");
+		fireEvent.click(screen.getByRole("button", { name: "Start envelope" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/envelopes/sender-start",
+			expect.objectContaining({
+				body: JSON.stringify({
+					signingMode: "me_and_another_signer",
+					name: "Ada Lovelace",
+					email: "ada@example.com",
+					turnstileToken: "test-pass",
+				}),
+			}),
+		);
+	});
+
 	it("blocks sender start when Turnstile is not configured", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
@@ -95,6 +160,7 @@ describe("StartEnvelopePage", () => {
 			"/api/envelopes/sender-start",
 			expect.objectContaining({
 				body: JSON.stringify({
+					signingMode: "only_me",
 					name: "Ada Lovelace",
 					email: "ada@example.com",
 					turnstileToken: "widget-pass",
@@ -152,6 +218,7 @@ describe("StartEnvelopePage", () => {
 					"idempotency-key": "form-idempotency-key",
 				},
 				body: JSON.stringify({
+					signingMode: "only_me",
 					name: "Ada Lovelace",
 					email: "ada@example.com",
 					turnstileToken: "test-pass",

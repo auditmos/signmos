@@ -5,6 +5,7 @@ import {
 	recipientStatuses,
 	senderVerificationStatuses,
 	signatureProfileKinds,
+	signingModes,
 } from "./table";
 
 export const envelopeLifecycleActions = ["send", "cancel", "expire", "delete"] as const;
@@ -21,6 +22,9 @@ export const envelopeAllowedActionsByStatus = {
 
 export const EnvelopeStatusSchema = z.enum(envelopeStatuses);
 export type EnvelopeStatus = z.infer<typeof EnvelopeStatusSchema>;
+
+export const SigningModeSchema = z.enum(signingModes);
+export type SigningMode = z.infer<typeof SigningModeSchema>;
 
 export const RecipientStatusSchema = z.enum(recipientStatuses);
 export type RecipientStatus = z.infer<typeof RecipientStatusSchema>;
@@ -40,6 +44,7 @@ export type EnvelopeLifecycleAction = z.infer<typeof EnvelopeLifecycleActionSche
 export const EnvelopeSchema = z.object({
 	id: z.string().uuid(),
 	status: EnvelopeStatusSchema,
+	signingMode: SigningModeSchema.default("me_and_another_signer"),
 	createdBy: z.string().min(1),
 	createdAt: z.date(),
 	sentBy: z.string().nullable().optional(),
@@ -105,6 +110,7 @@ export const SourceDocumentResponseSchema = z.object({
 export type SourceDocumentResponse = z.infer<typeof SourceDocumentResponseSchema>;
 
 export const SenderStartRequestSchema = z.object({
+	signingMode: SigningModeSchema.default("me_and_another_signer"),
 	name: z.string().trim().min(1).max(120),
 	email: z.string().trim().toLowerCase().email(),
 	turnstileToken: z.string().min(1),
@@ -127,6 +133,7 @@ export type SenderVerificationToken = z.infer<typeof SenderVerificationTokenSche
 export const SenderStartResponseSchema = z.object({
 	envelopeId: z.string().uuid(),
 	status: z.literal("awaiting_verification"),
+	signingMode: SigningModeSchema,
 	sender: z.object({
 		name: z.string(),
 		email: z.string().email(),
@@ -143,6 +150,7 @@ export type SenderStartResponse = z.infer<typeof SenderStartResponseSchema>;
 export const SenderVerificationResponseSchema = z.object({
 	envelopeId: z.string().uuid(),
 	status: z.literal("draft"),
+	signingMode: SigningModeSchema,
 	senderSessionToken: z.string().min(1),
 	sender: z.object({
 		name: z.string(),

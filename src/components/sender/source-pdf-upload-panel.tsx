@@ -29,13 +29,14 @@ export interface SourcePdfUploadPanelProps {
 	senderSessionToken: string;
 	senderName?: string;
 	senderEmail?: string;
+	signingMode?: "only_me" | "me_and_another_signer";
 }
 
 export function SourcePdfUploadPanel(props: SourcePdfUploadPanelProps) {
 	return (
 		<div className="space-y-5">
 			<UploadSourcePdfForm {...props} />
-			<AddRecipientsForm {...props} />
+			{props.signingMode === "only_me" ? null : <AddRecipientsForm {...props} />}
 		</div>
 	);
 }

@@ -121,7 +121,7 @@ export function UploadSourcePdfForm({ envelopeId, senderSessionToken }: SourcePd
 					<div>
 						<h2 className="font-semibold text-lg text-balance">Source PDF</h2>
 						<p className="text-muted-foreground text-pretty text-sm">
-							Select the PDF document that both recipients will sign.
+							Select the PDF document to prepare for signing.
 						</p>
 					</div>
 					<Input

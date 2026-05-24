@@ -8,6 +8,7 @@ export const Route = createFileRoute("/source-pdf-upload")({
 		senderSessionToken: z.string().optional(),
 		senderName: z.string().optional(),
 		senderEmail: z.string().optional(),
+		signingMode: z.enum(["only_me", "me_and_another_signer"]).optional(),
 	}),
 	component: SourcePdfUploadRoute,
 });
@@ -18,6 +19,7 @@ function SourcePdfUploadRoute() {
 	const senderSessionToken = search.senderSessionToken ?? "";
 	const senderName = search.senderName ?? "";
 	const senderEmail = search.senderEmail ?? "";
+	const signingMode = search.signingMode ?? "me_and_another_signer";
 
 	return (
 		<main className="min-h-dvh bg-background p-6">
@@ -33,6 +35,7 @@ function SourcePdfUploadRoute() {
 					senderSessionToken={senderSessionToken}
 					senderName={senderName}
 					senderEmail={senderEmail}
+					signingMode={signingMode}
 				/>
 			</div>
 		</main>

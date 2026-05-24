@@ -87,6 +87,7 @@ envelopesEndpoint.post("/sender-start", async (c) => {
 
 	try {
 		const result = await startSenderEnvelope({
+			signingMode: parsed.data.signingMode,
 			name: parsed.data.name,
 			email: parsed.data.email,
 			requestIp,
@@ -326,6 +327,36 @@ envelopesEndpoint.get("/:id/retention", async (c) => {
 		parseNow(c.req.header("x-now")),
 	);
 	return c.json({ data: result });
+});
+
+envelopesEndpoint.get("/:id/history", async (c) => {
+	const envelopeId = c.req.param("id");
+	const senderSession = await resolveVerifiedSenderSession(
+		c.req.header("x-sender-session-token") ?? c.req.query("senderSessionToken") ?? "",
+		envelopeId,
+		parseNow(c.req.header("x-now")),
+	);
+	if (!senderSession) {
+		return c.json(
+			{
+				error: {
+					code: "HISTORY_FORBIDDEN",
+					message: "Verified sender access is required before viewing document history",
+				},
+			},
+			403,
+		);
+	}
+
+	return c.json(
+		{
+			error: {
+				code: "HISTORY_NOT_IMPLEMENTED",
+				message: "Document history is implemented in a later slice",
+			},
+		},
+		501,
+	);
 });
 
 envelopesEndpoint.get("/:id/final-pdf", async (c) => {

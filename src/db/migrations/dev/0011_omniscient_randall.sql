@@ -1,0 +1,1 @@
+ALTER TABLE "envelopes" ADD COLUMN "signing_mode" text DEFAULT 'me_and_another_signer' NOT NULL;

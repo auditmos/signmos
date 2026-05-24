@@ -1,3 +1,4 @@
+import { useForm } from "@tanstack/react-form";
 import { Send } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +23,33 @@ interface StartEnvelopePageProps {
 	turnstileSiteKey?: string;
 	testTurnstileToken?: string;
 }
+
+const signingModeOptions = [
+	{
+		value: "only_me",
+		label: "Only me",
+		description: "Verify your email, upload a PDF, and sign it yourself.",
+	},
+	{
+		value: "me_and_another_signer",
+		label: "Me and another signer",
+		description: "Use the existing two-person envelope workflow.",
+	},
+] as const;
+
+type SigningMode = (typeof signingModeOptions)[number]["value"];
+
+type StartFormValues = {
+	signingMode: SigningMode;
+	name: string;
+	email: string;
+};
+
+const startFormDefaults: StartFormValues = {
+	signingMode: "only_me",
+	name: "",
+	email: "",
+};
 
 type StartState =
 	| { status: "idle" }
@@ -56,15 +84,18 @@ export function StartEnvelopePage({
 	turnstileSiteKey,
 	testTurnstileToken = "",
 }: StartEnvelopePageProps) {
-	const [name, setName] = useState("");
-	const [email, setEmail] = useState("");
 	const [state, setState] = useState<StartState>({ status: "idle" });
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 	const turnstileContainerRef = useRef<HTMLDivElement>(null);
+	const pendingTurnstileTokenRef = useRef("");
 	const activeTurnstileSiteKey = turnstileSiteKey?.trim() ?? "";
 	const activeTestTurnstileToken = testTurnstileToken.trim();
 	const hasTurnstileConfig =
 		activeTurnstileSiteKey.length > 0 || activeTestTurnstileToken.length > 0;
+	const form = useForm({
+		defaultValues: startFormDefaults,
+		onSubmit: ({ value }) => submitStart(value, pendingTurnstileTokenRef.current),
+	});
 
 	useEffect(() => {
 		const container = turnstileContainerRef.current;
@@ -89,9 +120,8 @@ export function StartEnvelopePage({
 		};
 	}, [activeTurnstileSiteKey]);
 
-	async function submitStart(event: FormEvent<HTMLFormElement>) {
+	function submitForm(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setState({ status: "submitting" });
 		const formData = new FormData(event.currentTarget);
 		const widgetToken = formData.get("cf-turnstile-response");
 		const turnstileToken = readTurnstileToken(widgetToken, activeTestTurnstileToken);
@@ -105,6 +135,12 @@ export function StartEnvelopePage({
 			return;
 		}
 
+		pendingTurnstileTokenRef.current = turnstileToken;
+		void form.handleSubmit();
+	}
+
+	async function submitStart(values: StartFormValues, turnstileToken: string) {
+		setState({ status: "submitting" });
 		try {
 			const response = await fetch("/api/envelopes/sender-start", {
 				method: "POST",
@@ -112,7 +148,7 @@ export function StartEnvelopePage({
 					"content-type": "application/json",
 					"idempotency-key": idempotencyKey,
 				},
-				body: JSON.stringify({ name, email, turnstileToken }),
+				body: JSON.stringify({ ...values, turnstileToken }),
 			});
 			const json: unknown = await response.json().catch(() => null);
 			if (!response.ok || !isSenderStartSuccess(json)) {
@@ -144,33 +180,75 @@ export function StartEnvelopePage({
 
 				<form
 					aria-label="Start envelope"
-					onSubmit={submitStart}
+					onSubmit={submitForm}
 					className="rounded-lg border bg-card p-5 shadow-sm"
 				>
 					<div className="space-y-5">
-						<div className="space-y-2">
-							<Label htmlFor="sender-name">Name</Label>
-							<Input
-								id="sender-name"
-								name="name"
-								autoComplete="name"
-								value={name}
-								onChange={(event) => setName(event.target.value)}
-								required
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="sender-email">Email</Label>
-							<Input
-								id="sender-email"
-								name="email"
-								type="email"
-								autoComplete="email"
-								value={email}
-								onChange={(event) => setEmail(event.target.value)}
-								required
-							/>
-						</div>
+						<form.Field name="signingMode">
+							{(field) => (
+								<fieldset className="space-y-2">
+									<legend className="font-medium text-sm">Signing mode</legend>
+									<div className="grid gap-2">
+										{signingModeOptions.map((option) => (
+											<label
+												key={option.value}
+												className="flex cursor-pointer gap-3 rounded-md border bg-background p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+											>
+												<input
+													type="radio"
+													aria-label={option.label}
+													name={field.name}
+													value={option.value}
+													checked={field.state.value === option.value}
+													onBlur={field.handleBlur}
+													onChange={() => field.handleChange(option.value)}
+													className="mt-1"
+												/>
+												<span>
+													<span className="block font-medium">{option.label}</span>
+													<span className="block text-muted-foreground text-xs">
+														{option.description}
+													</span>
+												</span>
+											</label>
+										))}
+									</div>
+								</fieldset>
+							)}
+						</form.Field>
+						<form.Field name="name">
+							{(field) => (
+								<div className="space-y-2">
+									<Label htmlFor="sender-name">Name</Label>
+									<Input
+										id="sender-name"
+										name={field.name}
+										autoComplete="name"
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(event) => field.handleChange(event.target.value)}
+										required
+									/>
+								</div>
+							)}
+						</form.Field>
+						<form.Field name="email">
+							{(field) => (
+								<div className="space-y-2">
+									<Label htmlFor="sender-email">Email</Label>
+									<Input
+										id="sender-email"
+										name={field.name}
+										type="email"
+										autoComplete="email"
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(event) => field.handleChange(event.target.value)}
+										required
+									/>
+								</div>
+							)}
+						</form.Field>
 
 						{activeTurnstileSiteKey ? (
 							<div className="min-h-16">

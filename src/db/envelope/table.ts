@@ -10,6 +10,7 @@ export const envelopeStatuses = [
 	"expired",
 	"deleted",
 ] as const;
+export const signingModes = ["only_me", "me_and_another_signer"] as const;
 export const recipientStatuses = ["pending", "sent", "completed", "declined"] as const;
 export const senderVerificationStatuses = ["pending", "verified", "expired"] as const;
 export const fieldTypes = ["signature", "date"] as const;
@@ -18,6 +19,7 @@ export const signatureProfileKinds = ["drawn", "typed"] as const;
 export const envelopes = pgTable("envelopes", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	status: text("status").notNull().default("draft"),
+	signingMode: text("signing_mode").notNull().default("me_and_another_signer"),
 	createdBy: text("created_by").notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	sentBy: text("sent_by"),

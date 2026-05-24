@@ -15,6 +15,7 @@ describe("SenderVerificationPage", () => {
 						data: {
 							envelopeId: "00000000-0000-4000-8000-000000000001",
 							status: "draft",
+							signingMode: "only_me",
 							senderSessionToken: "sender-token",
 							sender: {
 								name: "Ada Lovelace",
@@ -34,7 +35,7 @@ describe("SenderVerificationPage", () => {
 
 		await screen.findByText("Email verified");
 		const expectedUrl =
-			"/source-pdf-upload?envelopeId=00000000-0000-4000-8000-000000000001&senderSessionToken=sender-token&senderName=Ada+Lovelace&senderEmail=ada%40example.com";
+			"/source-pdf-upload?envelopeId=00000000-0000-4000-8000-000000000001&senderSessionToken=sender-token&senderName=Ada+Lovelace&senderEmail=ada%40example.com&signingMode=only_me";
 		expect(screen.getByRole("link", { name: "Continue to upload PDF" }).getAttribute("href")).toBe(
 			expectedUrl,
 		);

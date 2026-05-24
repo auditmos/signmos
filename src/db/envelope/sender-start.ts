@@ -8,11 +8,13 @@ import {
 } from "./email-delivery";
 import {
 	type Envelope,
+	EnvelopeSchema,
 	getEnvelopeAllowedActions,
 	type SenderStartResponse,
 	type SenderVerificationResponse,
 	type SenderVerificationToken,
 	SenderVerificationTokenSchema,
+	type SigningMode,
 } from "./schema";
 import {
 	auditEvents,
@@ -40,6 +42,7 @@ export class SenderStartRateLimitError extends Error {
 }
 
 interface StartSenderEnvelopeInput {
+	signingMode: SigningMode;
 	name: string;
 	email: string;
 	requestIp: string;
@@ -75,6 +78,7 @@ type RateLimitRecord = {
 
 export interface VerifiedSenderSession {
 	envelopeId: string;
+	signingMode: SigningMode;
 	name: string;
 	email: string;
 	token: string;
@@ -101,7 +105,11 @@ export async function startSenderEnvelope(
 
 	const [envelope] = await db
 		.insert(envelopes)
-		.values({ createdBy: email, status: "awaiting_verification" })
+		.values({
+			createdBy: email,
+			signingMode: input.signingMode,
+			status: "awaiting_verification",
+		})
 		.returning();
 	if (!envelope) throw new Error("Failed to create sender envelope");
 
@@ -171,6 +179,7 @@ export async function startSenderEnvelope(
 	return {
 		response: toSenderStartResponse({
 			envelopeId: envelope.id,
+			signingMode: input.signingMode,
 			name: input.name,
 			email,
 			token,
@@ -203,6 +212,7 @@ export async function verifySenderToken(
 	}
 
 	const token = SenderVerificationTokenSchema.parse(row);
+	const signingMode = await getEnvelopeSigningMode(token.envelopeId);
 	if (token.status !== "verified" && token.expiresAt <= now) {
 		return {
 			ok: false,
@@ -237,6 +247,7 @@ export async function verifySenderToken(
 		data: {
 			envelopeId: token.envelopeId,
 			status: "draft",
+			signingMode,
 			senderSessionToken: token.token,
 			sender: {
 				name: token.name,
@@ -268,6 +279,7 @@ export async function resolveVerifiedSenderSession(
 
 	return {
 		envelopeId: token.envelopeId,
+		signingMode: await getEnvelopeSigningMode(token.envelopeId),
 		name: token.name,
 		email: token.email,
 		token: token.token,
@@ -310,6 +322,7 @@ async function findIdempotentSenderStart(input: {
 
 	return toSenderStartResponse({
 		envelopeId: record.envelopeId,
+		signingMode: await getEnvelopeSigningMode(record.envelopeId),
 		name: token.name,
 		email: token.email,
 		token,
@@ -369,6 +382,7 @@ async function assertRateLimit(input: {
 
 function toSenderStartResponse(input: {
 	envelopeId: Envelope["id"];
+	signingMode: SigningMode;
 	name: string;
 	email: string;
 	token: SenderVerificationToken;
@@ -377,6 +391,7 @@ function toSenderStartResponse(input: {
 	return {
 		envelopeId: input.envelopeId,
 		status: "awaiting_verification",
+		signingMode: input.signingMode,
 		sender: {
 			name: input.name,
 			email: input.email,
@@ -388,6 +403,12 @@ function toSenderStartResponse(input: {
 			fallbackUrl: input.fallbackUrl,
 		},
 	};
+}
+
+async function getEnvelopeSigningMode(envelopeId: string): Promise<SigningMode> {
+	const db = getDb();
+	const [envelope] = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(1);
+	return EnvelopeSchema.parse(envelope).signingMode;
 }
 
 function buildSenderVerificationUrl(baseUrl: string, token: string): string {

@@ -18,9 +18,12 @@ type VerifiedSender = {
 	email: string;
 };
 
+type SigningMode = "only_me" | "me_and_another_signer";
+
 type SenderVerificationSuccess = {
 	data: {
 		envelopeId: string;
+		signingMode: SigningMode;
 		senderSessionToken: string;
 		sender: VerifiedSender;
 	};
@@ -65,6 +68,7 @@ export function SenderVerificationPage({
 				json.data.envelopeId,
 				json.data.senderSessionToken,
 				json.data.sender,
+				json.data.signingMode,
 			);
 			setState({ status: "verified", uploadUrl, email: json.data.sender.email });
 			onVerified(uploadUrl);
@@ -124,12 +128,14 @@ function buildUploadUrl(
 	envelopeId: string,
 	senderSessionToken: string,
 	sender: VerifiedSender,
+	signingMode: SigningMode,
 ): string {
 	const params = new URLSearchParams({
 		envelopeId,
 		senderSessionToken,
 		senderName: sender.name,
 		senderEmail: sender.email,
+		signingMode,
 	});
 	return `/source-pdf-upload?${params.toString()}`;
 }

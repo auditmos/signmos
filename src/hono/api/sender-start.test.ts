@@ -115,10 +115,13 @@ function resetState() {
 	}
 }
 
-function seedAwaitingVerificationEnvelope() {
+type TestSigningMode = "only_me" | "me_and_another_signer";
+
+function seedAwaitingVerificationEnvelope(signingMode: TestSigningMode = "me_and_another_signer") {
 	state.envelopes.push({
 		id: "00000000-0000-4000-8000-000000000001",
 		status: "awaiting_verification",
+		signingMode,
 		createdBy: "ada@example.com",
 		createdAt: new Date("2026-05-21T09:00:00.000Z"),
 		sentBy: null,
@@ -181,6 +184,7 @@ describe("sender start API", () => {
 					"cf-connecting-ip": "203.0.113.10",
 				},
 				body: JSON.stringify({
+					signingMode: "only_me",
 					name: "Ada Lovelace",
 					email: "ADA@EXAMPLE.COM",
 					turnstileToken: "test-pass",
@@ -195,6 +199,7 @@ describe("sender start API", () => {
 			data: {
 				envelopeId: expect.any(String),
 				status: "awaiting_verification",
+				signingMode: "only_me",
 				sender: {
 					name: "Ada Lovelace",
 					email: "ada@example.com",
@@ -210,6 +215,7 @@ describe("sender start API", () => {
 		expect(state.envelopes).toEqual([
 			expect.objectContaining({
 				status: "awaiting_verification",
+				signingMode: "only_me",
 				createdBy: "ada@example.com",
 			}),
 		]);
@@ -542,7 +548,7 @@ describe("sender start API", () => {
 	});
 
 	it("verifies valid sender magic links and returns stable errors for invalid or expired links", async () => {
-		seedAwaitingVerificationEnvelope();
+		seedAwaitingVerificationEnvelope("only_me");
 
 		const verified = await apiHono.request("/api/envelopes/sender-verifications/sender-token", {
 			headers: { "x-now": "2026-05-21T09:05:00.000Z" },
@@ -553,6 +559,7 @@ describe("sender start API", () => {
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				status: "draft",
+				signingMode: "only_me",
 				senderSessionToken: "sender-token",
 				sender: {
 					name: "Ada Lovelace",
@@ -581,6 +588,7 @@ describe("sender start API", () => {
 		await expect(reusedSession.json()).resolves.toMatchObject({
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
+				signingMode: "only_me",
 				senderSessionToken: "sender-token",
 				sender: {
 					name: "Ada Lovelace",
@@ -632,6 +640,61 @@ describe("sender start API", () => {
 			},
 		});
 		expect(state.envelopes[0]?.status).toBe("awaiting_verification");
+	});
+
+	it("blocks single-signer upload, signature, and history access before email verification", async () => {
+		seedAwaitingVerificationEnvelope("only_me");
+
+		const sourcePdf = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",
+			{
+				headers: {
+					"x-sender-session-token": "sender-token",
+					"x-now": "2026-05-21T09:05:00.000Z",
+				},
+			},
+		);
+		expect(sourcePdf.status).toBe(401);
+		await expect(sourcePdf.json()).resolves.toEqual({
+			error: {
+				code: "UNAUTHORIZED",
+				message: "Missing x-internal-user-id header",
+			},
+		});
+
+		const signature = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/signature-profiles/selected",
+			{
+				headers: {
+					"x-sender-session-token": "sender-token",
+					"x-now": "2026-05-21T09:05:00.000Z",
+				},
+			},
+		);
+		expect(signature.status).toBe(401);
+		await expect(signature.json()).resolves.toEqual({
+			error: {
+				code: "UNAUTHORIZED",
+				message: "Missing x-internal-user-id header",
+			},
+		});
+
+		const history = await apiHono.request(
+			"/api/envelopes/00000000-0000-4000-8000-000000000001/history",
+			{
+				headers: {
+					"x-sender-session-token": "sender-token",
+					"x-now": "2026-05-21T09:05:00.000Z",
+				},
+			},
+		);
+		expect(history.status).toBe(403);
+		await expect(history.json()).resolves.toEqual({
+			error: {
+				code: "HISTORY_FORBIDDEN",
+				message: "Verified sender access is required before viewing document history",
+			},
+		});
 	});
 
 	it("redirects browser navigation from the sender verification API to the UI route", async () => {
@@ -687,6 +750,7 @@ describe("sender start API", () => {
 				"cf-connecting-ip": "203.0.113.10",
 			},
 			body: JSON.stringify({
+				signingMode: "only_me",
 				name: "Ada Lovelace",
 				email: "ada@example.com",
 				turnstileToken: "test-pass",
@@ -702,7 +766,9 @@ describe("sender start API", () => {
 
 		expect(first.status).toBe(201);
 		expect(second.status).toBe(200);
-		expect(await second.json()).toEqual(await first.json());
+		const firstBody = (await first.clone().json()) as { data: { signingMode: string } };
+		expect(await second.json()).toEqual(firstBody);
+		expect(firstBody.data.signingMode).toBe("only_me");
 		expect(state.envelopes).toHaveLength(1);
 		expect(state.senderVerificationEmailRecords).toHaveLength(1);
 		expect(state.senderVerificationTokens).toHaveLength(1);
