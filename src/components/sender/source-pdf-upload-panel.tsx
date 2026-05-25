@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DocumentHistoryPanel } from "./document-history-panel";
 import {
 	addRecipientPair,
 	buildPrepareUrl,
@@ -37,6 +38,10 @@ export function SourcePdfUploadPanel(props: SourcePdfUploadPanelProps) {
 		<div className="space-y-5">
 			<UploadSourcePdfForm {...props} />
 			{props.signingMode === "only_me" ? null : <AddRecipientsForm {...props} />}
+			<DocumentHistoryPanel
+				envelopeId={props.envelopeId}
+				senderSessionToken={props.senderSessionToken}
+			/>
 		</div>
 	);
 }

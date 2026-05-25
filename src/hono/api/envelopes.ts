@@ -12,6 +12,7 @@ import {
 	EnvelopeActionRequestSchema,
 	EnvelopeControlError,
 	envelopeLifecycleActions,
+	getDocumentHistoryForEmail,
 	getEnvelopeAllowedActions,
 	getEnvelopeFinalizationStatus,
 	getEnvelopeRetentionStatus,
@@ -335,10 +336,11 @@ envelopesEndpoint.get("/:id/retention", async (c) => {
 
 envelopesEndpoint.get("/:id/history", async (c) => {
 	const envelopeId = c.req.param("id");
+	const now = parseNow(c.req.header("x-now"));
 	const senderSession = await resolveVerifiedSenderSession(
 		c.req.header("x-sender-session-token") ?? c.req.query("senderSessionToken") ?? "",
 		envelopeId,
-		parseNow(c.req.header("x-now")),
+		now,
 	);
 	if (!senderSession) {
 		return c.json(
@@ -352,15 +354,12 @@ envelopesEndpoint.get("/:id/history", async (c) => {
 		);
 	}
 
-	return c.json(
-		{
-			error: {
-				code: "HISTORY_NOT_IMPLEMENTED",
-				message: "Document history is implemented in a later slice",
-			},
-		},
-		501,
-	);
+	const history = await getDocumentHistoryForEmail({
+		email: senderSession.email,
+		senderSessionToken: senderSession.token,
+		now,
+	});
+	return c.json({ data: history });
 });
 
 envelopesEndpoint.get("/:id/final-pdf", async (c) => {

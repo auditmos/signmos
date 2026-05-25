@@ -4,6 +4,7 @@ export * from "./controls";
 export * from "./delivery";
 export * from "./email-delivery";
 export * from "./finalization";
+export * from "./history";
 export * from "./partner-verification";
 export * from "./preparation";
 export * from "./queries";
