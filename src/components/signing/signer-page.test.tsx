@@ -43,7 +43,25 @@ describe("SignerPage", () => {
 					{ status: 200 },
 				),
 			)
-			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }));
+			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }))
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
+							fields: [],
+							signaturePreference: null,
+						},
+					}),
+					{ status: 200 },
+				),
+			);
 		vi.stubGlobal("fetch", fetchMock);
 
 		render(<SignerPage token="valid-token" />);
@@ -64,8 +82,9 @@ describe("SignerPage", () => {
 		expect(screen.queryByLabelText("Signing date")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
-		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-		expect(fetchMock).toHaveBeenLastCalledWith(
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			2,
 			"/api/signing/valid-token/complete",
 			expect.objectContaining({
 				method: "POST",
@@ -193,7 +212,25 @@ describe("SignerPage", () => {
 					{ status: 200 },
 				),
 			)
-			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }));
+			.mockResolvedValueOnce(new Response(JSON.stringify({ data: {} }), { status: 200 }))
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						data: {
+							envelopeId: "00000000-0000-4000-8000-000000000001",
+							recipientId: "20000000-0000-4000-8000-000000000001",
+							sourceDocument: {
+								version: 1,
+								contentType: "application/pdf",
+								downloadUrl: "/api/signing/valid-token/source-pdf",
+							},
+							fields: [],
+							signaturePreference: null,
+						},
+					}),
+					{ status: 200 },
+				),
+			);
 		vi.stubGlobal("fetch", fetchMock);
 
 		render(<SignerPage token="valid-token" />);
@@ -215,8 +252,9 @@ describe("SignerPage", () => {
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
-		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-		expect(fetchMock).toHaveBeenLastCalledWith(
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+		expect(fetchMock).toHaveBeenNthCalledWith(
+			2,
 			"/api/signing/valid-token/complete",
 			expect.objectContaining({
 				method: "POST",

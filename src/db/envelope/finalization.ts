@@ -274,7 +274,7 @@ async function recordCompletionNotifications(
 				tokenId: token.id,
 				email: recipient.email,
 				kind: "completion",
-				fallbackUrl: completedDocumentUrl,
+				fallbackUrl: `/completed-documents/${token.token}`,
 			},
 		];
 	});

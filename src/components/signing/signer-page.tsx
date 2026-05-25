@@ -1,5 +1,5 @@
 import { CheckCircle2, Download, FileText, MessageSquare, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { pdfPage } from "@/components/envelopes/field-placement-workspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,31 +65,33 @@ export function SignerPage({ token }: SignerPageProps) {
 	const [error, setError] = useState<SigningError | null>(null);
 	const [changeRequested, setChangeRequested] = useState(false);
 
+	const refreshSigningState = useCallback(
+		async (isActive: () => boolean = () => true) => {
+			const response = await fetch(`/api/signing/${token}`);
+			const body = (await response.json()) as {
+				data?: SignerSession | { completedDocument: CompletedDocumentLink };
+				error?: SigningError;
+			};
+			if (!isActive()) return;
+			setError(body.error ?? null);
+			if (body.data && "completedDocument" in body.data) {
+				setCompletedDocument(body.data.completedDocument);
+				setSession(null);
+				return;
+			}
+			setCompletedDocument(null);
+			setSession(body.data ?? null);
+		},
+		[token],
+	);
+
 	useEffect(() => {
 		let active = true;
-		fetch(`/api/signing/${token}`)
-			.then(
-				(response) =>
-					response.json() as Promise<{
-						data?: SignerSession | { completedDocument: CompletedDocumentLink };
-						error?: SigningError;
-					}>,
-			)
-			.then((body) => {
-				if (!active) return;
-				setError(body.error ?? null);
-				if (body.data && "completedDocument" in body.data) {
-					setCompletedDocument(body.data.completedDocument);
-					setSession(null);
-					return;
-				}
-				setCompletedDocument(null);
-				setSession(body.data ?? null);
-			});
+		void refreshSigningState(() => active);
 		return () => {
 			active = false;
 		};
-	}, [token]);
+	}, [refreshSigningState]);
 
 	async function completeSigning(payload: CompleteSigningPayload) {
 		const response = await fetch(`/api/signing/${token}/complete`, {
@@ -99,6 +101,7 @@ export function SignerPage({ token }: SignerPageProps) {
 		});
 		if (response.ok) {
 			setMessage("Signing complete");
+			await refreshSigningState();
 			return;
 		}
 		const body = (await response.json().catch((): { error?: SigningError } => ({}))) as {

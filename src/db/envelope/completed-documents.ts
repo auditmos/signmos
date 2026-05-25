@@ -1,10 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
 import {
+	type EnvelopeField,
 	EnvelopeFieldSchema,
 	EnvelopeSchema,
 	type FinalDocument,
 	FinalDocumentSchema,
+	type Recipient,
 	RecipientSchema,
 	SignerTokenSchema,
 } from "./schema";
@@ -61,10 +63,19 @@ interface FieldValueSnapshot {
 	completedAt: Date | null;
 }
 
+interface CompletedDocumentContext {
+	finalDocument: FinalDocument;
+	recipients: Recipient[];
+	fields: EnvelopeField[];
+	values: FieldValueSnapshot[];
+	events: Array<Record<string, unknown>>;
+}
+
 export async function getCompletedDocumentView(
 	token: string,
+	options: { now?: Date } = {},
 ): Promise<CompletedDocumentView | null> {
-	const context = await getCompletedDocumentContext(token);
+	const context = await getCompletedDocumentContext(token, options);
 	if (!context) return null;
 
 	return {
@@ -83,13 +94,17 @@ export async function getCompletedDocumentView(
 	};
 }
 
-export async function getFinalDocumentByToken(token: string): Promise<FinalDocument | null> {
-	const context = await getCompletedDocumentContext(token);
+export async function getFinalDocumentByToken(
+	token: string,
+	options: { now?: Date } = {},
+): Promise<FinalDocument | null> {
+	const context = await getCompletedDocumentContext(token, options);
 	return context?.finalDocument ?? null;
 }
 
 export async function getCompletedDocumentLinkForSignerToken(
 	tokenValue: string,
+	options: { now?: Date } = {},
 ): Promise<CompletedDocumentLink | null> {
 	const db = getDb();
 	const tokenRows = await db
@@ -101,6 +116,7 @@ export async function getCompletedDocumentLinkForSignerToken(
 		tokenRows.map((row) => SignerTokenSchema.parse(row)).find((row) => row.token === tokenValue) ??
 		null;
 	if (!token) return null;
+	if (token.expiresAt <= (options.now ?? new Date())) return null;
 
 	const [envelopeRow] = await db
 		.select()
@@ -120,7 +136,7 @@ export async function getCompletedDocumentLinkForSignerToken(
 			.map((row) => FinalDocumentSchema.parse(row))
 			.find((document) => document.envelopeId === token.envelopeId && document.id) ?? null;
 	if (!finalDocument?.id) return null;
-	return completedDocumentLink(finalDocument.id);
+	return completedDocumentLink(token.token);
 }
 
 function completedDocumentLink(token: string): CompletedDocumentLink {
@@ -134,7 +150,13 @@ function completedDocumentDownloadUrl(token: string): string {
 	return `/api/final-documents/${token}/pdf`;
 }
 
-async function getCompletedDocumentContext(token: string) {
+async function getCompletedDocumentContext(
+	token: string,
+	options: { now?: Date } = {},
+): Promise<CompletedDocumentContext | null> {
+	const signerContext = await getCompletedDocumentContextForSignerToken(token, options);
+	if (signerContext) return signerContext;
+
 	const db = getDb();
 	const documentRows = await db
 		.select()
@@ -187,7 +209,37 @@ async function getCompletedDocumentContext(token: string) {
 	return { finalDocument, recipients, fields, values, events };
 }
 
-function buildParties(context: Awaited<ReturnType<typeof getCompletedDocumentContext>>) {
+async function getCompletedDocumentContextForSignerToken(
+	tokenValue: string,
+	options: { now?: Date },
+): Promise<CompletedDocumentContext | null> {
+	const db = getDb();
+	const tokenRows = await db
+		.select()
+		.from(signerTokens)
+		.where(eq(signerTokens.token, tokenValue))
+		.limit(1);
+	const token =
+		tokenRows.map((row) => SignerTokenSchema.parse(row)).find((row) => row.token === tokenValue) ??
+		null;
+	if (!token) return null;
+	if (token.expiresAt <= (options.now ?? new Date())) return null;
+	const documentRows = await db
+		.select()
+		.from(finalDocuments)
+		.where(eq(finalDocuments.envelopeId, token.envelopeId))
+		.limit(1);
+	const finalDocument =
+		documentRows
+			.map((row) => FinalDocumentSchema.parse(row))
+			.find((document) => document.envelopeId === token.envelopeId) ?? null;
+	if (!finalDocument?.id) return null;
+	const context = await getCompletedDocumentContext(finalDocument.id, options);
+	if (!context) return null;
+	return context;
+}
+
+function buildParties(context: CompletedDocumentContext | null) {
 	if (!context) return [];
 	const dateFieldIdsByRecipient = new Map(
 		context.fields
@@ -211,7 +263,7 @@ function buildParties(context: Awaited<ReturnType<typeof getCompletedDocumentCon
 	});
 }
 
-function buildHistory(context: Awaited<ReturnType<typeof getCompletedDocumentContext>>) {
+function buildHistory(context: CompletedDocumentContext | null) {
 	if (!context) return [];
 	const recipientNameById = new Map(
 		context.recipients.map((recipient) => [recipient.id, recipient.name]),

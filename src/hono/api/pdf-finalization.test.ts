@@ -313,7 +313,7 @@ describe("PDF finalization", () => {
 			expect.objectContaining({
 				email: "ada@example.com",
 				kind: "completion",
-				fallbackUrl: "/completed-documents/90000000-0000-4000-8000-000000000001",
+				fallbackUrl: "/completed-documents/valid-token",
 			}),
 		]);
 		expect(state.senderVerificationEmailRecords).toEqual([

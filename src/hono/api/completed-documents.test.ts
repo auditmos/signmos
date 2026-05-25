@@ -275,14 +275,16 @@ describe("completed document access", () => {
 	});
 
 	it("routes a completed signing link to the completed-document view without signer verification", async () => {
-		const response = await apiHono.request("/api/signing/valid-token");
+		const response = await apiHono.request("/api/signing/valid-token", {
+			headers: { "x-now": "2026-05-21T09:12:00.000Z" },
+		});
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({
 			data: {
 				completedDocument: {
-					url: `/completed-documents/${finalDocumentToken}`,
-					downloadUrl: `/api/final-documents/${finalDocumentToken}/pdf`,
+					url: "/completed-documents/valid-token",
+					downloadUrl: "/api/final-documents/valid-token/pdf",
 				},
 			},
 		});

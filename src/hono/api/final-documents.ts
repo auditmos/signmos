@@ -4,7 +4,9 @@ import { createHono } from "@/hono/factory";
 const finalDocumentsEndpoint = createHono();
 
 finalDocumentsEndpoint.get("/:token/pdf", async (c) => {
-	const document = await getFinalDocumentByToken(c.req.param("token"));
+	const document = await getFinalDocumentByToken(c.req.param("token"), {
+		now: parseNow(c.req.header("x-now")),
+	});
 	if (!document) {
 		return c.json(
 			{
@@ -37,7 +39,9 @@ finalDocumentsEndpoint.get("/:token/pdf", async (c) => {
 });
 
 finalDocumentsEndpoint.get("/:token", async (c) => {
-	const view = await getCompletedDocumentView(c.req.param("token"));
+	const view = await getCompletedDocumentView(c.req.param("token"), {
+		now: parseNow(c.req.header("x-now")),
+	});
 	if (!view) {
 		return c.json(
 			{
@@ -54,3 +58,7 @@ finalDocumentsEndpoint.get("/:token", async (c) => {
 });
 
 export default finalDocumentsEndpoint;
+
+function parseNow(nowHeader: string | undefined): Date {
+	return new Date(nowHeader ?? Date.now());
+}
