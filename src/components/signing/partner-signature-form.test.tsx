@@ -1,0 +1,101 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	type CompleteSigningPayload,
+	PartnerSignatureForm,
+	type PartnerSignaturePreference,
+} from "./partner-signature-form";
+
+describe("PartnerSignatureForm", () => {
+	it("prefills a saved typed signature and keeps future updates selected", async () => {
+		const submissions: CompleteSigningPayload[] = [];
+
+		render(
+			<PartnerSignatureForm
+				initialPreference={savedTypedPreference}
+				disabled={false}
+				onSubmit={async (payload) => {
+					submissions.push(payload);
+				}}
+			/>,
+		);
+
+		expect(screen.getByLabelText("Typed signature text")).toHaveProperty("value", "Ada Saved");
+		expect(screen.getByLabelText("Signature font")).toHaveProperty("value", "serif");
+		expect(screen.getByLabelText("Remember signature for future envelopes")).toHaveProperty(
+			"checked",
+			true,
+		);
+
+		fireEvent.change(screen.getByLabelText("Typed signature text"), {
+			target: { value: "Ada Updated" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
+
+		await waitFor(() => expect(submissions).toHaveLength(1));
+		expect(submissions[0]).toEqual({
+			signature: {
+				kind: "typed",
+				typedText: "Ada Updated",
+				typedFont: "serif",
+			},
+			rememberSignature: true,
+		});
+	});
+
+	it("prefills a saved drawn signature path and submits it as the preferred mode", async () => {
+		const submissions: CompleteSigningPayload[] = [];
+
+		render(
+			<PartnerSignatureForm
+				initialPreference={savedDrawnPreference}
+				disabled={false}
+				onSubmit={async (payload) => {
+					submissions.push(payload);
+				}}
+			/>,
+		);
+
+		expect(screen.getByRole("button", { name: "Choose drawn signature" })).toHaveProperty(
+			"ariaPressed",
+			"true",
+		);
+		expect(
+			screen.getByLabelText("Draw signature pad").querySelector("path")?.getAttribute("d"),
+		).toBe("M 12 36 L 48 20 L 96 42");
+		expect(screen.getByLabelText("Remember signature for future envelopes")).toHaveProperty(
+			"checked",
+			true,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
+
+		await waitFor(() => expect(submissions).toHaveLength(1));
+		expect(submissions[0]).toEqual({
+			signature: {
+				kind: "drawn",
+				label: "Drawn signature",
+				svgPath: "M 12 36 L 48 20 L 96 42",
+			},
+			rememberSignature: true,
+		});
+	});
+});
+
+const savedTypedPreference: PartnerSignaturePreference = {
+	id: "60000000-0000-4000-8000-000000000001",
+	kind: "typed",
+	label: "Saved typed",
+	svgPath: null,
+	typedText: "Ada Saved",
+	typedFont: "serif",
+};
+
+const savedDrawnPreference: PartnerSignaturePreference = {
+	id: "60000000-0000-4000-8000-000000000002",
+	kind: "drawn",
+	label: "Saved drawn",
+	svgPath: "M 12 36 L 48 20 L 96 42",
+	typedText: null,
+	typedFont: null,
+};

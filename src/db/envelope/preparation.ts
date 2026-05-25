@@ -59,14 +59,14 @@ export async function getLatestSelectedSignatureProfile(
 	createdBy: string,
 ): Promise<SignatureProfile | null> {
 	const db = getDb();
+	const normalizedCreatedBy = normalizeSignatureProfileActor(createdBy);
 	const profiles = (
 		await db
 			.select()
 			.from(signatureProfiles)
-			.where(eq(signatureProfiles.createdBy, createdBy))
+			.where(eq(signatureProfiles.createdBy, normalizedCreatedBy))
 			.limit(100)
 	).map((profile) => SignatureProfileSchema.parse(profile));
-	const normalizedCreatedBy = normalizeSignatureProfileActor(createdBy);
 	return (
 		profiles
 			.filter(

@@ -58,6 +58,9 @@ describe("SignerPage", () => {
 		fireEvent.change(screen.getByLabelText("Typed signature text"), {
 			target: { value: "Ada Lovelace" },
 		});
+		await waitFor(() =>
+			expect(screen.getByLabelText("Typed signature text")).toHaveProperty("value", "Ada Lovelace"),
+		);
 		expect(screen.queryByLabelText("Signing date")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Complete signing" }));
 
@@ -148,7 +151,7 @@ describe("SignerPage", () => {
 		);
 	});
 
-	it("allows switching between typed and drawn signatures with explicit unchecked remember consent", async () => {
+	it("allows switching between typed and drawn signatures while keeping saved-profile updates selected", async () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(
@@ -199,7 +202,7 @@ describe("SignerPage", () => {
 		expect(screen.getByLabelText("Typed signature text")).toHaveProperty("value", "Ada Saved");
 		expect(screen.getByLabelText("Signature font")).toHaveProperty("value", "serif");
 		const rememberCheckbox = screen.getByLabelText("Remember signature for future envelopes");
-		expect(rememberCheckbox).toHaveProperty("checked", false);
+		expect(rememberCheckbox).toHaveProperty("checked", true);
 
 		fireEvent.click(screen.getByRole("button", { name: "Choose drawn signature" }));
 		expect(screen.getByLabelText("Draw signature pad")).toBeTruthy();
@@ -224,7 +227,7 @@ describe("SignerPage", () => {
 						typedText: "Ada New",
 						typedFont: "serif",
 					},
-					rememberSignature: false,
+					rememberSignature: true,
 				}),
 			}),
 		);

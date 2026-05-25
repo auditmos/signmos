@@ -292,7 +292,7 @@ function signatureFormDefaults(preference: PartnerSignaturePreference | null): S
 			mode: "typed",
 			typedText: preference.typedText ?? "",
 			typedFont: parseTypedFont(preference.typedFont),
-			rememberSignature: false,
+			rememberSignature: true,
 		};
 	}
 	if (preference?.kind === "drawn") {
@@ -300,7 +300,7 @@ function signatureFormDefaults(preference: PartnerSignaturePreference | null): S
 			mode: "drawn",
 			typedText: "",
 			typedFont: "cursive",
-			rememberSignature: false,
+			rememberSignature: true,
 		};
 	}
 	return {
