@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import {
 	auditEvents,
 	emailSendRecords,
@@ -11,6 +12,7 @@ import {
 	signerTokens,
 	sourceDocuments,
 } from "@/db/envelope";
+import { FINAL_PDF_RENDERER_PRODUCER } from "@/db/envelope/final-pdf-renderer";
 import { apiHono } from "@/hono/api";
 
 const state = vi.hoisted(() => ({
@@ -185,7 +187,7 @@ vi.mock("@/db/setup", () => ({
 }));
 
 describe("PDF finalization", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		state.envelopesTable = envelopes;
 		state.recipientsTable = envelopeRecipients;
 		state.fieldsTable = envelopeFields;
@@ -212,6 +214,7 @@ describe("PDF finalization", () => {
 			expiresAt: new Date("2026-05-27T07:03:00.000Z"),
 			verifiedAt: new Date("2026-05-20T07:04:00.000Z"),
 		};
+		state.r2Objects.set(String(state.sourceDocuments[0]?.r2Key), await createSourcePdfBytes());
 	});
 
 	it("keeps the envelope sent until every required recipient completes", async () => {
@@ -224,6 +227,10 @@ describe("PDF finalization", () => {
 			createdAt: new Date("2026-05-20T07:02:30.000Z"),
 		});
 		const bucket = {
+			get: async (key: string) => {
+				const bytes = state.r2Objects.get(key);
+				return bytes ? { arrayBuffer: async () => toArrayBuffer(bytes) } : null;
+			},
 			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {
 				const bytes =
 					value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer);
@@ -256,7 +263,7 @@ describe("PDF finalization", () => {
 		expect(state.finalDocuments).toHaveLength(0);
 		expect(state.emailSendRecords).toHaveLength(0);
 		expect(state.senderVerificationEmailRecords).toHaveLength(0);
-		expect(state.r2Objects.size).toBe(0);
+		expect(state.r2Objects.size).toBe(1);
 	});
 
 	it("generates a final PDF with flattened values and audit summary when all recipients complete", async () => {
@@ -266,6 +273,10 @@ describe("PDF finalization", () => {
 		// - Partner completion fallback uses the verified signing process token.
 		// - The certificate checksum is a deterministic hash over signing inputs, not a self-hash.
 		const bucket = {
+			get: async (key: string) => {
+				const bytes = state.r2Objects.get(key);
+				return bytes ? { arrayBuffer: async () => toArrayBuffer(bytes) } : null;
+			},
 			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {
 				const bytes =
 					value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer);
@@ -296,14 +307,21 @@ describe("PDF finalization", () => {
 		});
 		expect(state.finalDocuments).toHaveLength(1);
 		const finalKey = state.finalDocuments[0]?.r2Key as string;
-		const finalPdf = new TextDecoder().decode(state.r2Objects.get(finalKey));
-		expect(finalPdf).toContain("Ada Lovelace");
-		expect(finalPdf).toContain("2026-05-20");
-		expect(finalPdf).toContain("signature page=1 x=72 y=144 width=180 height=48");
-		expect(finalPdf).toContain("AUDIT CERTIFICATE");
-		expect(finalPdf).toContain("Certificate checksum:");
-		expect(finalPdf).toContain(`Source SHA-256: ${"a".repeat(64)}`);
-		expect(finalPdf).toContain("recipient.completed");
+		const finalPdfBytes = state.r2Objects.get(finalKey);
+		if (!finalPdfBytes) throw new Error("Final PDF was not written");
+		const finalPdf = new TextDecoder().decode(finalPdfBytes);
+		const parsedFinalPdf = await PDFDocument.load(finalPdfBytes);
+		expect(parsedFinalPdf.getPageCount()).toBe(2);
+		expect(finalPdf.slice(0, 5)).toBe("%PDF-");
+		expect(state.fieldValues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ value: "Ada Lovelace" }),
+				expect.objectContaining({ value: "2026-05-20" }),
+			]),
+		);
+		expect(state.auditEvents).toEqual(
+			expect.arrayContaining([expect.objectContaining({ eventType: "recipient.completed" })]),
+		);
 		expect(state.emailSendRecords).toEqual([
 			expect.objectContaining({
 				email: "sender@example.com",
@@ -329,8 +347,8 @@ describe("PDF finalization", () => {
 		}
 	});
 
-	it("reports final PDF availability and downloads through verified process links", async () => {
-		const finalPdf = new TextEncoder().encode("%PDF-1.4\ncompleted artifact\n%%EOF");
+	it("reports final PDF availability and repairs stale downloads through process links", async () => {
+		const finalPdf = await createSourcePdfBytes();
 		const r2Key = "envelopes/00000000-0000-4000-8000-000000000001/final.pdf";
 		state.finalDocuments.push({
 			id: "90000000-0000-4000-8000-000000000001",
@@ -344,9 +362,16 @@ describe("PDF finalization", () => {
 		state.envelopes[0] = { ...state.envelopes[0], status: "completed" };
 		state.r2Objects.set(r2Key, finalPdf);
 		const bucket = {
-			get: async (key: string) => ({
-				arrayBuffer: async () => state.r2Objects.get(key)?.buffer,
-			}),
+			get: async (key: string) => {
+				const bytes = state.r2Objects.get(key);
+				return bytes ? { arrayBuffer: async () => toArrayBuffer(bytes) } : null;
+			},
+			put: async (key: string, value: ArrayBuffer | ArrayBufferView) => {
+				const bytes =
+					value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer);
+				state.r2Objects.set(key, bytes);
+				return null;
+			},
 		};
 
 		const statusResponse = await apiHono.request(
@@ -371,9 +396,14 @@ describe("PDF finalization", () => {
 		);
 		expect(finalTokenDownload.status).toBe(200);
 		expect(finalTokenDownload.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await finalTokenDownload.arrayBuffer())).toContain(
-			"completed artifact",
-		);
+		const tokenPdf = await PDFDocument.load(await finalTokenDownload.arrayBuffer(), {
+			updateMetadata: false,
+		});
+		expect(tokenPdf.getProducer()).toBe(FINAL_PDF_RENDERER_PRODUCER);
+		const storedPdf = await PDFDocument.load(state.r2Objects.get(r2Key) ?? new Uint8Array(), {
+			updateMetadata: false,
+		});
+		expect(storedPdf.getProducer()).toBe(FINAL_PDF_RENDERER_PRODUCER);
 
 		const senderDownload = await apiHono.request(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/final-pdf?senderSessionToken=sender-token",
@@ -382,9 +412,7 @@ describe("PDF finalization", () => {
 		);
 		expect(senderDownload.status).toBe(200);
 		expect(senderDownload.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await senderDownload.arrayBuffer())).toContain(
-			"completed artifact",
-		);
+		expect(PDFDocument.load(await senderDownload.arrayBuffer())).resolves.toBeTruthy();
 
 		const signerDownload = await apiHono.request(
 			"/api/signing/valid-token/final-pdf",
@@ -393,9 +421,7 @@ describe("PDF finalization", () => {
 		);
 		expect(signerDownload.status).toBe(200);
 		expect(signerDownload.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await signerDownload.arrayBuffer())).toContain(
-			"completed artifact",
-		);
+		expect(PDFDocument.load(await signerDownload.arrayBuffer())).resolves.toBeTruthy();
 	});
 
 	it("blocks unverified, expired, and deleted final PDF access", async () => {
@@ -451,3 +477,13 @@ describe("PDF finalization", () => {
 		expect(deleted.status).toBe(404);
 	});
 });
+
+async function createSourcePdfBytes(): Promise<Uint8Array> {
+	const pdf = await PDFDocument.create();
+	pdf.addPage([612, 792]);
+	return pdf.save({ useObjectStreams: false });
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+	return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}

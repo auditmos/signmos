@@ -275,6 +275,7 @@ describe("partner verification delivery", () => {
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				recipientId: "20000000-0000-4000-8000-000000000001",
+				signingMode: "me_and_another_signer",
 				sourceDocument: {
 					version: 1,
 					contentType: "application/pdf",

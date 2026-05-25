@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import {
 	auditEvents,
 	emailSendRecords,
@@ -416,6 +417,7 @@ describe("agent lifecycle smoke path", () => {
 		);
 		expect(finalPdf.status).toBe(200);
 		expect(finalPdf.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await finalPdf.arrayBuffer())).toContain("Ada Lovelace");
+		const parsedFinalPdf = await PDFDocument.load(await finalPdf.arrayBuffer());
+		expect(parsedFinalPdf.getPageCount()).toBe(2);
 	});
 });

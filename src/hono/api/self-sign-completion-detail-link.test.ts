@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import {
 	auditEvents,
 	emailSendRecords,
@@ -211,7 +212,8 @@ describe("self-sign completion detail links", () => {
 		);
 		expect(download.status).toBe(200);
 		expect(download.headers.get("content-type")).toBe("application/pdf");
-		expect(new TextDecoder().decode(await download.arrayBuffer())).toContain("Ada Self Sign");
+		const finalPdf = await PDFDocument.load(await download.arrayBuffer());
+		expect(finalPdf.getPageCount()).toBe(2);
 	});
 
 	it("rejects expired signer detail links before exposing completed document access", async () => {

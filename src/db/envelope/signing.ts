@@ -47,6 +47,24 @@ export class SigningNoAssignedFieldsError extends Error {
 	}
 }
 
+export class SigningFieldPlacementBlockedError extends Error {
+	constructor() {
+		super("Only self-sign envelopes can reposition signing fields");
+		this.name = "SigningFieldPlacementBlockedError";
+	}
+}
+
+export class SigningFieldPlacementNotFoundError extends Error {
+	constructor() {
+		super("Signing field was not found");
+		this.name = "SigningFieldPlacementNotFoundError";
+	}
+}
+
+export type SignerFieldPlacementUpdate = { fieldId: string; page?: number; x: number; y: number };
+
+const signingPdfPage = { width: 612, height: 792 } as const;
+
 export async function resolveSignerToken(token: string): Promise<SignerToken | null> {
 	const db = getDb();
 	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
@@ -56,6 +74,13 @@ export async function resolveSignerToken(token: string): Promise<SignerToken | n
 
 export async function getSignerSession(token: SignerToken): Promise<SignerSession> {
 	const db = getDb();
+	const [envelope] = await db
+		.select()
+		.from(envelopes)
+		.where(eq(envelopes.id, token.envelopeId))
+		.limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope) throw new Error("Envelope not found");
 	const allFields = (
 		await db
 			.select()
@@ -109,6 +134,7 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 	return {
 		envelopeId: token.envelopeId,
 		recipientId: token.recipientId,
+		signingMode: parsedEnvelope.signingMode,
 		sourceDocument: {
 			version: sourceDocument.version,
 			contentType: sourceDocument.contentType,
@@ -139,6 +165,55 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 		signaturePreference: signaturePreference
 			? toSignatureProfileResponse(signaturePreference)
 			: null,
+	};
+}
+
+export async function updateSignerFieldPlacement(
+	token: SignerToken,
+	input: SignerFieldPlacementUpdate,
+): Promise<SignerSession["fields"][number]> {
+	const db = getDb();
+	const [envelope] = await db
+		.select()
+		.from(envelopes)
+		.where(eq(envelopes.id, token.envelopeId))
+		.limit(1);
+	const parsedEnvelope = envelope ? EnvelopeSchema.parse(envelope) : null;
+	if (!parsedEnvelope) throw new Error("Envelope not found");
+	if (parsedEnvelope.status !== "sent" || parsedEnvelope.signingMode !== "only_me") {
+		throw new SigningFieldPlacementBlockedError();
+	}
+
+	const fields = (
+		await db
+			.select()
+			.from(envelopeFields)
+			.where(eq(envelopeFields.envelopeId, token.envelopeId))
+			.limit(100)
+	).map((field) => EnvelopeFieldSchema.parse(field));
+	const field = fields.find(
+		(candidate) => candidate.id === input.fieldId && candidate.recipientId === token.recipientId,
+	);
+	if (!field) throw new SigningFieldPlacementNotFoundError();
+
+	const nextField = {
+		...field,
+		page: input.page ?? field.page,
+		x: clamp(input.x, 0, signingPdfPage.width - field.width),
+		y: clamp(input.y, 0, signingPdfPage.height - field.height),
+	};
+	await db
+		.update(envelopeFields)
+		.set({ page: nextField.page, x: nextField.x, y: nextField.y })
+		.where(eq(envelopeFields.id, field.id));
+	return {
+		id: nextField.id,
+		type: nextField.type,
+		page: nextField.page,
+		x: nextField.x,
+		y: nextField.y,
+		width: nextField.width,
+		height: nextField.height,
 	};
 }
 
@@ -416,4 +491,8 @@ function normalizeSignatureProfileActor(actor: string): string {
 
 function formatSigningDate(date: Date): string {
 	return date.toISOString().slice(0, 10);
+}
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(max, Math.max(min, value));
 }

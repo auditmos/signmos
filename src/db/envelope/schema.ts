@@ -301,6 +301,7 @@ export type SignerPreviewField = z.infer<typeof SignerPreviewFieldSchema>;
 export const SignerSessionSchema = z.object({
 	envelopeId: z.string().uuid(),
 	recipientId: z.string().uuid(),
+	signingMode: SigningModeSchema,
 	sourceDocument: z.object({
 		version: z.number().int().positive(),
 		contentType: z.literal("application/pdf"),

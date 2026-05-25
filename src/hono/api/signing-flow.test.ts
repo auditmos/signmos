@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
 		{
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
+			signingMode: "me_and_another_signer",
 			createdBy: "user_123",
 			createdAt: new Date("2026-05-20T07:00:00.000Z"),
 			sentBy: "sender_123",
@@ -143,6 +144,20 @@ function insertRows(table: unknown, rows: unknown[]) {
 	return [];
 }
 
+type UpdateValue = { status?: string; page?: number; x?: number; y?: number };
+
+function updateRows(table: unknown, value: UpdateValue) {
+	if (table === state.recipientsTable) {
+		state.recipients[0] = { ...state.recipients[0], status: value.status ?? "sent" };
+	}
+	if (table === state.envelopesTable) {
+		state.envelopes[0] = { ...state.envelopes[0], status: value.status ?? "sent" };
+	}
+	if (table === state.fieldsTable) {
+		state.fields[0] = { ...state.fields[0], ...value };
+	}
+}
+
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({
@@ -158,14 +173,9 @@ vi.mock("@/db/setup", () => ({
 			}),
 		}),
 		update: (table: unknown) => ({
-			set: (value: { status?: string }) => ({
+			set: (value: UpdateValue) => ({
 				where: async () => {
-					if (table === state.recipientsTable) {
-						state.recipients[0] = { ...state.recipients[0], status: value.status ?? "sent" };
-					}
-					if (table === state.envelopesTable) {
-						state.envelopes[0] = { ...state.envelopes[0], status: value.status ?? "sent" };
-					}
+					updateRows(table, value);
 					return [];
 				},
 			}),
@@ -187,6 +197,7 @@ describe("signing flow API", () => {
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
+			signingMode: "me_and_another_signer",
 			createdBy: "user_123",
 			createdAt: new Date("2026-05-20T07:00:00.000Z"),
 			sentBy: "sender_123",
@@ -284,6 +295,7 @@ describe("signing flow API", () => {
 			data: {
 				envelopeId: "00000000-0000-4000-8000-000000000001",
 				recipientId: "20000000-0000-4000-8000-000000000001",
+				signingMode: "me_and_another_signer",
 				sourceDocument: {
 					version: 1,
 					contentType: "application/pdf",
@@ -318,6 +330,41 @@ describe("signing flow API", () => {
 				signaturePreference: null,
 			},
 		});
+	});
+
+	it("lets self-signers reposition their assigned fields before completion", async () => {
+		// Assumptions before RED:
+		// - Repositioning is token-scoped, not a draft envelope edit.
+		// - Only the self-sign signer can move their own assigned signature/date fields.
+		// - The update persists canonical 612x792 PDF coordinates used by finalization.
+		state.envelopes[0] = {
+			...state.envelopes[0],
+			signingMode: "only_me",
+		};
+
+		const response = await apiHono.request(
+			"/api/signing/valid-token/fields/50000000-0000-4000-8000-000000000001",
+			{
+				method: "PATCH",
+				headers: {
+					"content-type": "application/json",
+					"x-now": "2026-05-20T08:00:00.000Z",
+				},
+				body: JSON.stringify({ page: 1, x: 96, y: 192 }),
+			},
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				id: "50000000-0000-4000-8000-000000000001",
+				type: "signature",
+				page: 1,
+				x: 96,
+				y: 192,
+			}),
+		});
+		expect(state.fields[0]).toEqual(expect.objectContaining({ page: 1, x: 96, y: 192 }));
 	});
 
 	it("loads an existing saved partner signature as the default for the same email", async () => {
@@ -572,6 +619,7 @@ describe("signing flow API", () => {
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "sent",
+			signingMode: "me_and_another_signer",
 			createdBy: "sender@example.com",
 			createdAt: new Date("2026-05-20T07:00:00.000Z"),
 			sentBy: "sender@example.com",

@@ -1,45 +1,16 @@
 import { CheckCircle2, Download, FileText, MessageSquare, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { pdfPage } from "@/components/envelopes/field-placement-workspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
+import { type CompleteSigningPayload, PartnerSignatureForm } from "./partner-signature-form";
 import {
-	type CompleteSigningPayload,
-	PartnerSignatureForm,
-	type PartnerSignaturePreference,
-} from "./partner-signature-form";
-
-interface SignerField {
-	id: string;
-	type: "signature" | "date";
-	page: number;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
-interface SignerPreviewField extends SignerField {
-	recipientId: string;
-	recipientName: string;
-	value: string | null;
-	assignedToCurrentSigner: boolean;
-}
-
-interface SignerSession {
-	envelopeId: string;
-	recipientId: string;
-	sourceDocument: {
-		version: number;
-		contentType: "application/pdf";
-		downloadUrl: string;
-	};
-	fields: SignerField[];
-	previewFields?: SignerPreviewField[];
-	signaturePreference: PartnerSignaturePreference | null;
-}
+	type SignerField,
+	type SignerPreviewField,
+	type SignerSession,
+	SigningDocumentPreview,
+} from "./signing-document-preview";
 
 interface CompletedDocumentLink {
 	url: string;
@@ -64,6 +35,7 @@ export function SignerPage({ token }: SignerPageProps) {
 	const [message, setMessage] = useState<string | null>(null);
 	const [error, setError] = useState<SigningError | null>(null);
 	const [changeRequested, setChangeRequested] = useState(false);
+	const dragRef = useRef<{ fieldId: string; offsetX: number; offsetY: number } | null>(null);
 
 	const refreshSigningState = useCallback(
 		async (isActive: () => boolean = () => true) => {
@@ -131,6 +103,55 @@ export function SignerPage({ token }: SignerPageProps) {
 		setMessage(response.ok ? "Changes requested" : "Unable to request changes");
 	}
 
+	function startFieldDrag(
+		event: React.PointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>,
+		field: SignerPreviewField,
+	) {
+		const page = event.currentTarget.closest("[data-signing-pdf-page]");
+		if (!(page instanceof HTMLElement)) return;
+		const point = pointFromPreview(event, page);
+		dragRef.current = {
+			fieldId: field.id,
+			offsetX: point.x - field.x,
+			offsetY: point.y - field.y,
+		};
+		if ("pointerId" in event) event.currentTarget.setPointerCapture?.(event.pointerId);
+		event.preventDefault();
+	}
+
+	function continueFieldDrag(
+		event: React.PointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>,
+	) {
+		const drag = dragRef.current;
+		if (!drag) return;
+		const field = session?.fields.find((candidate) => candidate.id === drag.fieldId);
+		if (!session || !field) return;
+		const point = pointFromPreview(event, event.currentTarget);
+		const nextField = {
+			...field,
+			x: clamp(Math.round(point.x - drag.offsetX), 0, pdfPage.width - field.width),
+			y: clamp(Math.round(point.y - drag.offsetY), 0, pdfPage.height - field.height),
+		};
+		setSession(moveSessionField(session, nextField));
+	}
+
+	async function stopFieldDrag() {
+		const drag = dragRef.current;
+		if (!drag) return;
+		dragRef.current = null;
+		const field = session?.fields.find((candidate) => candidate.id === drag.fieldId);
+		if (!field || session?.signingMode !== "only_me") return;
+		const response = await fetch(`/api/signing/${token}/fields/${field.id}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ page: field.page, x: field.x, y: field.y }),
+		});
+		if (!response.ok) {
+			setMessage("Unable to move placeholder");
+			await refreshSigningState();
+		}
+	}
+
 	return (
 		<div className="mx-auto max-w-4xl space-y-6 p-6">
 			<div>
@@ -186,7 +207,15 @@ export function SignerPage({ token }: SignerPageProps) {
 					<p className="text-pretty">Fetching the document and assigned signing fields.</p>
 				</div>
 			)}
-			{session?.sourceDocument && <SigningDocumentPreview session={session} />}
+			{session?.sourceDocument && (
+				<SigningDocumentPreview
+					session={session}
+					canDragFields={session.signingMode === "only_me"}
+					onStartFieldDrag={startFieldDrag}
+					onContinueFieldDrag={continueFieldDrag}
+					onStopFieldDrag={stopFieldDrag}
+				/>
+			)}
 			{session && (
 				<>
 					<div className="grid gap-3 rounded-md border p-4 md:grid-cols-2">
@@ -194,7 +223,9 @@ export function SignerPage({ token }: SignerPageProps) {
 							<div className="space-y-1 md:col-span-2">
 								<p className="font-medium">No assigned fields</p>
 								<p className="text-pretty text-sm text-muted-foreground">
-									Request changes if this document is missing a signature or date field.
+									{session.signingMode === "only_me"
+										? "This signing link has no signature or date fields assigned."
+										: "Request changes if this document is missing a signature or date field."}
 								</p>
 							</div>
 						) : (
@@ -214,47 +245,56 @@ export function SignerPage({ token }: SignerPageProps) {
 						disabled={changeRequested || session.fields.length === 0}
 						onSubmit={completeSigning}
 					/>
-					<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
-						<div className="space-y-2 md:col-span-2">
-							<Label htmlFor="changeComment">Change request comment</Label>
-							<Input
-								id="changeComment"
-								value={changeComment}
-								onChange={(event) => setChangeComment(event.target.value)}
-								required
-							/>
-						</div>
-						<div className="flex items-end">
-							<Button type="submit" variant="outline" className="w-full" disabled={changeRequested}>
-								<MessageSquare className="h-4 w-4" />
-								Request changes
-							</Button>
-						</div>
-					</form>
-					<form onSubmit={declineSigning} className="grid gap-4 md:grid-cols-3">
-						<div className="space-y-2">
-							<Label htmlFor="declineReason">Decline reason</Label>
-							<Input
-								id="declineReason"
-								value={reason}
-								onChange={(event) => setReason(event.target.value)}
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label htmlFor="declineComment">Comment</Label>
-							<Input
-								id="declineComment"
-								value={comment}
-								onChange={(event) => setComment(event.target.value)}
-							/>
-						</div>
-						<div className="flex items-end">
-							<Button type="submit" variant="outline" className="w-full">
-								<X className="h-4 w-4" />
-								Decline
-							</Button>
-						</div>
-					</form>
+					{session.signingMode !== "only_me" && (
+						<>
+							<form onSubmit={requestChanges} className="grid gap-4 md:grid-cols-3">
+								<div className="space-y-2 md:col-span-2">
+									<Label htmlFor="changeComment">Change request comment</Label>
+									<Input
+										id="changeComment"
+										value={changeComment}
+										onChange={(event) => setChangeComment(event.target.value)}
+										required
+									/>
+								</div>
+								<div className="flex items-end">
+									<Button
+										type="submit"
+										variant="outline"
+										className="w-full"
+										disabled={changeRequested}
+									>
+										<MessageSquare className="h-4 w-4" />
+										Request changes
+									</Button>
+								</div>
+							</form>
+							<form onSubmit={declineSigning} className="grid gap-4 md:grid-cols-3">
+								<div className="space-y-2">
+									<Label htmlFor="declineReason">Decline reason</Label>
+									<Input
+										id="declineReason"
+										value={reason}
+										onChange={(event) => setReason(event.target.value)}
+									/>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="declineComment">Comment</Label>
+									<Input
+										id="declineComment"
+										value={comment}
+										onChange={(event) => setComment(event.target.value)}
+									/>
+								</div>
+								<div className="flex items-end">
+									<Button type="submit" variant="outline" className="w-full">
+										<X className="h-4 w-4" />
+										Decline
+									</Button>
+								</div>
+							</form>
+						</>
+					)}
 				</>
 			)}
 			{message && <p className="text-sm text-muted-foreground">{message}</p>}
@@ -262,115 +302,28 @@ export function SignerPage({ token }: SignerPageProps) {
 	);
 }
 
-function SigningDocumentPreview({ session }: { session: SignerSession }) {
-	const previewFields = signerPreviewFields(session);
-	const pages = previewPages(previewFields);
-
-	return (
-		<section className="space-y-3">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<h2 className="text-base font-semibold">Source PDF</h2>
-				<a
-					className="inline-flex items-center gap-2 text-sm font-medium text-primary underline"
-					href={session.sourceDocument.downloadUrl}
-				>
-					<FileText className="h-4 w-4" />
-					Open source PDF
-				</a>
-			</div>
-			<div className="grid gap-4">
-				{pages.map((page, index) => (
-					<div
-						key={page}
-						className="relative aspect-[612/792] w-full overflow-hidden rounded-md border bg-white"
-					>
-						<iframe
-							className="absolute inset-0 h-full w-full bg-muted"
-							src={pdfPreviewUrl(session.sourceDocument.downloadUrl, page)}
-							title={index === 0 ? "Source PDF preview" : `Source PDF preview page ${page}`}
-						/>
-						<div className="pointer-events-none absolute inset-0">
-							{previewFields
-								.filter((field) => field.page === page)
-								.map((field) => (
-									<SigningPreviewFieldOverlay key={field.id} field={field} />
-								))}
-						</div>
-					</div>
-				))}
-			</div>
-		</section>
-	);
-}
-
-function SigningPreviewFieldOverlay({ field }: { field: SignerPreviewField }) {
-	const hasValue = Boolean(field.value?.trim());
-	const style = {
-		left: `${(field.x / pdfPage.width) * 100}%`,
-		top: `${(field.y / pdfPage.height) * 100}%`,
-		width: `${(field.width / pdfPage.width) * 100}%`,
-		height: `${(field.height / pdfPage.height) * 100}%`,
+function moveSessionField(session: SignerSession, nextField: SignerField): SignerSession {
+	return {
+		...session,
+		fields: session.fields.map((field) => (field.id === nextField.id ? nextField : field)),
+		previewFields: session.previewFields?.map((field) =>
+			field.id === nextField.id ? { ...field, ...nextField } : field,
+		),
 	};
-	return (
-		<div
-			aria-label={`${field.recipientName} ${field.type} ${hasValue ? "value" : "placeholder"}`}
-			role="img"
-			className={cn(
-				"absolute flex overflow-hidden rounded border-2 px-2 text-slate-950 shadow-sm",
-				hasValue ? "border-emerald-700 bg-white/90" : "border-blue-700 bg-blue-50/90",
-				field.assignedToCurrentSigner && !hasValue && "border-dashed",
-				field.height < 40 ? "items-center text-[10px]" : "flex-col justify-center text-xs",
-			)}
-			style={style}
-		>
-			{field.value ? (
-				<PreviewFieldValue field={field} value={field.value} />
-			) : (
-				<>
-					<span className="truncate font-medium capitalize">{field.type} here</span>
-					<span className="truncate">{field.recipientName}</span>
-				</>
-			)}
-		</div>
-	);
 }
 
-function PreviewFieldValue({ field, value }: { field: SignerPreviewField; value: string }) {
-	if (field.type === "signature" && looksLikeSvgPath(value)) {
-		return (
-			<svg aria-hidden="true" className="h-full w-full" viewBox="0 0 320 128">
-				<path d={value} fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="4" />
-			</svg>
-		);
-	}
-	return (
-		<>
-			<span className="truncate font-medium">{value}</span>
-			<span className="truncate text-[10px]">{field.recipientName}</span>
-		</>
-	);
+function pointFromPreview(
+	event: React.PointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>,
+	preview: HTMLElement,
+): { x: number; y: number } {
+	const bounds = preview.getBoundingClientRect();
+	if (bounds.width <= 0 || bounds.height <= 0) return { x: event.clientX, y: event.clientY };
+	return {
+		x: (event.clientX - bounds.left) * (pdfPage.width / bounds.width),
+		y: (event.clientY - bounds.top) * (pdfPage.height / bounds.height),
+	};
 }
 
-function signerPreviewFields(session: SignerSession): SignerPreviewField[] {
-	if (session.previewFields?.length) return session.previewFields;
-	return session.fields.map((field) => ({
-		...field,
-		recipientId: session.recipientId,
-		recipientName: "Signer",
-		value: null,
-		assignedToCurrentSigner: true,
-	}));
-}
-
-function previewPages(fields: SignerPreviewField[]): number[] {
-	const pages = [...new Set(fields.map((field) => field.page))].sort((left, right) => left - right);
-	return pages.length > 0 ? pages : [1];
-}
-
-function pdfPreviewUrl(downloadUrl: string, page: number): string {
-	return `${downloadUrl}#toolbar=0&navpanes=0&scrollbar=0&page=${page}`;
-}
-
-function looksLikeSvgPath(value: string): boolean {
-	return /^[MmLlHhVvCcSsQqTtAaZz0-9,.\s-]+$/.test(value.trim());
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(max, Math.max(min, value));
 }

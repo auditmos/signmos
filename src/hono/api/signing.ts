@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { z } from "zod";
 import {
 	ChangeRequestSigningRequestSchema,
 	CompleteSigningRequestSchema,
@@ -18,12 +19,21 @@ import {
 	resolveSignerToken,
 	SigningChangeRequestError,
 	SigningCompletionBlockedError,
+	SigningFieldPlacementBlockedError,
+	SigningFieldPlacementNotFoundError,
 	SigningNoAssignedFieldsError,
+	updateSignerFieldPlacement,
 	verifyPartnerToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
 
 const signingEndpoint = createHono();
+
+const SigningFieldPlacementRequestSchema = z.object({
+	page: z.number().int().min(1).optional(),
+	x: z.number().int().min(0),
+	y: z.number().int().min(0),
+});
 
 signingEndpoint.get("/verifications/:token", async (c) => {
 	const accept = c.req.header("accept") ?? "";
@@ -129,6 +139,53 @@ signingEndpoint.get("/:token", async (c) => {
 	if (token instanceof Response) return token;
 
 	return c.json({ data: await getSignerSession(token) });
+});
+
+signingEndpoint.patch("/:token/fields/:fieldId", async (c) => {
+	const token = await getUsableToken(c.req.param("token"), c.req.header("x-now"));
+	if (token instanceof Response) return token;
+
+	const parsedFieldId = z.string().uuid().safeParse(c.req.param("fieldId"));
+	const parsed = SigningFieldPlacementRequestSchema.safeParse(await c.req.json());
+	if (!parsedFieldId.success || !parsed.success) {
+		return c.json(
+			{
+				error: {
+					code: "INVALID_FIELD_PLACEMENT",
+					message: "Field placement must use a valid field id, page, x, and y",
+				},
+			},
+			400,
+		);
+	}
+
+	try {
+		return c.json({
+			data: await updateSignerFieldPlacement(token, {
+				fieldId: parsedFieldId.data,
+				...parsed.data,
+			}),
+		});
+	} catch (error) {
+		if (error instanceof SigningFieldPlacementNotFoundError) {
+			return c.json(
+				{ error: { code: "FIELD_NOT_FOUND", message: "Signing field was not found" } },
+				404,
+			);
+		}
+		if (error instanceof SigningFieldPlacementBlockedError) {
+			return c.json(
+				{
+					error: {
+						code: "FIELD_PLACEMENT_BLOCKED",
+						message: "Only self-sign envelopes can reposition signing fields",
+					},
+				},
+				409,
+			);
+		}
+		throw error;
+	}
 });
 
 signingEndpoint.post("/:token/complete", async (c) => {
