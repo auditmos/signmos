@@ -14,6 +14,7 @@ import {
 	envelopeLifecycleActions,
 	getDocumentHistoryForEmail,
 	getEnvelopeAllowedActions,
+	getEnvelopeCreatorEmail,
 	getEnvelopeFinalizationStatus,
 	getEnvelopeRetentionStatus,
 	getFinalDocument,
@@ -25,6 +26,7 @@ import {
 	RecipientCreateSchema,
 	recordSourcePdfUploadRejection,
 	resendInvitation,
+	resolveVerifiedSenderIdentity,
 	resolveVerifiedSenderSession,
 	SenderStartRateLimitError,
 	SenderStartRequestSchema,
@@ -245,49 +247,75 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 	const body = await c.req.json();
 	const parsed = EnvelopeActionRequestSchema.safeParse(body);
 	if (!parsed.success) {
-		return c.json(
-			{
-				error: {
-					code: "INVALID_ACTION",
-					message: "Invalid envelope lifecycle action",
-					validValues: [...envelopeLifecycleActions],
-				},
-			},
-			400,
-		);
+		return invalidActionResponse(c);
 	}
 
-	const sentBy = await getEnvelopeActor(c, c.req.param("id"));
-	if (!sentBy) {
-		return c.json(
-			{
-				error: {
-					code: "UNAUTHORIZED",
-					message: "Missing x-internal-user-id header",
-				},
+	const envelopeId = c.req.param("id");
+	const actor =
+		parsed.data.action === "send"
+			? await getEnvelopeActor(c, envelopeId)
+			: await getEnvelopeControlActor(c, envelopeId);
+	if (actor instanceof Response) return actor;
+	const sentBy = actor;
+	if (!sentBy) return unauthorizedResponse(c);
+	if (parsed.data.action === "send") return sendEnvelopeAction(c, envelopeId, sentBy);
+	return controlEnvelopeAction(c, envelopeId, sentBy, parsed.data.action);
+});
+
+function invalidActionResponse(c: Context<{ Bindings: Env }>) {
+	return c.json(
+		{
+			error: {
+				code: "INVALID_ACTION",
+				message: "Invalid envelope lifecycle action",
+				validValues: [...envelopeLifecycleActions],
 			},
-			401,
-		);
-	}
-	if (parsed.data.action === "send") {
-		try {
-			const result = await sendEnvelope(c.req.param("id"), sentBy, {
-				emailDelivery: getEmailDeliveryOptions(c),
-			});
-			return c.json({ data: result });
-		} catch (error) {
-			if (error instanceof EmailDeliveryError) {
-				return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
-			}
-			const sendPrecondition = sendPreconditionErrorBody(error);
-			if (sendPrecondition) return c.json(sendPrecondition, 409);
-			throw error;
+		},
+		400,
+	);
+}
+
+function unauthorizedResponse(c: Context<{ Bindings: Env }>) {
+	return c.json(
+		{
+			error: {
+				code: "UNAUTHORIZED",
+				message: "Missing x-internal-user-id header",
+			},
+		},
+		401,
+	);
+}
+
+async function sendEnvelopeAction(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+	sentBy: string,
+) {
+	try {
+		const result = await sendEnvelope(envelopeId, sentBy, {
+			emailDelivery: getEmailDeliveryOptions(c),
+		});
+		return c.json({ data: result });
+	} catch (error) {
+		if (error instanceof EmailDeliveryError) {
+			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
 		}
+		const sendPrecondition = sendPreconditionErrorBody(error);
+		if (sendPrecondition) return c.json(sendPrecondition, 409);
+		throw error;
 	}
+}
 
+async function controlEnvelopeAction(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+	sentBy: string,
+	action: Exclude<(typeof envelopeLifecycleActions)[number], "send">,
+) {
 	try {
 		const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
-		const result = await controlEnvelope(c.req.param("id"), sentBy, parsed.data.action, {
+		const result = await controlEnvelope(envelopeId, sentBy, action, {
 			documentsBucket: bucket,
 		});
 		return c.json({ data: result });
@@ -306,7 +334,7 @@ envelopesEndpoint.post("/:id/actions", async (c) => {
 		}
 		throw error;
 	}
-});
+}
 
 envelopesEndpoint.get("/:id/status", async (c) => {
 	const result = await getEnvelopeFinalizationStatus(c.req.param("id"));
@@ -838,6 +866,43 @@ async function getEnvelopeActor(
 		envelopeId,
 		c.req.header("x-now"),
 	);
+}
+
+async function getEnvelopeControlActor(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+): Promise<string | Response | null> {
+	const internalUserId = c.req.header("x-internal-user-id");
+	if (internalUserId) return internalUserId;
+
+	const tokenValue = c.req.header("x-sender-session-token") ?? c.req.query("senderSessionToken");
+	if (!tokenValue) return null;
+
+	const now = parseNow(c.req.header("x-now"));
+	const scopedSession = await resolveVerifiedSenderSession(tokenValue, envelopeId, now);
+	if (scopedSession) return scopedSession.email;
+
+	const identity = await resolveVerifiedSenderIdentity(tokenValue);
+	if (!identity) return null;
+
+	const creatorEmail = await getEnvelopeCreatorEmail(envelopeId);
+	if (creatorEmail && normalizeEmail(creatorEmail) === normalizeEmail(identity.email)) {
+		return normalizeEmail(identity.email);
+	}
+
+	return c.json(
+		{
+			error: {
+				code: "CREATOR_CONTROL_FORBIDDEN",
+				message: "Only the envelope creator can cancel or delete this envelope",
+			},
+		},
+		403,
+	);
+}
+
+function normalizeEmail(email: string): string {
+	return email.trim().toLowerCase();
 }
 
 function emailDeliveryErrorBody(error: EmailDeliveryError, env: EmailDeliveryEnv | undefined) {

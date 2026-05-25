@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Download, History } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Ban, Download, History, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ interface DocumentHistoryItem {
 	role: string;
 	createdAt: string;
 	action: DocumentHistoryAction | null;
+	creatorActions: DocumentHistoryCreatorAction[];
 }
 
 interface DocumentHistoryAction {
@@ -36,6 +37,16 @@ interface DocumentHistoryAction {
 	label: string;
 	url: string;
 	downloadUrl?: string;
+}
+
+interface DocumentHistoryCreatorAction {
+	action: "cancel" | "delete";
+	label: string;
+}
+
+interface PendingCreatorAction {
+	envelopeId: string;
+	action: "cancel" | "delete";
 }
 
 type HistorySuccess = { data: DocumentHistoryResponse };
@@ -47,15 +58,20 @@ export function DocumentHistoryPanel({
 }: DocumentHistoryPanelProps) {
 	const [expanded, setExpanded] = useState(false);
 	const [filter, setFilter] = useState<HistoryFilter>("all");
+	const queryClient = useQueryClient();
+	const queryKey = ["document-history", envelopeId, senderSessionToken] as const;
 	const historyQuery = useQuery({
-		queryKey: ["document-history", envelopeId, senderSessionToken],
+		queryKey,
 		queryFn: () => fetchDocumentHistory(envelopeId, senderSessionToken),
 		enabled: expanded && Boolean(envelopeId && senderSessionToken),
 		staleTime: 30_000,
 	});
-	const documents = historyQuery.data?.documents ?? [];
-	const visibleDocuments =
-		filter === "all" ? documents : documents.filter((document) => document.state === filter);
+	const controlMutation = useMutation({
+		mutationFn: (input: PendingCreatorAction) => runCreatorAction(input, senderSessionToken),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey });
+		},
+	});
 
 	return (
 		<section className="rounded-lg border bg-card p-5" aria-label="Document history">
@@ -75,25 +91,81 @@ export function DocumentHistoryPanel({
 			</div>
 
 			{expanded ? (
-				<div className="mt-5 space-y-4">
-					{historyQuery.isLoading ? (
-						<p className="text-muted-foreground text-sm">Loading document history.</p>
-					) : null}
-					{historyQuery.error instanceof Error ? (
-						<Alert variant="destructive" role="alert">
-							<AlertTitle>History failed</AlertTitle>
-							<AlertDescription>{historyQuery.error.message}</AlertDescription>
-						</Alert>
-					) : null}
-					{historyQuery.data ? (
-						<>
-							<HistoryFilterControl value={filter} onChange={setFilter} />
-							<DocumentHistoryTable documents={visibleDocuments} />
-						</>
-					) : null}
-				</div>
+				<ExpandedDocumentHistory
+					data={historyQuery.data ?? null}
+					isLoading={historyQuery.isLoading}
+					historyError={historyQuery.error}
+					controlError={controlMutation.error}
+					filter={filter}
+					onFilterChange={setFilter}
+					pendingAction={controlMutation.variables ?? null}
+					isActionPending={controlMutation.isPending}
+					onCreatorAction={(input) => controlMutation.mutate(input)}
+				/>
 			) : null}
 		</section>
+	);
+}
+
+function ExpandedDocumentHistory({
+	data,
+	isLoading,
+	historyError,
+	controlError,
+	filter,
+	onFilterChange,
+	pendingAction,
+	isActionPending,
+	onCreatorAction,
+}: {
+	data: DocumentHistoryResponse | null;
+	isLoading: boolean;
+	historyError: unknown;
+	controlError: unknown;
+	filter: HistoryFilter;
+	onFilterChange: (value: HistoryFilter) => void;
+	pendingAction: PendingCreatorAction | null;
+	isActionPending: boolean;
+	onCreatorAction: (input: PendingCreatorAction) => void;
+}) {
+	const documents = data?.documents ?? [];
+	const visibleDocuments =
+		filter === "all" ? documents : documents.filter((document) => document.state === filter);
+	const historyMessage = historyError instanceof Error ? historyError.message : null;
+	const controlMessage = controlError instanceof Error ? controlError.message : null;
+
+	return (
+		<div className="mt-5 space-y-4">
+			{isLoading ? (
+				<p className="text-muted-foreground text-sm">Loading document history.</p>
+			) : null}
+			{historyMessage ? (
+				<HistoryErrorAlert title="History failed" message={historyMessage} />
+			) : null}
+			{controlMessage ? (
+				<HistoryErrorAlert title="History action failed" message={controlMessage} />
+			) : null}
+			{data ? (
+				<>
+					<HistoryFilterControl value={filter} onChange={onFilterChange} />
+					<DocumentHistoryTable
+						documents={visibleDocuments}
+						pendingAction={pendingAction}
+						isActionPending={isActionPending}
+						onCreatorAction={onCreatorAction}
+					/>
+				</>
+			) : null}
+		</div>
+	);
+}
+
+function HistoryErrorAlert({ title, message }: { title: string; message: string }) {
+	return (
+		<Alert variant="destructive" role="alert">
+			<AlertTitle>{title}</AlertTitle>
+			<AlertDescription>{message}</AlertDescription>
+		</Alert>
 	);
 }
 
@@ -123,7 +195,17 @@ function HistoryFilterControl({
 	);
 }
 
-function DocumentHistoryTable({ documents }: { documents: DocumentHistoryItem[] }) {
+function DocumentHistoryTable({
+	documents,
+	pendingAction,
+	isActionPending,
+	onCreatorAction,
+}: {
+	documents: DocumentHistoryItem[];
+	pendingAction: PendingCreatorAction | null;
+	isActionPending: boolean;
+	onCreatorAction: (input: PendingCreatorAction) => void;
+}) {
 	if (documents.length === 0) {
 		return <p className="text-muted-foreground text-sm">No documents match this filter.</p>;
 	}
@@ -158,7 +240,12 @@ function DocumentHistoryTable({ documents }: { documents: DocumentHistoryItem[] 
 								<time dateTime={document.createdAt}>{formatDate(document.createdAt)}</time>
 							</td>
 							<td className="py-3 pr-4 align-top">
-								<DocumentHistoryActions action={document.action} />
+								<DocumentHistoryActions
+									document={document}
+									pendingAction={pendingAction}
+									isActionPending={isActionPending}
+									onCreatorAction={onCreatorAction}
+								/>
 							</td>
 						</tr>
 					))}
@@ -168,17 +255,33 @@ function DocumentHistoryTable({ documents }: { documents: DocumentHistoryItem[] 
 	);
 }
 
-function DocumentHistoryActions({ action }: { action: DocumentHistoryAction | null }) {
-	if (!action) return <span className="text-muted-foreground text-sm">No action available</span>;
+function DocumentHistoryActions({
+	document,
+	pendingAction,
+	isActionPending,
+	onCreatorAction,
+}: {
+	document: DocumentHistoryItem;
+	pendingAction: PendingCreatorAction | null;
+	isActionPending: boolean;
+	onCreatorAction: (input: PendingCreatorAction) => void;
+}) {
+	const { action } = document;
+	const hasActions = Boolean(action || document.creatorActions.length > 0);
+	if (!hasActions) {
+		return <span className="text-muted-foreground text-sm">No action available</span>;
+	}
 	return (
 		<div className="flex flex-wrap gap-2">
-			<Button asChild size="sm">
-				<a href={action.url}>
-					{action.label}
-					<ArrowRight className="size-4" />
-				</a>
-			</Button>
-			{action.type === "completed" && action.downloadUrl ? (
+			{action ? (
+				<Button asChild size="sm">
+					<a href={action.url}>
+						{action.label}
+						<ArrowRight className="size-4" />
+					</a>
+				</Button>
+			) : null}
+			{action?.type === "completed" && action.downloadUrl ? (
 				<Button asChild size="sm" variant="outline">
 					<a href={action.downloadUrl}>
 						<Download className="size-4" />
@@ -186,6 +289,33 @@ function DocumentHistoryActions({ action }: { action: DocumentHistoryAction | nu
 					</a>
 				</Button>
 			) : null}
+			{document.creatorActions.map((creatorAction) => (
+				<Button
+					key={creatorAction.action}
+					type="button"
+					size="sm"
+					variant="outline"
+					aria-label={`${creatorAction.label} ${document.title}`}
+					disabled={
+						isActionPending &&
+						pendingAction?.envelopeId === document.envelopeId &&
+						pendingAction.action === creatorAction.action
+					}
+					onClick={() =>
+						onCreatorAction({
+							envelopeId: document.envelopeId,
+							action: creatorAction.action,
+						})
+					}
+				>
+					{creatorAction.action === "cancel" ? (
+						<Ban className="size-4" />
+					) : (
+						<Trash2 className="size-4" />
+					)}
+					{creatorAction.label}
+				</Button>
+			))}
 		</div>
 	);
 }
@@ -203,6 +333,25 @@ async function fetchDocumentHistory(
 		throw new Error(message);
 	}
 	return json.data;
+}
+
+async function runCreatorAction(
+	input: PendingCreatorAction,
+	senderSessionToken: string,
+): Promise<void> {
+	const response = await fetch(`/api/envelopes/${input.envelopeId}/actions`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			"x-sender-session-token": senderSessionToken,
+		},
+		body: JSON.stringify({ action: input.action }),
+	});
+	const json: unknown = await response.json().catch(() => null);
+	if (!response.ok) {
+		const message = isHistoryError(json) ? json.error.message : "Unable to update this envelope";
+		throw new Error(message);
+	}
 }
 
 function formatDocumentType(type: DocumentHistoryItem["documentType"]): string {

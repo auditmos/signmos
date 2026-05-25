@@ -24,6 +24,11 @@ export interface DocumentHistoryAction {
 	downloadUrl?: string;
 }
 
+export interface DocumentHistoryCreatorAction {
+	action: "cancel" | "delete";
+	label: string;
+}
+
 export interface DocumentHistoryItem {
 	envelopeId: string;
 	title: string;
@@ -33,6 +38,7 @@ export interface DocumentHistoryItem {
 	role: DocumentHistoryRole;
 	createdAt: string;
 	action: DocumentHistoryAction | null;
+	creatorActions: DocumentHistoryCreatorAction[];
 }
 
 export interface DocumentHistoryResult {
@@ -107,6 +113,7 @@ export async function getDocumentHistoryForEmail(
 		windowDays: historyWindowDays,
 		windowStart: windowStart.toISOString(),
 		documents: candidateEnvelopes
+			.filter((envelope) => envelope.status !== "deleted")
 			.map((envelope) =>
 				toHistoryItem({
 					envelope,
@@ -145,6 +152,7 @@ function toHistoryItem(context: HistoryContext): DocumentHistoryItem | null {
 			isCreator,
 			signerRecipients,
 		}),
+		creatorActions: getCreatorActions(context.envelope.status, isCreator),
 	};
 }
 
@@ -157,6 +165,19 @@ function getHistoryState(status: EnvelopeStatus): DocumentHistoryState {
 	if (status === "completed") return "completed";
 	if (status === "draft" || status === "awaiting_verification") return "draft";
 	return "in_progress";
+}
+
+function getCreatorActions(
+	status: EnvelopeStatus,
+	isCreator: boolean,
+): DocumentHistoryCreatorAction[] {
+	if (!isCreator || status === "deleted") return [];
+	const actions: DocumentHistoryCreatorAction[] = [];
+	if (status === "sent" || status === "changes_requested") {
+		actions.push({ action: "cancel", label: "Cancel" });
+	}
+	actions.push({ action: "delete", label: "Delete" });
+	return actions;
 }
 
 function getHistoryAction(

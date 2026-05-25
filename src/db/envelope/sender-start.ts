@@ -84,6 +84,13 @@ export interface VerifiedSenderSession {
 	token: string;
 }
 
+export interface VerifiedSenderIdentity {
+	envelopeId: string;
+	name: string;
+	email: string;
+	token: string;
+}
+
 export async function startSenderEnvelope(
 	input: StartSenderEnvelopeInput,
 ): Promise<StartSenderEnvelopeResult> {
@@ -280,6 +287,28 @@ export async function resolveVerifiedSenderSession(
 	return {
 		envelopeId: token.envelopeId,
 		signingMode: await getEnvelopeSigningMode(token.envelopeId),
+		name: token.name,
+		email: token.email,
+		token: token.token,
+	};
+}
+
+export async function resolveVerifiedSenderIdentity(
+	tokenValue: string,
+): Promise<VerifiedSenderIdentity | null> {
+	const db = getDb();
+	const tokens = await db
+		.select()
+		.from(senderVerificationTokens)
+		.where(eq(senderVerificationTokens.token, tokenValue))
+		.limit(10);
+	const tokenRow = tokens.find((candidate) => candidate.token === tokenValue);
+	if (!tokenRow) return null;
+	const token = SenderVerificationTokenSchema.parse(tokenRow);
+	if (token.status !== "verified") return null;
+
+	return {
+		envelopeId: token.envelopeId,
 		name: token.name,
 		email: token.email,
 		token: token.token,

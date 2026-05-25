@@ -78,6 +78,13 @@ export async function getEnvelopeStatus(envelopeId: string): Promise<EnvelopeSta
 	return envelope ? EnvelopeSchema.parse(envelope).status : null;
 }
 
+export async function getEnvelopeCreatorEmail(envelopeId: string): Promise<string | null> {
+	const db = getDb();
+	const rows = await db.select().from(envelopes).where(eq(envelopes.id, envelopeId)).limit(10);
+	const row = rows.find((candidate) => candidate.id === envelopeId) ?? rows[0];
+	return row ? EnvelopeSchema.parse(row).createdBy : null;
+}
+
 export async function getEnvelopeRetentionStatus(
 	envelopeId: string,
 	now = new Date(),

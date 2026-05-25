@@ -264,6 +264,7 @@ describe("confirmed email document history API", () => {
 					documentType: string;
 					role: string;
 					action: { type: string; url: string; downloadUrl?: string };
+					creatorActions: Array<{ action: string; label: string }>;
 				}>;
 			};
 		};
@@ -291,6 +292,7 @@ describe("confirmed email document history API", () => {
 						type: "resume",
 						url: `/source-pdf-upload?envelopeId=${currentEnvelopeId}&senderSessionToken=verified-sender-token`,
 					}),
+					creatorActions: [{ action: "delete", label: "Delete" }],
 				}),
 				expect.objectContaining({
 					envelopeId: sentEnvelopeId,
@@ -302,6 +304,10 @@ describe("confirmed email document history API", () => {
 						type: "resume",
 						url: "/signing/sent-signer-token",
 					}),
+					creatorActions: [
+						{ action: "cancel", label: "Cancel" },
+						{ action: "delete", label: "Delete" },
+					],
 				}),
 				expect.objectContaining({
 					envelopeId: draftEnvelopeId,
@@ -309,6 +315,7 @@ describe("confirmed email document history API", () => {
 					status: "draft",
 					documentType: "signed_with_partner",
 					role: "creator_and_signer",
+					creatorActions: [{ action: "delete", label: "Delete" }],
 				}),
 				expect.objectContaining({
 					envelopeId: completedEnvelopeId,
@@ -321,6 +328,7 @@ describe("confirmed email document history API", () => {
 						url: "/completed-documents/completed-signer-token",
 						downloadUrl: "/api/final-documents/completed-signer-token/pdf",
 					}),
+					creatorActions: [],
 				}),
 			]),
 		);
