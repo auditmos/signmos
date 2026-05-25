@@ -17,8 +17,10 @@ import {
 	getEnvelopeRetentionStatus,
 	getFinalDocument,
 	getLatestSourcePdfDocument,
+	getSelfSignPreparation,
 	listEnvelopeFields,
 	listRecipients,
+	prepareSelfSignAfterSourceUpload,
 	RecipientCreateSchema,
 	recordSourcePdfUploadRejection,
 	resendInvitation,
@@ -36,10 +38,12 @@ import {
 	toSourceDocumentResponse,
 	updateRecipient,
 	uploadSourcePdfDocument,
+	type VerifiedSenderSession,
 	verifySenderToken,
 } from "@/db/envelope";
 import { createHono } from "@/hono/factory";
 import {
+	detectPdfLastPage,
 	getRequestIp,
 	getVerifiedSenderUploadEmail,
 	isPdf,
@@ -433,7 +437,12 @@ envelopesEndpoint.get("/:id/source-pdf", async (c) => {
 		return c.json(sourcePdfMissingBody(), 404);
 	}
 
-	return c.json({ data: toSourceDocumentResponse(document) });
+	return c.json({
+		data: {
+			...toSourceDocumentResponse(document),
+			...(await sourcePdfSelfSignResponse(c.req.param("id"))),
+		},
+	});
 });
 
 envelopesEndpoint.get("/:id/source-pdf/content", async (c) => {
@@ -472,14 +481,9 @@ envelopesEndpoint.get("/:id/source-pdf/content", async (c) => {
 
 envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	const envelopeId = c.req.param("id");
-	const uploadedBy =
-		c.req.header("x-internal-user-id") ??
-		(await getVerifiedSenderUploadEmail(
-			c.req.header("x-sender-session-token"),
-			envelopeId,
-			c.req.header("x-now"),
-		));
-	if (!uploadedBy) {
+	const now = parseNow(c.req.header("x-now"));
+	const uploadActor = await getSourcePdfUploadActor(c, envelopeId, now);
+	if (!uploadActor) {
 		return c.json(
 			{
 				error: {
@@ -497,7 +501,7 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 		await recordSourcePdfUploadRejection({
 			envelopeId,
 			eventType: "source_pdf.upload_rejected",
-			message: uploadedBy,
+			message: uploadActor.uploadedBy,
 		});
 		return c.json(
 			{
@@ -514,7 +518,7 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 		await recordSourcePdfUploadRejection({
 			envelopeId,
 			eventType: "source_pdf.upload_too_large",
-			message: uploadedBy,
+			message: uploadActor.uploadedBy,
 		});
 		return c.json(
 			{
@@ -533,22 +537,36 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 	try {
 		const result = await uploadSourcePdfDocument({
 			envelopeId,
-			uploadedBy,
+			uploadedBy: uploadActor.uploadedBy,
 			idempotencyKey: c.req.header("idempotency-key") ?? undefined,
 			bytes,
 			sha256,
 			contentType: "application/pdf",
 			documentsBucket: bucket,
 		});
+		const selfSign = await prepareSelfSignUploadResponse({
+			envelopeId,
+			senderSession: uploadActor.senderSession,
+			bytes,
+			now,
+		});
 
-		return c.json({ data: toSourceDocumentResponse(result.document) }, result.reused ? 200 : 201);
+		return c.json(
+			{
+				data: {
+					...toSourceDocumentResponse(result.document),
+					...(selfSign ? { selfSign } : {}),
+				},
+			},
+			result.reused ? 200 : 201,
+		);
 	} catch (error) {
 		if (error instanceof SourcePdfUploadError) {
 			if (error.code === "DUPLICATE_SOURCE_PDF") {
 				await recordSourcePdfUploadRejection({
 					envelopeId,
 					eventType: "source_pdf.upload_duplicate",
-					message: uploadedBy,
+					message: uploadActor.uploadedBy,
 				});
 				return c.json(
 					{
@@ -876,6 +894,40 @@ function sendPreconditionErrorBody(error: unknown) {
 	return null;
 }
 
+async function getSourcePdfUploadActor(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+	now: Date,
+): Promise<{ uploadedBy: string; senderSession: VerifiedSenderSession | null } | null> {
+	const senderSessionToken = c.req.header("x-sender-session-token");
+	const senderSession = senderSessionToken
+		? await resolveVerifiedSenderSession(senderSessionToken, envelopeId, now)
+		: null;
+	const uploadedBy =
+		c.req.header("x-internal-user-id") ??
+		senderSession?.email ??
+		(await getVerifiedSenderUploadEmail(senderSessionToken, envelopeId, c.req.header("x-now")));
+	return uploadedBy ? { uploadedBy, senderSession } : null;
+}
+
+async function prepareSelfSignUploadResponse(input: {
+	envelopeId: string;
+	senderSession: VerifiedSenderSession | null;
+	bytes: Uint8Array;
+	now: Date;
+}) {
+	if (!input.senderSession) return null;
+	return prepareSelfSignAfterSourceUpload({
+		envelopeId: input.envelopeId,
+		sender: {
+			name: input.senderSession.name,
+			email: input.senderSession.email,
+		},
+		fieldPage: detectPdfLastPage(input.bytes),
+		now: input.now,
+	});
+}
+
 function sourcePdfMissingBody() {
 	return {
 		error: {
@@ -884,6 +936,11 @@ function sourcePdfMissingBody() {
 			allowedActions: ["upload_source_pdf"],
 		},
 	};
+}
+
+async function sourcePdfSelfSignResponse(envelopeId: string) {
+	const selfSign = await getSelfSignPreparation(envelopeId);
+	return selfSign ? { selfSign } : {};
 }
 
 function recipientMutationInvalidBody() {

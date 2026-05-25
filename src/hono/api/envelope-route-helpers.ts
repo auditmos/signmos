@@ -19,6 +19,14 @@ export function isPdf(bytes: Uint8Array): boolean {
 	);
 }
 
+export function detectPdfLastPage(bytes: Uint8Array): number {
+	const text = new TextDecoder("latin1").decode(bytes);
+	const counts = [...text.matchAll(/\/Count\s+(\d+)/g)]
+		.map((match) => Number(match[1]))
+		.filter((count) => Number.isInteger(count) && count > 0);
+	return Math.max(1, ...counts);
+}
+
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 	const buffer = new ArrayBuffer(bytes.byteLength);
 	new Uint8Array(buffer).set(bytes);

@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
 		{
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "draft",
+			signingMode: "me_and_another_signer",
 			createdBy: "ada@example.com",
 			createdAt: new Date("2026-05-21T09:00:00.000Z"),
 			sentBy: null,
@@ -129,6 +130,7 @@ describe("source PDF upload API", () => {
 		state.envelopes[0] = {
 			id: "00000000-0000-4000-8000-000000000001",
 			status: "draft",
+			signingMode: "me_and_another_signer",
 			createdBy: "ada@example.com",
 			createdAt: new Date("2026-05-21T09:00:00.000Z"),
 			sentBy: null,

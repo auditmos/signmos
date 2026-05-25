@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, FileUp, UploadCloud } from "lucide-react";
+import { ArrowRight, FileText, FileUp, UploadCloud } from "lucide-react";
 import { type DragEvent, type FormEvent, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,12 @@ export type SourceDocumentResponse = {
 	contentType: "application/pdf";
 	uploadedBy: string;
 	uploadedAt: string;
+	selfSign?: {
+		recipientId: string;
+		signingUrl: string;
+		fieldCount: number;
+		fieldPage: number;
+	};
 };
 
 type UploadSuccess = { data: SourceDocumentResponse };
@@ -34,7 +40,11 @@ export type SourcePdfStatus =
 	| { status: "ready"; document: SourceDocumentResponse }
 	| { status: "missing"; message: string };
 
-export function UploadSourcePdfForm({ envelopeId, senderSessionToken }: SourcePdfUploadPanelProps) {
+export function UploadSourcePdfForm({
+	envelopeId,
+	senderSessionToken,
+	signingMode,
+}: SourcePdfUploadPanelProps) {
 	const [file, setFile] = useState<File | null>(null);
 	const [isDragging, setIsDragging] = useState(false);
 	const [uploadValidationError, setUploadValidationError] = useState<string | null>(null);
@@ -63,9 +73,11 @@ export function UploadSourcePdfForm({ envelopeId, senderSessionToken }: SourcePd
 	const uploadError =
 		uploadValidationError ??
 		(uploadMutation.error instanceof Error ? uploadMutation.error.message : null);
+	const uploadButtonLabel = getUploadButtonLabel(uploadMutation.isPending, Boolean(file));
 	const currentDocument =
 		uploadMutation.data ??
 		(sourcePdfQuery.data?.status === "ready" ? sourcePdfQuery.data.document : null);
+	const selfSign = signingMode === "only_me" ? currentDocument?.selfSign : undefined;
 
 	function clearFileInput() {
 		if (fileInputRef.current) {
@@ -182,16 +194,58 @@ export function UploadSourcePdfForm({ envelopeId, senderSessionToken }: SourcePd
 					</Alert>
 				) : null}
 
+				{selfSign ? (
+					<SelfSignPreviewAndAction
+						envelopeId={envelopeId}
+						senderSessionToken={senderSessionToken}
+						fieldPage={selfSign.fieldPage}
+						signingUrl={selfSign.signingUrl}
+					/>
+				) : null}
+
 				<Button type="submit" disabled={uploadMutation.isPending || !file}>
 					<FileUp className="mr-2 size-4" />
-					{uploadMutation.isPending
-						? "Uploading..."
-						: file
-							? "Upload selected PDF"
-							: "Select a PDF first"}
+					{uploadButtonLabel}
 				</Button>
 			</div>
 		</form>
+	);
+}
+
+function getUploadButtonLabel(isPending: boolean, hasFile: boolean) {
+	if (isPending) return "Uploading...";
+	return hasFile ? "Upload selected PDF" : "Select a PDF first";
+}
+
+function SelfSignPreviewAndAction({
+	envelopeId,
+	senderSessionToken,
+	fieldPage,
+	signingUrl,
+}: {
+	envelopeId: string;
+	senderSessionToken: string;
+	fieldPage: number;
+	signingUrl: string;
+}) {
+	return (
+		<section className="space-y-3 rounded-lg border bg-muted/20 p-4" aria-label="PDF preview">
+			<div>
+				<h3 className="font-medium text-base">Preview</h3>
+				<p className="text-muted-foreground text-sm">Review the uploaded PDF before signing.</p>
+			</div>
+			<iframe
+				className="h-[520px] w-full rounded-md border bg-background"
+				src={buildPreviewUrl(envelopeId, senderSessionToken, fieldPage)}
+				title="Uploaded source PDF preview"
+			/>
+			<Button asChild>
+				<a href={signingUrl}>
+					Continue to sign
+					<ArrowRight className="size-4" />
+				</a>
+			</Button>
+		</section>
 	);
 }
 
@@ -205,6 +259,11 @@ function SelectedPdf({ file }: { file: File }) {
 			</div>
 		</div>
 	);
+}
+
+function buildPreviewUrl(envelopeId: string, senderSessionToken: string, page: number) {
+	const params = new URLSearchParams({ senderSessionToken });
+	return `/api/envelopes/${envelopeId}/source-pdf/content?${params.toString()}#toolbar=0&navpanes=0&scrollbar=0&page=${page}`;
 }
 
 function sourcePdfQueryKey(envelopeId: string, senderSessionToken: string) {
