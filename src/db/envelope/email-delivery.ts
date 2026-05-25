@@ -37,6 +37,12 @@ interface SenderSigningEmailInput {
 	signingUrl: string;
 }
 
+interface SenderPartnerSignedEmailInput {
+	email: string;
+	signerName: string;
+	statusUrl: string;
+}
+
 interface SenderChangeRequestEmailInput {
 	email: string;
 	revisionUrl: string;
@@ -122,6 +128,18 @@ export function buildSenderSigningEmail(input: SenderSigningEmailInput): Transac
 		subject: "Sign your document",
 		text: `Hi ${name},\n\nYour document is ready for your signature:\n${input.signingUrl}\n\nThis link expires in 7 days.`,
 		html: `<p>Hi ${escapeHtml(name)},</p><p>Your document is ready for your signature.</p><p><a href="${escapeHtml(input.signingUrl)}">Open signing page</a></p><p>This link expires in 7 days.</p>`,
+	};
+}
+
+export function buildSenderPartnerSignedEmail(
+	input: SenderPartnerSignedEmailInput,
+): TransactionalEmail {
+	const signerName = input.signerName.trim() || "A signer";
+	return {
+		to: input.email,
+		subject: "Your document was signed",
+		text: `${signerName} signed your document.\n\nView document status:\n${input.statusUrl}`,
+		html: `<p>${escapeHtml(signerName)} signed your document.</p><p><a href="${escapeHtml(input.statusUrl)}">View document status</a></p>`,
 	};
 }
 

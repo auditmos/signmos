@@ -484,6 +484,84 @@ describe("signing flow API", () => {
 		expect(state.signatureProfiles).toHaveLength(0);
 	});
 
+	it("delivers a sender notification email when a partner signs while others remain pending", async () => {
+		// Assumptions for the partner-signed notification regression:
+		// - Partner signing is observable even before every signer has completed.
+		// - The initiator email is the envelope createdBy email in the no-account flow.
+		// - The notification is both persisted as an email_send_records row and delivered through Resend when configured.
+		// - The notification links to the sender's existing envelope status surface; completed-document routing is out of scope here.
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ id: "resend-email-1" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		state.envelopes[0] = {
+			...state.envelopes[0],
+			createdBy: "sender@example.com",
+			sentBy: "sender@example.com",
+		};
+
+		const response = await apiHono.request(
+			"/api/signing/valid-token/complete",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-now": "2026-05-21T23:45:00.000Z",
+				},
+				body: JSON.stringify({
+					signature: {
+						kind: "typed",
+						typedText: "Ada Lovelace",
+						typedFont: "cursive",
+					},
+					rememberSignature: false,
+				}),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: {
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000001",
+				recipientStatus: "completed",
+				envelopeStatus: "sent",
+			},
+		});
+		expect(state.emailSends).toEqual([
+			expect.objectContaining({
+				envelopeId: "00000000-0000-4000-8000-000000000001",
+				recipientId: "20000000-0000-4000-8000-000000000001",
+				tokenId: "30000000-0000-4000-8000-000000000001",
+				email: "sender@example.com",
+				kind: "partner_signed",
+				fallbackUrl: "/envelope-fields?envelopeId=00000000-0000-4000-8000-000000000001",
+			}),
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+		expect(requestBody).toEqual(
+			expect.objectContaining({
+				to: ["sender@example.com"],
+				subject: "Your document was signed",
+			}),
+		);
+		expect(requestBody.html).toContain(
+			"https://signmos.example/envelope-fields?envelopeId=00000000-0000-4000-8000-000000000001",
+		);
+		expect(requestBody.text).toContain("Ada Lovelace signed");
+
+		fetchMock.mockRestore();
+	});
+
 	it("completes signing with a drawn signature payload", async () => {
 		const response = await apiHono.request("/api/signing/valid-token/complete", {
 			method: "POST",

@@ -211,9 +211,13 @@ signingEndpoint.post("/:token/complete", async (c) => {
 			data: await completeSigning(token, parsed.data, {
 				documentsBucket: bucket,
 				now: parseNow(c.req.header("x-now")),
+				emailDelivery: getEmailDeliveryOptions(c),
 			}),
 		});
 	} catch (error) {
+		if (error instanceof EmailDeliveryError) {
+			return c.json(emailDeliveryErrorBody(error, c.env as EmailDeliveryEnv | undefined), 502);
+		}
 		if (error instanceof SigningCompletionBlockedError) {
 			return c.json(
 				{

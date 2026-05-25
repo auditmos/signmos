@@ -261,7 +261,13 @@ describe("PDF finalization", () => {
 		});
 		expect(state.envelopes[0]?.status).toBe("sent");
 		expect(state.finalDocuments).toHaveLength(0);
-		expect(state.emailSendRecords).toHaveLength(0);
+		expect(state.emailSendRecords).toEqual([
+			expect.objectContaining({
+				email: "sender@example.com",
+				kind: "partner_signed",
+				fallbackUrl: "/envelope-fields?envelopeId=00000000-0000-4000-8000-000000000001",
+			}),
+		]);
 		expect(state.senderVerificationEmailRecords).toHaveLength(0);
 		expect(state.r2Objects.size).toBe(1);
 	});

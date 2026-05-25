@@ -1,5 +1,11 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db/setup";
+import {
+	buildSenderPartnerSignedEmail,
+	deliverTransactionalEmail,
+	type EmailDeliveryOptions,
+	toAbsoluteDeliveryUrl,
+} from "./email-delivery";
 import { finalizeCompletedEnvelope } from "./finalization";
 import {
 	type CompleteSigningRequest,
@@ -232,7 +238,7 @@ export async function getSignerSourceDocument(token: SignerToken): Promise<Sourc
 export async function completeSigning(
 	token: SignerToken,
 	input: CompleteSigningRequest,
-	options: { documentsBucket?: R2Bucket; now?: Date } = {},
+	options: { documentsBucket?: R2Bucket; now?: Date; emailDelivery?: EmailDeliveryOptions } = {},
 ): Promise<CompleteSigningResult> {
 	const db = getDb();
 	const signature = normalizeSigningSignature(input);
@@ -256,6 +262,29 @@ export async function completeSigning(
 			.limit(100)
 	).map((field) => EnvelopeFieldSchema.parse(field));
 	if (fields.length === 0) throw new SigningNoAssignedFieldsError();
+
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, token.envelopeId))
+			.limit(10)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const signingRecipient = recipients.find((recipient) => recipient.id === token.recipientId);
+	const senderNotificationUrl = buildSenderSigningNotificationUrl(token.envelopeId);
+	const shouldNotifySender =
+		Boolean(signingRecipient) &&
+		!sameEmail(signingRecipient?.email ?? "", parsedEnvelope.createdBy);
+	if (shouldNotifySender && signingRecipient && options.emailDelivery) {
+		await deliverTransactionalEmail(
+			buildSenderPartnerSignedEmail({
+				email: parsedEnvelope.createdBy,
+				signerName: signingRecipient.name,
+				statusUrl: toAbsoluteDeliveryUrl(senderNotificationUrl, options.emailDelivery),
+			}),
+			options.emailDelivery,
+		);
+	}
 
 	await db
 		.insert(fieldValues)
@@ -290,14 +319,6 @@ export async function completeSigning(
 		.set({ status: "completed" })
 		.where(eq(envelopeRecipients.id, token.recipientId));
 
-	const recipients = (
-		await db
-			.select()
-			.from(envelopeRecipients)
-			.where(eq(envelopeRecipients.envelopeId, token.envelopeId))
-			.limit(10)
-	).map((recipient) => RecipientSchema.parse(recipient));
-	const signingRecipient = recipients.find((recipient) => recipient.id === token.recipientId);
 	if (input.rememberSignature && signingRecipient) {
 		await rememberPartnerSignaturePreference({
 			envelopeId: token.envelopeId,
@@ -310,11 +331,7 @@ export async function completeSigning(
 	)
 		? "completed"
 		: "sent";
-	if (envelopeStatus === "completed") {
-		await db
-			.update(envelopes)
-			.set({ status: "completed" })
-			.where(eq(envelopes.id, token.envelopeId));
+	if (shouldNotifySender) {
 		await db
 			.insert(emailSendRecords)
 			.values({
@@ -323,9 +340,15 @@ export async function completeSigning(
 				tokenId: token.id,
 				email: parsedEnvelope.createdBy,
 				kind: "partner_signed",
-				fallbackUrl: buildSenderSigningNotificationUrl(token.envelopeId),
+				fallbackUrl: senderNotificationUrl,
 			})
 			.returning();
+	}
+	if (envelopeStatus === "completed") {
+		await db
+			.update(envelopes)
+			.set({ status: "completed" })
+			.where(eq(envelopes.id, token.envelopeId));
 		await finalizeCompletedEnvelope(token.envelopeId, options);
 	}
 
@@ -483,6 +506,10 @@ function latestSourceDocument(documents: SourceDocument[]): SourceDocument | nul
 
 function buildSenderSigningNotificationUrl(envelopeId: string): string {
 	return `/envelope-fields?envelopeId=${envelopeId}`;
+}
+
+function sameEmail(left: string, right: string): boolean {
+	return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
 function normalizeSignatureProfileActor(actor: string): string {
