@@ -1,0 +1,8 @@
+allowBuilds:
+  esbuild: true
+  sharp: true
+  simple-git-hooks: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@dotenvx/dotenvx@2.11.1'
+  - knip@6.27.0

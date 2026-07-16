@@ -18,35 +18,33 @@ export const Route = createFileRoute("/envelope-fields")({
 
 function EnvelopeFieldsRoute() {
 	const search = Route.useSearch();
-	const hasReviewEnvelope =
+	const recipients =
 		search.envelopeId &&
 		search.recipientId &&
 		search.name &&
 		search.email &&
 		search.partnerRecipientId &&
 		search.partnerName &&
-		search.partnerEmail;
+		search.partnerEmail
+			? [
+					{
+						id: search.recipientId,
+						name: search.name,
+						email: search.email,
+					},
+					{
+						id: search.partnerRecipientId,
+						name: search.partnerName,
+						email: search.partnerEmail,
+					},
+				]
+			: undefined;
 
 	return (
 		<EnvelopePreparationPage
 			envelopeId={search.envelopeId}
 			senderSessionToken={search.senderSessionToken}
-			recipients={
-				hasReviewEnvelope
-					? [
-							{
-								id: search.recipientId,
-								name: search.name,
-								email: search.email,
-							},
-							{
-								id: search.partnerRecipientId,
-								name: search.partnerName,
-								email: search.partnerEmail,
-							},
-						]
-					: undefined
-			}
+			recipients={recipients}
 		/>
 	);
 }

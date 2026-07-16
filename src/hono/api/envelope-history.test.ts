@@ -353,18 +353,22 @@ describe("confirmed email document history API", () => {
 			(document) => document.envelopeId === completedEnvelopeId,
 		);
 
-		const pdf = await apiHono.request(completed?.action.downloadUrl ?? "", undefined, {
-			DOCUMENTS_BUCKET: {
-				get: async (key: string) => {
-					const object = state.r2Objects.get(key);
-					return object
-						? {
-								arrayBuffer: async () => object.buffer.slice(0),
-							}
-						: null;
+		const pdf = await apiHono.request(
+			completed?.action.downloadUrl ?? "",
+			{ headers: { "x-now": "2026-05-21T09:00:00.000Z" } },
+			{
+				DOCUMENTS_BUCKET: {
+					get: async (key: string) => {
+						const object = state.r2Objects.get(key);
+						return object
+							? {
+									arrayBuffer: async () => object.buffer.slice(0),
+								}
+							: null;
+					},
 				},
 			},
-		});
+		);
 
 		expect(pdf.status).toBe(200);
 		expect(pdf.headers.get("content-type")).toBe("application/pdf");
