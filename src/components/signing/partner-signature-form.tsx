@@ -91,7 +91,8 @@ export function PartnerSignatureForm({
 
 	function continueDrawing(event: MouseEvent<SVGSVGElement>) {
 		if (!isDrawing) return;
-		setDrawPoints((points) => [...points, pointFromEvent(event)]);
+		const point = pointFromEvent(event);
+		setDrawPoints((points) => [...points, point]);
 	}
 
 	function stopDrawing() {
