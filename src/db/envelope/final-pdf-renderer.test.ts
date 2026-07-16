@@ -4,6 +4,40 @@ import { renderFinalPdf } from "./final-pdf-renderer";
 import type { SourceDocument } from "./schema";
 
 describe("renderFinalPdf", () => {
+	it("renders signature values in a restrained branded signing stamp", async () => {
+		// Stamp design assumptions:
+		// - Only signature fields receive the branded stamp; date fields remain compact values.
+		// - The public artifact visibly identifies the field as signed and credits auditmos.com.
+		// - Typed and drawn signatures use the same stamp frame; this tracer test covers typed text.
+		// - Exact colors and drawing operators are visual-QA concerns, not part of this text contract.
+		const bytes = await renderFinalPdf({
+			envelopeId: "00000000-0000-4000-8000-000000000001",
+			sourceDocument: await sourceDocumentFixture(),
+			sourceBytes: await sourcePdfBytes(),
+			certificateHash: "b".repeat(64),
+			rows: {
+				fields: [
+					{
+						id: "signature-field",
+						type: "signature",
+						page: 1,
+						x: 360,
+						y: 650,
+						width: 180,
+						height: 52,
+					},
+				],
+				values: [{ fieldId: "signature-field", value: "Ada Lovelace" }],
+				events: [],
+			},
+		});
+
+		const visibleText = extractVisibleText(bytes).join("\n");
+		expect(visibleText).toContain("SIGNED");
+		expect(visibleText).toContain("Ada Lovelace");
+		expect(visibleText).toContain("by auditmos.com");
+	});
+
 	it("keeps raw field values and audit events out of the visible audit certificate", async () => {
 		// Regression assumptions:
 		// - The certificate hash may still cover detailed field/event material.
@@ -49,7 +83,7 @@ describe("renderFinalPdf", () => {
 		expect(visibleText).not.toContain("recipient.completed");
 	});
 
-	it("normalizes drawn signatures into the placeholder bounds", async () => {
+	it("normalizes drawn signatures into the branded stamp bounds", async () => {
 		const signaturePath = "M 64 24 L 68 98 L 195 75";
 		const bytes = await renderFinalPdf({
 			envelopeId: "00000000-0000-4000-8000-000000000001",
@@ -73,11 +107,15 @@ describe("renderFinalPdf", () => {
 			},
 		});
 
+		const visibleText = extractVisibleText(bytes).join("\n");
+		expect(visibleText).toContain("SIGNED");
+		expect(visibleText).toContain("by auditmos.com");
+
 		const signatureTransform = extractSignatureTransform(bytes, "64 24 m");
 		expect(signatureTransform).toEqual({
-			scale: expect.closeTo(0.54054, 5),
-			x: expect.closeTo(402, 1),
-			y: expect.closeTo(141.97, 1),
+			scale: expect.closeTo(0.2973, 4),
+			x: expect.closeTo(433.5, 1),
+			y: expect.closeTo(126.14, 1),
 		});
 	});
 });

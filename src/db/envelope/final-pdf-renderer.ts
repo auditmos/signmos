@@ -1,7 +1,7 @@
 import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from "pdf-lib";
 import type { SourceDocument } from "./schema";
 
-export const FINAL_PDF_RENDERER_PRODUCER = "signmos-final-pdf-renderer/2";
+export const FINAL_PDF_RENDERER_PRODUCER = "signmos-final-pdf-renderer/3";
 
 export type FinalPdfRows = {
 	fields: Array<Record<string, unknown>>;
@@ -20,7 +20,8 @@ export async function renderFinalPdf(input: {
 	pdf.setProducer(FINAL_PDF_RENDERER_PRODUCER);
 	const font = await pdf.embedFont(StandardFonts.Helvetica);
 	const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
-	drawFieldValues(pdf, input.rows, font);
+	const signatureFont = await pdf.embedFont(StandardFonts.HelveticaOblique);
+	drawFieldValues(pdf, input.rows, font, boldFont, signatureFont);
 	drawAuditCertificate(
 		pdf,
 		input.envelopeId,
@@ -71,6 +72,8 @@ function drawFieldValues(
 	pdf: PDFDocument,
 	rows: Pick<FinalPdfRows, "fields" | "values">,
 	font: PDFFont,
+	boldFont: PDFFont,
+	signatureFont: PDFFont,
 ): void {
 	const valueByField = new Map(
 		rows.values.map((value) => [stringValue(value, "fieldId"), stringValue(value, "value")]),
@@ -80,6 +83,10 @@ function drawFieldValues(
 		if (!value) continue;
 		const page = getOrAddPage(pdf, numberValue(field, "page", 1));
 		const box = fieldBoxOnPage(field, page);
+		if (stringValue(field, "type") === "signature") {
+			drawSignatureStamp(page, value, box, boldFont, signatureFont);
+			continue;
+		}
 		page.drawRectangle({
 			x: box.x,
 			y: box.y,
@@ -88,11 +95,7 @@ function drawFieldValues(
 			borderColor: rgb(0.05, 0.3, 0.75),
 			borderWidth: 0.5,
 		});
-		if (stringValue(field, "type") === "signature" && looksLikeSvgPath(value)) {
-			drawSignaturePath(page, value, box);
-			continue;
-		}
-		const size = Math.min(stringValue(field, "type") === "date" ? 12 : 18, box.height * 0.45);
+		const size = Math.min(12, box.height * 0.45);
 		page.drawText(value, {
 			x: box.x + 4,
 			y: box.y + Math.max(4, (box.height - size) / 2),
@@ -102,6 +105,93 @@ function drawFieldValues(
 			maxWidth: Math.max(12, box.width - 8),
 		});
 	}
+}
+
+function drawSignatureStamp(
+	page: PDFPage,
+	value: string,
+	box: { x: number; y: number; width: number; height: number },
+	boldFont: PDFFont,
+	signatureFont: PDFFont,
+): void {
+	const accent = rgb(0.08, 0.31, 0.55);
+	const ink = rgb(0.08, 0.14, 0.2);
+	const muted = rgb(0.38, 0.45, 0.52);
+	const insetX = Math.min(7, Math.max(4, box.width * 0.04));
+	page.drawRectangle({
+		x: box.x,
+		y: box.y,
+		width: box.width,
+		height: box.height,
+		color: rgb(0.97, 0.98, 0.99),
+		borderColor: rgb(0.56, 0.66, 0.75),
+		borderWidth: 0.75,
+	});
+	page.drawRectangle({
+		x: box.x,
+		y: box.y,
+		width: Math.min(2.5, box.width * 0.02),
+		height: box.height,
+		color: accent,
+	});
+
+	const statusY = box.y + box.height - 9;
+	page.drawCircle({
+		x: box.x + insetX + 2.5,
+		y: statusY + 2.5,
+		size: 3.2,
+		color: accent,
+	});
+	page.drawLine({
+		start: { x: box.x + insetX + 0.8, y: statusY + 2.5 },
+		end: { x: box.x + insetX + 2.1, y: statusY + 1.2 },
+		color: rgb(1, 1, 1),
+		thickness: 0.7,
+	});
+	page.drawLine({
+		start: { x: box.x + insetX + 2.1, y: statusY + 1.2 },
+		end: { x: box.x + insetX + 4.5, y: statusY + 4 },
+		color: rgb(1, 1, 1),
+		thickness: 0.7,
+	});
+	page.drawText("SIGNED", {
+		x: box.x + insetX + 9,
+		y: statusY,
+		size: 6.5,
+		font: boldFont,
+		color: accent,
+	});
+
+	const caption = "by auditmos.com";
+	const captionSize = 5.5;
+	const captionWidth = boldFont.widthOfTextAtSize(caption, captionSize);
+	page.drawText(caption, {
+		x: Math.max(box.x + insetX, box.x + box.width - insetX - captionWidth),
+		y: box.y + 3,
+		size: captionSize,
+		font: boldFont,
+		color: muted,
+	});
+
+	const signatureBox = {
+		x: box.x + insetX,
+		y: box.y + 8,
+		width: Math.max(1, box.width - insetX * 2),
+		height: Math.max(1, box.height - 18),
+	};
+	if (looksLikeSvgPath(value)) {
+		drawSignaturePath(page, value, signatureBox);
+		return;
+	}
+	const signatureSize = Math.min(16, signatureBox.height * 0.62);
+	page.drawText(value, {
+		x: signatureBox.x,
+		y: signatureBox.y + Math.max(1, (signatureBox.height - signatureSize) / 2),
+		size: signatureSize,
+		font: signatureFont,
+		color: ink,
+		maxWidth: signatureBox.width,
+	});
 }
 
 function drawSignaturePath(
