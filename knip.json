@@ -1,17 +1,6 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
-	"entry": [
-		"src/start.tsx",
-		"src/routes/**/*.{ts,tsx}",
-		"taze.config.ts",
-		"scripts/*.ts",
-		"drizzle-*.config.ts"
-	],
-	"ignoreDependencies": [
-		"@radix-ui/react-dropdown-menu",
-		"@radix-ui/react-dialog",
-		"@tanstack/react-form",
-		"web-vitals"
-	],
+	"entry": ["src/routes/**/*.{ts,tsx}", "taze.config.ts", "scripts/*.ts", "drizzle-*.config.ts"],
+	"ignoreDependencies": ["@radix-ui/react-dropdown-menu", "@radix-ui/react-dialog", "web-vitals"],
 	"ignore": ["src/components/ui/**", "src/core/errors.ts", "src/db/**"]
 }
