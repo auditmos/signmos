@@ -170,6 +170,47 @@ function insertEmailSends(rows: unknown[]) {
 	return inserted;
 }
 
+interface UpdateValue {
+	status?: "sent" | "completed";
+	sentBy?: string;
+	sentAt?: Date;
+	name?: string;
+	email?: string;
+}
+
+function updateRows(table: unknown, value: UpdateValue) {
+	if (table === state.envelopesTable) updateEnvelope(value);
+	if (table === state.recipientsTable) updateRecipients(value);
+	return [];
+}
+
+function updateEnvelope(value: UpdateValue) {
+	state.envelopes[0] = { ...state.envelopes[0], ...value };
+}
+
+function updateRecipients(value: UpdateValue) {
+	updateRecipientIdentity(value);
+	updateRecipientStatuses(value);
+}
+
+function updateRecipientIdentity(value: UpdateValue) {
+	if (!value.name && !value.email) return;
+	state.recipients = state.recipients.map((recipient) => ({
+		...recipient,
+		name: value.name ?? recipient.name,
+		email: value.email ?? recipient.email,
+	}));
+}
+
+function updateRecipientStatuses(value: UpdateValue) {
+	if (!value.status) return;
+	const status = value.status;
+	const sentBy = state.envelopes[0]?.sentBy ?? state.recipients[0]?.email;
+	state.recipients = state.recipients.map((recipient) =>
+		applyRecipientStatusUpdate(recipient, status, sentBy),
+	);
+}
+
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({
@@ -185,33 +226,8 @@ vi.mock("@/db/setup", () => ({
 			}),
 		}),
 		update: (table: unknown) => ({
-			set: (value: {
-				status?: "sent" | "completed";
-				sentBy?: string;
-				sentAt?: Date;
-				name?: string;
-				email?: string;
-			}) => ({
-				where: async () => {
-					if (table === state.envelopesTable) {
-						state.envelopes[0] = { ...state.envelopes[0], ...value };
-					}
-					if (table === state.recipientsTable && (value.name || value.email)) {
-						state.recipients = state.recipients.map((recipient) => ({
-							...recipient,
-							name: value.name ?? recipient.name,
-							email: value.email ?? recipient.email,
-						}));
-					}
-					if (table === state.recipientsTable && value.status) {
-						const status = value.status;
-						const sentBy = state.envelopes[0]?.sentBy ?? state.recipients[0]?.email;
-						state.recipients = state.recipients.map((recipient) =>
-							applyRecipientStatusUpdate(recipient, status, sentBy),
-						);
-					}
-					return [];
-				},
+			set: (value: UpdateValue) => ({
+				where: async () => updateRows(table, value),
 			}),
 		}),
 		delete: (table: unknown) => ({

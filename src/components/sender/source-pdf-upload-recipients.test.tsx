@@ -4,65 +4,43 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { SourcePdfUploadPanel } from "./source-pdf-upload-panel";
 
+const envelopeId = "00000000-0000-4000-8000-000000000001";
+const recipientsUrl = `/api/envelopes/${envelopeId}/recipients`;
+const partnerRecipientId = "20000000-0000-4000-8000-000000000002";
+const partnerRecipientUrl = `${recipientsUrl}/${partnerRecipientId}`;
+
+interface RecipientFixture {
+	id: string;
+	envelopeId: string;
+	name: string;
+	email: string;
+}
+
 describe("SourcePdfUploadPanel recipient management", () => {
 	beforeEach(() => {
 		vi.stubGlobal("crypto", { randomUUID: () => "upload-idempotency-key" });
 	});
 
 	it("disables duplicate recipient adds and lets the sender edit or delete the partner", async () => {
-		let recipients = [
+		const fetchMock = createRecipientsFetchMock([
 			{
 				id: "20000000-0000-4000-8000-000000000001",
-				envelopeId: "00000000-0000-4000-8000-000000000001",
+				envelopeId,
 				name: "Ada Lovelace",
 				email: "ada@example.com",
 			},
 			{
-				id: "20000000-0000-4000-8000-000000000002",
-				envelopeId: "00000000-0000-4000-8000-000000000001",
+				id: partnerRecipientId,
+				envelopeId,
 				name: "Tom Typo",
 				email: "typo@example.com",
 			},
-		];
-		const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-			if (url === "/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf") {
-				return sourcePdfResponse();
-			}
-			if (
-				url === "/api/envelopes/00000000-0000-4000-8000-000000000001/recipients" &&
-				init?.method !== "POST"
-			) {
-				return new Response(JSON.stringify({ data: recipients }), { status: 200 });
-			}
-			if (
-				url ===
-					"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000002" &&
-				init?.method === "PATCH"
-			) {
-				const body = JSON.parse(String(init.body)) as { name: string; email: string };
-				recipients = recipients.map((recipient) =>
-					recipient.id === "20000000-0000-4000-8000-000000000002"
-						? { ...recipient, ...body }
-						: recipient,
-				);
-				return new Response(JSON.stringify({ data: recipients[1] }), { status: 200 });
-			}
-			if (
-				url ===
-					"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000002" &&
-				init?.method === "DELETE"
-			) {
-				const [sender, partner] = recipients;
-				recipients = sender ? [sender] : [];
-				return new Response(JSON.stringify({ data: partner }), { status: 200 });
-			}
-			throw new Error(`Unexpected fetch ${String(url)} ${init?.method ?? "GET"}`);
-		});
+		]);
 		vi.stubGlobal("fetch", fetchMock);
 
 		renderWithQueryClient(
 			<SourcePdfUploadPanel
-				envelopeId="00000000-0000-4000-8000-000000000001"
+				envelopeId={envelopeId}
 				senderSessionToken="verified-sender-token"
 				senderName="Ada Lovelace"
 				senderEmail="ada@example.com"
@@ -83,7 +61,7 @@ describe("SourcePdfUploadPanel recipient management", () => {
 
 		await screen.findByText("Tom Corrected");
 		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000002",
+			partnerRecipientUrl,
 			expect.objectContaining({
 				method: "PATCH",
 				body: JSON.stringify({ name: "Tom Corrected", email: "tom@example.com" }),
@@ -97,11 +75,52 @@ describe("SourcePdfUploadPanel recipient management", () => {
 			false,
 		);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"/api/envelopes/00000000-0000-4000-8000-000000000001/recipients/20000000-0000-4000-8000-000000000002",
+			partnerRecipientUrl,
 			expect.objectContaining({ method: "DELETE" }),
 		);
 	});
 });
+
+function createRecipientsFetchMock(initialRecipients: RecipientFixture[]) {
+	const state = { recipients: initialRecipients };
+	return vi.fn((url: string | URL | Request, init?: RequestInit) =>
+		handleRecipientsFetch(state, url, init),
+	);
+}
+
+async function handleRecipientsFetch(
+	state: { recipients: RecipientFixture[] },
+	url: string | URL | Request,
+	init?: RequestInit,
+) {
+	const method = init?.method ?? "GET";
+	if (url === `/api/envelopes/${envelopeId}/source-pdf`) return sourcePdfResponse();
+	if (url === recipientsUrl && method === "GET") {
+		return new Response(JSON.stringify({ data: state.recipients }), { status: 200 });
+	}
+	if (url === partnerRecipientUrl) return handlePartnerFetch(state, method, init);
+	throw new Error(`Unexpected fetch ${String(url)} ${method}`);
+}
+
+async function handlePartnerFetch(
+	state: { recipients: RecipientFixture[] },
+	method: string,
+	init?: RequestInit,
+) {
+	if (method === "PATCH") {
+		const body = JSON.parse(String(init?.body)) as { name: string; email: string };
+		state.recipients = state.recipients.map((recipient) =>
+			recipient.id === partnerRecipientId ? { ...recipient, ...body } : recipient,
+		);
+		return new Response(JSON.stringify({ data: state.recipients[1] }), { status: 200 });
+	}
+	if (method === "DELETE") {
+		const [sender, partner] = state.recipients;
+		state.recipients = sender ? [sender] : [];
+		return new Response(JSON.stringify({ data: partner }), { status: 200 });
+	}
+	throw new Error(`Unexpected partner request ${method}`);
+}
 
 function sourcePdfResponse() {
 	return new Response(

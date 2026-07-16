@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Pencil, Trash2, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 	fetchRecipients,
 	fetchVerifiedSender,
 	findSenderRecipient,
+	isRecipientActionDisabled,
 	type RecipientFormValues,
 	type RecipientResponse,
 	recipientsQueryKey,
@@ -54,25 +55,25 @@ function AddRecipientsForm({
 }: SourcePdfUploadPanelProps) {
 	const queryClient = useQueryClient();
 	const [isEditingPartner, setIsEditingPartner] = useState(false);
-	const hasSenderProps = Boolean(verifiedSenderName && verifiedSenderEmail);
+	const hasSenderProps = hasSenderDetails(verifiedSenderName, verifiedSenderEmail);
 	const senderQuery = useQuery({
 		queryKey: ["sender-verification", envelopeId, senderSessionToken],
 		queryFn: () => fetchVerifiedSender(senderSessionToken, envelopeId),
-		enabled: Boolean(senderSessionToken) && !hasSenderProps,
+		enabled: shouldFetchVerifiedSender(senderSessionToken, hasSenderProps),
 		staleTime: Number.POSITIVE_INFINITY,
 	});
 	const sourcePdfQuery = useSourcePdfQuery(envelopeId, senderSessionToken);
 	const sessionSender = senderQuery.data?.sender;
 	const senderRecipientName = verifiedSenderName || sessionSender?.name || "";
 	const senderRecipientEmail = verifiedSenderEmail || sessionSender?.email || "";
-	const hasVerifiedSenderDetails = Boolean(senderRecipientName && senderRecipientEmail);
+	const hasVerifiedSenderDetails = hasSenderDetails(senderRecipientName, senderRecipientEmail);
 	const sourcePdfReady = sourcePdfQuery.data?.status === "ready";
 	const sourcePdfError =
 		sourcePdfQuery.error instanceof Error ? sourcePdfQuery.error.message : null;
 	const recipientsQuery = useQuery({
 		queryKey: recipientsQueryKey(envelopeId, senderSessionToken),
 		queryFn: () => fetchRecipients(envelopeId, senderSessionToken),
-		enabled: Boolean(envelopeId && senderSessionToken && sourcePdfReady),
+		enabled: shouldFetchRecipients(envelopeId, senderSessionToken, sourcePdfReady),
 		staleTime: 30_000,
 	});
 	const recipientsMutation = useMutation({
@@ -107,8 +108,7 @@ function AddRecipientsForm({
 		onSuccess: (recipient) => {
 			queryClient.setQueryData<RecipientResponse[]>(
 				recipientsQueryKey(envelopeId, senderSessionToken),
-				(existing = []) =>
-					existing.map((current) => (current.id === recipient.id ? recipient : current)),
+				(existing = []) => replaceRecipient(existing, recipient),
 			);
 			setIsEditingPartner(false);
 		},
@@ -119,7 +119,7 @@ function AddRecipientsForm({
 		onSuccess: (recipient) => {
 			queryClient.setQueryData<RecipientResponse[]>(
 				recipientsQueryKey(envelopeId, senderSessionToken),
-				(existing = []) => existing.filter((current) => current.id !== recipient.id),
+				(existing = []) => removeRecipient(existing, recipient.id),
 			);
 			setIsEditingPartner(false);
 		},
@@ -132,41 +132,40 @@ function AddRecipientsForm({
 			partnerEmail: "",
 		},
 		onSubmit: ({ value }) =>
-			isEditingPartner && partnerRecipient
-				? updateMutation.mutateAsync(value)
-				: recipientsMutation.mutateAsync(value),
+			submitRecipientForm(
+				value,
+				Boolean(isEditingPartner && partnerRecipient),
+				updateMutation.mutateAsync,
+				recipientsMutation.mutateAsync,
+			),
 	});
-	const recipientError =
-		recipientsMutation.error instanceof Error
-			? recipientsMutation.error.message
-			: updateMutation.error instanceof Error
-				? updateMutation.error.message
-				: deleteMutation.error instanceof Error
-					? deleteMutation.error.message
-					: null;
+	const recipientError = firstErrorMessage(
+		recipientsMutation.error,
+		updateMutation.error,
+		deleteMutation.error,
+	);
 	const currentRecipients = recipientsQuery.data ?? [];
 	const senderRecipient = findSenderRecipient(currentRecipients, senderRecipientEmail);
-	const partnerRecipient =
-		currentRecipients.find((recipient) => recipient.id !== senderRecipient?.id) ?? null;
-	const prepareRecipients =
-		senderRecipient && partnerRecipient ? [senderRecipient, partnerRecipient] : [];
-	const prepareUrl =
-		prepareRecipients.length === 2
-			? buildPrepareUrl(envelopeId, senderSessionToken, prepareRecipients)
-			: null;
-	const isMutating =
-		recipientsMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+	const partnerRecipient = findPartnerRecipient(currentRecipients, senderRecipient);
+	const { prepareRecipients, prepareUrl } = buildPrepareDetails(
+		envelopeId,
+		senderSessionToken,
+		senderRecipient,
+		partnerRecipient,
+	);
+	const isMutating = hasPendingMutation(
+		recipientsMutation.isPending,
+		updateMutation.isPending,
+		deleteMutation.isPending,
+	);
+	const canSubmit = canSubmitRecipientForm(sourcePdfReady, partnerRecipient, isEditingPartner);
 
 	return (
 		<form
 			aria-label="Add recipients"
 			className="rounded-lg border bg-card p-5"
 			onSubmit={(event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				if (!sourcePdfReady) return;
-				if (partnerRecipient && !isEditingPartner) return;
-				void recipientsForm.handleSubmit();
+				handleRecipientSubmit(event, canSubmit, recipientsForm.handleSubmit);
 			}}
 		>
 			<div className="space-y-5">
@@ -281,19 +280,105 @@ function AddRecipientsForm({
 
 				<RecipientActions
 					isPending={isMutating}
-					isDisabled={
-						senderQuery.isLoading ||
-						sourcePdfQuery.isLoading ||
-						recipientsQuery.isLoading ||
-						!sourcePdfReady ||
-						Boolean(partnerRecipient && !isEditingPartner)
-					}
+					isDisabled={isRecipientActionDisabled({
+						isSenderLoading: senderQuery.isLoading,
+						isSourcePdfLoading: sourcePdfQuery.isLoading,
+						isRecipientsLoading: recipientsQuery.isLoading,
+						sourcePdfReady,
+						partnerRecipient,
+						isEditingPartner,
+					})}
 					isEditing={Boolean(isEditingPartner && partnerRecipient)}
 					prepareUrl={prepareUrl}
 				/>
 			</div>
 		</form>
 	);
+}
+
+function hasSenderDetails(name: string, email: string) {
+	return Boolean(name && email);
+}
+
+function shouldFetchVerifiedSender(senderSessionToken: string, hasSenderProps: boolean) {
+	return Boolean(senderSessionToken) && !hasSenderProps;
+}
+
+function shouldFetchRecipients(
+	envelopeId: string,
+	senderSessionToken: string,
+	sourcePdfReady: boolean,
+) {
+	return Boolean(envelopeId && senderSessionToken && sourcePdfReady);
+}
+
+function replaceRecipient(existing: RecipientResponse[], recipient: RecipientResponse) {
+	return existing.map((current) => (current.id === recipient.id ? recipient : current));
+}
+
+function removeRecipient(existing: RecipientResponse[], recipientId: string) {
+	return existing.filter((current) => current.id !== recipientId);
+}
+
+function submitRecipientForm(
+	values: RecipientFormValues,
+	isEditingPartner: boolean,
+	updateRecipient: (values: RecipientFormValues) => Promise<RecipientResponse>,
+	addRecipients: (values: RecipientFormValues) => Promise<{ recipients: RecipientResponse[] }>,
+) {
+	return isEditingPartner ? updateRecipient(values) : addRecipients(values);
+}
+
+function firstErrorMessage(...errors: unknown[]) {
+	for (const error of errors) {
+		if (error instanceof Error) return error.message;
+	}
+	return null;
+}
+
+function findPartnerRecipient(
+	recipients: RecipientResponse[],
+	senderRecipient: RecipientResponse | null,
+) {
+	return recipients.find((recipient) => recipient.id !== senderRecipient?.id) ?? null;
+}
+
+function buildPrepareDetails(
+	envelopeId: string,
+	senderSessionToken: string,
+	senderRecipient: RecipientResponse | null,
+	partnerRecipient: RecipientResponse | null,
+) {
+	if (!senderRecipient || !partnerRecipient) {
+		return { prepareRecipients: [], prepareUrl: null };
+	}
+	const prepareRecipients = [senderRecipient, partnerRecipient];
+	return {
+		prepareRecipients,
+		prepareUrl: buildPrepareUrl(envelopeId, senderSessionToken, prepareRecipients),
+	};
+}
+
+function hasPendingMutation(...pendingStates: boolean[]) {
+	return pendingStates.some(Boolean);
+}
+
+function canSubmitRecipientForm(
+	sourcePdfReady: boolean,
+	partnerRecipient: RecipientResponse | null,
+	isEditingPartner: boolean,
+) {
+	return sourcePdfReady && (!partnerRecipient || isEditingPartner);
+}
+
+function handleRecipientSubmit(
+	event: FormEvent<HTMLFormElement>,
+	canSubmit: boolean,
+	handleSubmit: () => Promise<void>,
+) {
+	event.preventDefault();
+	event.stopPropagation();
+	if (canSubmit) void handleSubmit();
 }
 
 function SourcePdfRequirementAlert({

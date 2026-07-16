@@ -165,6 +165,30 @@ export function recipientsQueryKey(envelopeId: string, senderSessionToken: strin
 	return ["recipients", envelopeId, senderSessionToken] as const;
 }
 
+export function isRecipientActionDisabled({
+	isSenderLoading,
+	isSourcePdfLoading,
+	isRecipientsLoading,
+	sourcePdfReady,
+	partnerRecipient,
+	isEditingPartner,
+}: {
+	isSenderLoading: boolean;
+	isSourcePdfLoading: boolean;
+	isRecipientsLoading: boolean;
+	sourcePdfReady: boolean;
+	partnerRecipient: RecipientResponse | null;
+	isEditingPartner: boolean;
+}) {
+	return (
+		isSenderLoading ||
+		isSourcePdfLoading ||
+		isRecipientsLoading ||
+		!sourcePdfReady ||
+		Boolean(partnerRecipient && !isEditingPartner)
+	);
+}
+
 export function findSenderRecipient(
 	recipients: RecipientResponse[],
 	senderEmail: string,
