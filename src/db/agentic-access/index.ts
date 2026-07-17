@@ -1,5 +1,12 @@
 export { type AgenticPrincipal, authenticateAgenticBearer } from "./bearer-principal";
 export {
+	type AgentCommandClaim,
+	claimAgentCommand,
+	completeAgentCommand,
+	fingerprintAgentBinaryCommand,
+	fingerprintAgentCommand,
+} from "./command-authority";
+export {
 	inspectAgenticAccessLink,
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,
@@ -12,9 +19,18 @@ export {
 } from "./documents";
 export { requestAgenticAccess } from "./request";
 export {
+	AgentSelfSignPreparationError,
+	createAgentSelfSignDraft,
+	getAgentSelfSignToken,
+	getAuthorizedAgentSelfSignEnvelope,
+	getAuthorizedAgentSelfSignRecipient,
+	prepareAgentSelfSignFields,
+} from "./self-signing";
+export {
 	agenticAccessLinks,
 	agenticAccessRequests,
 	agenticApiTokens,
+	agenticCommandRecords,
 	agenticEmailRecords,
 	agenticManagementSessions,
 	agenticSecurityEvents,

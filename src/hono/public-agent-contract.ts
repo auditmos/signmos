@@ -3,8 +3,22 @@ import {
 	AgentDocumentErrorSchema,
 	AgentDocumentGroupSchema,
 	AgentDocumentRoleSchema,
+	AgentSelfSignCompleteRequestSchema,
+	AgentSelfSignCompleteResponseSchema,
+	AgentSelfSignCreateRequestSchema,
+	AgentSelfSignCreateResponseSchema,
+	AgentSelfSignDefaultFieldsRequestSchema,
+	AgentSelfSignFieldPlacementRequestSchema,
+	AgentSelfSignFieldPlacementResponseSchema,
+	AgentSelfSignFieldsRequestSchema,
+	AgentSelfSignFieldsResponseSchema,
+	AgentSelfSignTaskResponseSchema,
+	AgentSignatureProfileCreateRequestSchema,
+	AgentSignatureProfileResponseSchema,
+	AgentSourcePdfResponseSchema,
 	AgentV1AuthenticationErrorSchema,
 	agentDocumentOperations,
+	agentSelfSignOperations,
 	agentV1IdentityOperation,
 } from "@/db/agentic-access/schema";
 import { EnvelopeStatusSchema } from "@/db/envelope/schema";
@@ -21,6 +35,12 @@ publicAgentContractHono.get("/openapi.json", (c) => c.json(buildAgentOpenApiDocu
 function buildAgentOpenApiDocument() {
 	const documentIdParameter = {
 		name: "documentId",
+		in: "path",
+		required: true,
+		schema: { type: "string", format: "uuid" },
+	};
+	const fieldIdParameter = {
+		name: "fieldId",
 		in: "path",
 		required: true,
 		schema: { type: "string", format: "uuid" },
@@ -52,6 +72,13 @@ function buildAgentOpenApiDocument() {
 					}),
 					parameters: catalogParameters(),
 				},
+				post: commandOperation({
+					operationId: agentSelfSignOperations.create.operationId,
+					summary: "Create a verified self-sign draft",
+					requestSchema: AgentSelfSignCreateRequestSchema,
+					responseSchema: AgentSelfSignCreateResponseSchema,
+					responseStatus: "201",
+				}),
 			},
 			[agentDocumentOperations.detail.publicPath]: {
 				get: {
@@ -103,11 +130,163 @@ function buildAgentOpenApiDocument() {
 					},
 				},
 			},
+			[agentSelfSignOperations.sourceUpload.publicPath]: {
+				put: commandOperation({
+					operationId: agentSelfSignOperations.sourceUpload.operationId,
+					summary: "Upload the one source PDF for a self-sign draft",
+					requestContent: {
+						"application/pdf": { schema: { type: "string", format: "binary" } },
+					},
+					responseSchema: AgentSourcePdfResponseSchema,
+					responseStatus: "201",
+					parameters: [documentIdParameter, sourceFilenameParameter()],
+				}),
+				get: {
+					...jsonOperation({
+						operationId: agentSelfSignOperations.sourceMetadata.operationId,
+						summary: "Inspect the authorized current source PDF metadata",
+						responseDescription: "Current source PDF metadata and preparation URL",
+						responseSchema: AgentSourcePdfResponseSchema,
+					}),
+					parameters: [documentIdParameter],
+				},
+			},
+			[agentSelfSignOperations.sourceContent.publicPath]: {
+				get: binaryReadOperation(
+					agentSelfSignOperations.sourceContent.operationId,
+					"Download the authorized source PDF for preparation",
+					[documentIdParameter],
+				),
+			},
+			[agentSelfSignOperations.profileCreate.publicPath]: {
+				post: commandOperation({
+					operationId: agentSelfSignOperations.profileCreate.operationId,
+					summary: "Save a reusable typed or drawn signature with explicit consent",
+					requestSchema: AgentSignatureProfileCreateRequestSchema,
+					responseSchema: AgentSignatureProfileResponseSchema,
+					responseStatus: "201",
+					parameters: [documentIdParameter],
+				}),
+			},
+			[agentSelfSignOperations.profileSelected.publicPath]: {
+				get: {
+					...jsonOperation({
+						operationId: agentSelfSignOperations.profileSelected.operationId,
+						summary: "Read the latest selected signature for this verified identity",
+						responseDescription: "Selected signature profile or null",
+						responseSchema: AgentSignatureProfileResponseSchema,
+					}),
+					parameters: [documentIdParameter],
+				},
+			},
+			[agentSelfSignOperations.fieldsExplicit.publicPath]: {
+				post: commandOperation({
+					operationId: agentSelfSignOperations.fieldsExplicit.operationId,
+					summary: "Place explicit self-sign signature/date fields",
+					requestSchema: AgentSelfSignFieldsRequestSchema,
+					responseSchema: AgentSelfSignFieldsResponseSchema,
+					responseStatus: "201",
+					parameters: [documentIdParameter],
+				}),
+			},
+			[agentSelfSignOperations.fieldsDefault.publicPath]: {
+				post: commandOperation({
+					operationId: agentSelfSignOperations.fieldsDefault.operationId,
+					summary: "Place default self-sign signature/date fields",
+					requestSchema: AgentSelfSignDefaultFieldsRequestSchema,
+					responseSchema: AgentSelfSignFieldsResponseSchema,
+					responseStatus: "201",
+					parameters: [documentIdParameter],
+				}),
+			},
+			[agentSelfSignOperations.signingTask.publicPath]: {
+				get: {
+					...jsonOperation({
+						operationId: agentSelfSignOperations.signingTask.operationId,
+						summary: "Review the Bearer-authorized self-signing task",
+						responseDescription: "Assigned source, fields, and selected signature",
+						responseSchema: AgentSelfSignTaskResponseSchema,
+					}),
+					parameters: [documentIdParameter],
+				},
+			},
+			[agentSelfSignOperations.fieldReposition.publicPath]: {
+				patch: commandOperation({
+					operationId: agentSelfSignOperations.fieldReposition.operationId,
+					summary: "Reposition one assigned self-sign field",
+					requestSchema: AgentSelfSignFieldPlacementRequestSchema,
+					responseSchema: AgentSelfSignFieldPlacementResponseSchema,
+					responseStatus: "200",
+					parameters: [documentIdParameter, fieldIdParameter],
+				}),
+			},
+			[agentSelfSignOperations.complete.publicPath]: {
+				post: commandOperation({
+					operationId: agentSelfSignOperations.complete.operationId,
+					summary: "Complete typed or drawn self-signing using the server date",
+					requestSchema: AgentSelfSignCompleteRequestSchema,
+					responseSchema: AgentSelfSignCompleteResponseSchema,
+					responseStatus: "200",
+					parameters: [documentIdParameter],
+				}),
+			},
 		},
 		components: {
 			securitySchemes: {
 				bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "SignmosToken" },
 			},
+		},
+	};
+}
+
+function commandOperation(input: {
+	operationId: string;
+	summary: string;
+	responseSchema: z.ZodType;
+	responseStatus: "200" | "201";
+	requestSchema?: z.ZodType;
+	requestContent?: Record<string, { schema: unknown }>;
+	parameters?: Array<Record<string, unknown>>;
+}) {
+	return {
+		operationId: input.operationId,
+		summary: input.summary,
+		security: [{ bearerAuth: [] }],
+		parameters: [...(input.parameters ?? []), idempotencyKeyParameter()],
+		requestBody: {
+			required: true,
+			content:
+				input.requestContent ??
+				(input.requestSchema
+					? { "application/json": { schema: z.toJSONSchema(input.requestSchema) } }
+					: {}),
+		},
+		responses: {
+			[input.responseStatus]: {
+				description: "Command completed or exact result replayed",
+				content: { "application/json": { schema: z.toJSONSchema(input.responseSchema) } },
+			},
+			...agentErrorResponses(),
+		},
+	};
+}
+
+function binaryReadOperation(
+	operationId: string,
+	summary: string,
+	parameters: Array<Record<string, unknown>>,
+) {
+	return {
+		operationId,
+		summary,
+		security: [{ bearerAuth: [] }],
+		parameters,
+		responses: {
+			"200": {
+				description: "PDF bytes",
+				content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
+			},
+			...agentErrorResponses(),
 		},
 	};
 }
@@ -173,6 +352,24 @@ function queryParameter(name: string, schema: z.ZodType) {
 	return { name, in: "query", required: false, schema: z.toJSONSchema(schema) };
 }
 
+function idempotencyKeyParameter() {
+	return {
+		name: "Idempotency-Key",
+		in: "header",
+		required: true,
+		schema: { type: "string", minLength: 1, maxLength: 200 },
+	};
+}
+
+function sourceFilenameParameter() {
+	return {
+		name: "X-Source-Filename",
+		in: "header",
+		required: false,
+		schema: { type: "string", maxLength: 255 },
+	};
+}
+
 function buildAgentGuidance(): string {
 	return `# Signmos Agent API
 
@@ -209,5 +406,33 @@ When download_final_pdf is allowed, request GET /api/v1/documents/{documentId}/p
 ## Revoked, deleted, or unavailable
 
 A revoked token returns 401 and must be replaced through fresh email verification. Deleted or unauthorized documents return the same 404 without revealing existence. An unavailable final object returns a retryable 503 with a safe recovery URL.
+
+## Create a self-sign draft
+
+POST /api/v1/documents with your signer name. The verified Bearer email owns the draft; no additional verification or emailed credential is used.
+
+## Upload one source PDF
+
+PUT /api/v1/documents/{documentId}/source-pdf with application/pdf bytes under 10 MB. Inspect metadata or download the authorized preparation copy from the documented source routes.
+
+## Save a signature profile
+
+POST a typed or drawn profile with rememberSignature true. Reusable signature content is stored only with this explicit consent.
+
+## Place signature and date fields
+
+Use explicit coordinates or the default-fields command. One signature placeholder is permitted for the self-signer, and preparation commands are draft-only.
+
+## Review and reposition
+
+GET the signing task and PATCH only assigned fields where the self-sign workflow permits. Follow returned source URLs and field identifiers; never use or request a process token.
+
+## Complete self-signing
+
+POST a typed or drawn signature to the completion command. The server controls the signing date. Poll status until the completed detail, history, and final PDF are available.
+
+## Use a fresh Idempotency-Key
+
+Every POST, PUT, or PATCH command requires a fresh Idempotency-Key for one intended mutation. Exact retries return the original status and body. Reusing a key for a changed operation, JSON body, or PDF returns IDEMPOTENCY_CONFLICT without executing the changed intent.
 `;
 }

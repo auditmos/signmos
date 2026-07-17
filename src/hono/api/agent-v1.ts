@@ -10,6 +10,7 @@ import {
 	AgentDocumentCatalogQuerySchema,
 	AgentDocumentCatalogResponseSchema,
 	AgentDocumentDetailResponseSchema,
+	type AgentDocumentErrorCode,
 	AgentDocumentErrorSchema,
 	AgentDocumentHistoryResponseSchema,
 	AgentDocumentStatusResponseSchema,
@@ -18,6 +19,8 @@ import {
 	agentV1IdentityOperation,
 } from "@/db/agentic-access/schema";
 import { createAgentHono } from "@/hono/factory";
+import agentSelfSignSourceEndpoint from "./agent-v1-self-sign-source";
+import agentSelfSignSigningEndpoint from "./agent-v1-self-signing";
 import { getRequestIp } from "./envelope-route-helpers";
 
 const agentV1Endpoint = createAgentHono();
@@ -44,6 +47,24 @@ agentV1Endpoint.use("*", async (c, next) => {
 	c.set("agenticPrincipal", principal);
 	await next();
 });
+
+agentV1Endpoint.use("*", async (c, next) => {
+	if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method)) return next();
+	if (c.req.header("idempotency-key")?.trim()) return next();
+	return c.json(
+		agentDocumentError({
+			code: "IDEMPOTENCY_KEY_REQUIRED",
+			message: "An Idempotency-Key header is required for every Agent API mutation",
+			retryable: false,
+			allowedActions: [],
+			recoveryUrl: "/agent.md",
+		}),
+		400,
+	);
+});
+
+agentV1Endpoint.route("/", agentSelfSignSourceEndpoint);
+agentV1Endpoint.route("/", agentSelfSignSigningEndpoint);
 
 agentV1Endpoint.get(agentV1IdentityOperation.relativePath, (c) => {
 	const principal = c.get("agenticPrincipal");
@@ -186,7 +207,7 @@ agentV1Endpoint.get(agentDocumentOperations.detail.relativePath, async (c) => {
 	return c.json(AgentDocumentDetailResponseSchema.parse({ data: detail }));
 });
 
-function parsedDocumentId(value: string): string | null {
+function parsedDocumentId(value: string | undefined): string | null {
 	const parsed = DocumentIdSchema.safeParse(value);
 	return parsed.success ? parsed.data : null;
 }
@@ -223,15 +244,14 @@ function pdfUnavailableError(item: { allowedActions: string[]; urls: { status: s
 }
 
 function agentDocumentError(error: {
-	code:
-		| "AGENT_INVALID_DOCUMENT_QUERY"
-		| "AGENT_DOCUMENT_NOT_FOUND"
-		| "AGENT_FINAL_PDF_NOT_READY"
-		| "AGENT_FINAL_PDF_UNAVAILABLE";
+	code: AgentDocumentErrorCode;
 	message: string;
 	retryable: boolean;
 	allowedActions: string[];
 	recoveryUrl: string | null;
+	validValues?: string[];
+	fields?: string[];
+	limitBytes?: number;
 }) {
 	return AgentDocumentErrorSchema.parse({ error });
 }

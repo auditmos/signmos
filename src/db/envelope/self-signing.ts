@@ -94,6 +94,60 @@ export async function prepareSelfSignAfterSourceUpload(input: {
 	};
 }
 
+export async function activateSelfSignAfterFieldPreparation(input: {
+	envelopeId: string;
+	sender: Pick<VerifiedSenderSession, "name" | "email">;
+	now: Date;
+}): Promise<SelfSignPreparation | null> {
+	const db = getDb();
+	const envelope = await getEnvelope(input.envelopeId);
+	if (!envelope || envelope.signingMode !== "only_me" || envelope.status !== "draft") return null;
+	const recipients = await listRecipients(input.envelopeId);
+	const recipient =
+		recipients.find((candidate) => sameEmail(candidate.email, input.sender.email)) ?? null;
+	if (!recipient) return null;
+	const fields = (await listEnvelopeFields(input.envelopeId)).filter(
+		(field) => field.recipientId === recipient.id,
+	);
+	if (fields.length === 0) return null;
+	const token = await findOrCreateSelfSignerToken({
+		envelopeId: input.envelopeId,
+		recipientId: recipient.id,
+		now: input.now,
+	});
+	const signingUrl = buildSigningUrl(token.token);
+	await db
+		.update(envelopeRecipients)
+		.set({ status: "sent" })
+		.where(eq(envelopeRecipients.id, recipient.id));
+	await db
+		.update(envelopes)
+		.set({ status: "sent", sentBy: input.sender.email, sentAt: input.now })
+		.where(eq(envelopes.id, input.envelopeId));
+	await ensureSelfSignSendRecord({
+		envelopeId: input.envelopeId,
+		recipientId: recipient.id,
+		tokenId: token.id,
+		email: input.sender.email,
+		signingUrl,
+	});
+	await db
+		.insert(auditEvents)
+		.values({
+			envelopeId: input.envelopeId,
+			recipientId: recipient.id,
+			eventType: "self_sign.prepared",
+			message: input.sender.email,
+		})
+		.returning();
+	return {
+		recipientId: recipient.id,
+		signingUrl,
+		fieldCount: fields.length,
+		fieldPage: fields[0]?.page ?? 1,
+	};
+}
+
 export async function getSelfSignPreparation(
 	envelopeId: string,
 ): Promise<SelfSignPreparation | null> {

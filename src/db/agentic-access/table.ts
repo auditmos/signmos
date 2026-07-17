@@ -77,6 +77,28 @@ export const agenticApiTokens = pgTable(
 	],
 );
 
+export const agenticCommandRecords = pgTable(
+	"agentic_command_records",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		tokenId: uuid("token_id")
+			.notNull()
+			.references(() => agenticApiTokens.id),
+		idempotencyKey: text("idempotency_key").notNull(),
+		operation: text("operation").notNull(),
+		requestFingerprint: text("request_fingerprint").notNull(),
+		state: text("state").notNull().default("pending"),
+		responseStatus: integer("response_status"),
+		responseBody: text("response_body"),
+		documentId: uuid("document_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+	},
+	(table) => [
+		uniqueIndex("agentic_command_records_token_key_unique").on(table.tokenId, table.idempotencyKey),
+	],
+);
+
 export const agenticSecurityEvents = pgTable("agentic_security_events", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	linkId: uuid("link_id").references(() => agenticAccessLinks.id),

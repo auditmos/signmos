@@ -2,6 +2,7 @@ export {
 	agenticAccessLinks,
 	agenticAccessRequests,
 	agenticApiTokens,
+	agenticCommandRecords,
 	agenticEmailRecords,
 	agenticManagementSessions,
 	agenticSecurityEvents,

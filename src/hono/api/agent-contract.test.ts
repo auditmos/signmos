@@ -4,6 +4,19 @@ import {
 	AgentDocumentDetailResponseSchema,
 	AgentDocumentHistoryResponseSchema,
 	AgentDocumentStatusResponseSchema,
+	AgentSelfSignCompleteRequestSchema,
+	AgentSelfSignCompleteResponseSchema,
+	AgentSelfSignCreateRequestSchema,
+	AgentSelfSignCreateResponseSchema,
+	AgentSelfSignDefaultFieldsRequestSchema,
+	AgentSelfSignFieldPlacementRequestSchema,
+	AgentSelfSignFieldPlacementResponseSchema,
+	AgentSelfSignFieldsRequestSchema,
+	AgentSelfSignFieldsResponseSchema,
+	AgentSelfSignTaskResponseSchema,
+	AgentSignatureProfileCreateRequestSchema,
+	AgentSignatureProfileResponseSchema,
+	AgentSourcePdfResponseSchema,
 	AgentV1MeResponseSchema,
 } from "@/db/agentic-access/schema";
 import { publicAgentContractHono } from "@/hono/public-agent-contract";
@@ -125,6 +138,164 @@ describe("agentic onboarding public contract", () => {
 			"Poll document status",
 			"Download a completed PDF",
 			"Revoked, deleted, or unavailable",
+		]) {
+			expect(markdown).toContain(phrase);
+		}
+	});
+
+	it("agent API contract publishes the complete idempotent self-sign workflow", async () => {
+		// Issue #47 contract assumptions before RED:
+		// - Every mutation is named here and requires one Idempotency-Key header.
+		// - Preparation/source reads are Bearer-only but never expose process credentials.
+		// - The public guide is sufficient to run create -> upload -> prepare -> sign -> download.
+		const response = await publicAgentContractHono.request("/openapi.json");
+		const document = (await response.json()) as {
+			paths: Record<string, Record<string, unknown>>;
+		};
+		const operations = [
+			["post", "/api/v1/documents", "createAgentSelfSignDocument", true],
+			["put", "/api/v1/documents/{documentId}/source-pdf", "uploadAgentSourcePdf", true],
+			["get", "/api/v1/documents/{documentId}/source-pdf", "getAgentSourcePdf", false],
+			["get", "/api/v1/documents/{documentId}/source-pdf/content", "downloadAgentSourcePdf", false],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/signature-profiles",
+				"createAgentSignatureProfile",
+				true,
+			],
+			[
+				"get",
+				"/api/v1/documents/{documentId}/signature-profiles/selected",
+				"getAgentSelectedSignatureProfile",
+				false,
+			],
+			["post", "/api/v1/documents/{documentId}/fields", "placeAgentFields", true],
+			["post", "/api/v1/documents/{documentId}/fields/defaults", "placeAgentDefaultFields", true],
+			["get", "/api/v1/documents/{documentId}/signing-task", "getAgentSigningTask", false],
+			[
+				"patch",
+				"/api/v1/documents/{documentId}/fields/{fieldId}",
+				"repositionAgentSigningField",
+				true,
+			],
+			["post", "/api/v1/documents/{documentId}/complete", "completeAgentSelfSigning", true],
+		] as const;
+
+		for (const [method, path, operationId, mutates] of operations) {
+			const operation = document.paths[path]?.[method] as
+				| { operationId?: string; security?: unknown; parameters?: Array<{ name?: string }> }
+				| undefined;
+			expect(operation).toEqual(
+				expect.objectContaining({ operationId, security: [{ bearerAuth: [] }] }),
+			);
+			if (mutates) {
+				expect(operation?.parameters?.map((parameter) => parameter.name)).toContain(
+					"Idempotency-Key",
+				);
+			}
+		}
+		const jsonContracts = [
+			[
+				"post",
+				"/api/v1/documents",
+				"201",
+				AgentSelfSignCreateRequestSchema,
+				AgentSelfSignCreateResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/signature-profiles",
+				"201",
+				AgentSignatureProfileCreateRequestSchema,
+				AgentSignatureProfileResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/fields",
+				"201",
+				AgentSelfSignFieldsRequestSchema,
+				AgentSelfSignFieldsResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/fields/defaults",
+				"201",
+				AgentSelfSignDefaultFieldsRequestSchema,
+				AgentSelfSignFieldsResponseSchema,
+			],
+			[
+				"patch",
+				"/api/v1/documents/{documentId}/fields/{fieldId}",
+				"200",
+				AgentSelfSignFieldPlacementRequestSchema,
+				AgentSelfSignFieldPlacementResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/complete",
+				"200",
+				AgentSelfSignCompleteRequestSchema,
+				AgentSelfSignCompleteResponseSchema,
+			],
+		] as const;
+		for (const [method, path, status, requestSchema, responseSchema] of jsonContracts) {
+			const operation = document.paths[path]?.[method] as {
+				requestBody?: { content?: Record<string, { schema?: unknown }> };
+				responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+			};
+			expect(operation.requestBody?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(requestSchema),
+			);
+			expect(operation.responses?.[status]?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(responseSchema),
+			);
+		}
+		for (const [path, schema] of [
+			["/api/v1/documents/{documentId}/source-pdf", AgentSourcePdfResponseSchema],
+			[
+				"/api/v1/documents/{documentId}/signature-profiles/selected",
+				AgentSignatureProfileResponseSchema,
+			],
+			["/api/v1/documents/{documentId}/signing-task", AgentSelfSignTaskResponseSchema],
+		] as const) {
+			const operation = document.paths[path]?.get as {
+				responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+			};
+			expect(operation.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(schema),
+			);
+		}
+		const upload = document.paths["/api/v1/documents/{documentId}/source-pdf"]?.put as {
+			requestBody?: { content?: Record<string, { schema?: unknown }> };
+			responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+		};
+		expect(upload.requestBody?.content?.["application/pdf"]?.schema).toEqual({
+			type: "string",
+			format: "binary",
+		});
+		expect(upload.responses?.["201"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(AgentSourcePdfResponseSchema),
+		);
+
+		const serialized = JSON.stringify(document);
+		expect(serialized).toContain("IDEMPOTENCY_KEY_REQUIRED");
+		expect(serialized).toContain("IDEMPOTENCY_CONFLICT");
+		expect(serialized).toContain("INVALID_SOURCE_PDF");
+		expect(serialized).toContain("SOURCE_PDF_TOO_LARGE");
+		expect(serialized).toContain("allowedActions");
+		expect(serialized).toContain("recoveryUrl");
+		expect(serialized).not.toMatch(/senderSessionToken|signerToken|x-internal-user-id/);
+
+		const guidance = await publicAgentContractHono.request("/agent.md");
+		const markdown = await guidance.text();
+		for (const phrase of [
+			"Create a self-sign draft",
+			"Upload one source PDF",
+			"Save a signature profile",
+			"Place signature and date fields",
+			"Review and reposition",
+			"Complete self-signing",
+			"Use a fresh Idempotency-Key",
 		]) {
 			expect(markdown).toContain(phrase);
 		}

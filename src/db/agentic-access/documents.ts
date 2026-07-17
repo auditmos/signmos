@@ -102,6 +102,14 @@ export async function recordAgentDocumentRead(input: {
 		| "agentic.document.opened"
 		| "agentic.document.status_read"
 		| "agentic.document.history_read"
+		| "agentic.source_pdf.uploaded"
+		| "agentic.source_pdf.metadata_read"
+		| "agentic.source_pdf.downloaded"
+		| "agentic.signature_profile.created"
+		| "agentic.fields.prepared"
+		| "agentic.signing_task.read"
+		| "agentic.field.repositioned"
+		| "agentic.self_sign.completed"
 		| "agentic.final_pdf.downloaded";
 	requestIp?: string;
 }): Promise<void> {
