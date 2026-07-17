@@ -13,6 +13,7 @@ export async function appendAgenticSecurityEvent(input: {
 		| "agentic.link.redeemed"
 		| "agentic.session.expired"
 		| "agentic.token.created"
+		| "agentic.token.revoked"
 		| "agentic.identity.read";
 	actorType?: "browser" | "agent";
 	requestIp?: string | null;

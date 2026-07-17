@@ -1,11 +1,14 @@
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import {
+	AgenticTokenLimitError,
 	generateAgenticToken,
 	inspectAgenticAccessLink,
+	listAgenticTokens,
 	redeemAgenticAccessLink,
 	requestAgenticAccess,
 	resolveAgenticManagementSession,
+	revokeAgenticToken,
 } from "@/db/agentic-access";
 import { createHono } from "@/hono/factory";
 import { getRequestIp, type SenderStartEnv, verifyTurnstileToken } from "./envelope-route-helpers";
@@ -21,6 +24,7 @@ const AgenticTokenRequestSchema = z.object({
 	acknowledgeFullAuthority: z.literal(true),
 });
 const AgenticLinkCredentialSchema = z.object({ credential: z.string().min(1) });
+const AgenticTokenIdSchema = z.string().uuid();
 
 agenticEndpoint.post("/access-links/inspect", async (c) => {
 	if (c.req.header("origin") !== new URL(c.req.url).origin) {
@@ -198,13 +202,120 @@ agenticEndpoint.post("/tokens", async (c) => {
 			400,
 		);
 	}
-	const generated = await generateAgenticToken({
-		session: sessionState.session,
-		name: parsed.data.name,
-		requestIp: getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
-	});
+	let generated: Awaited<ReturnType<typeof generateAgenticToken>>;
+	try {
+		generated = await generateAgenticToken({
+			session: sessionState.session,
+			name: parsed.data.name,
+			requestIp: getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+		});
+	} catch (error) {
+		if (error instanceof AgenticTokenLimitError) {
+			return c.json(
+				{
+					error: {
+						code: "AGENTIC_TOKEN_LIMIT",
+						message: "Revoke an active token before creating another",
+						limit: error.limit,
+					},
+				},
+				409,
+			);
+		}
+		throw error;
+	}
 	c.header("Cache-Control", "no-store");
 	return c.json({ data: generated }, 201);
+});
+
+agenticEndpoint.get("/tokens", async (c) => {
+	const nowHeader = c.req.header("x-now");
+	const sessionState = await resolveAgenticManagementSession(
+		getCookie(c, "signmos_agentic_management") ?? "",
+		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+	);
+	if (sessionState.state !== "active") {
+		return c.json(
+			{
+				error: {
+					code:
+						sessionState.state === "expired"
+							? "AGENTIC_MANAGEMENT_SESSION_EXPIRED"
+							: "AGENTIC_MANAGEMENT_SESSION_REQUIRED",
+					message: "Verify your email again to manage Agentic tokens",
+					recoveryUrl: "/?task=agentic",
+				},
+			},
+			401,
+		);
+	}
+	c.header("Cache-Control", "no-store");
+	return c.json({ data: await listAgenticTokens(sessionState.session.email) });
+});
+
+agenticEndpoint.delete("/tokens/:tokenId", async (c) => {
+	if (c.req.header("origin") !== new URL(c.req.url).origin) {
+		return c.json(
+			{ error: { code: "INVALID_ORIGIN", message: "Use the Agentic console to continue" } },
+			403,
+		);
+	}
+	const tokenId = AgenticTokenIdSchema.safeParse(c.req.param("tokenId"));
+	if (!tokenId.success) {
+		return c.json(
+			{ error: { code: "INVALID_AGENTIC_TOKEN_ID", message: "A valid token ID is required" } },
+			400,
+		);
+	}
+	const nowHeader = c.req.header("x-now");
+	const now = nowHeader ? new Date(nowHeader) : new Date();
+	const requestIp = getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
+	const sessionState = await resolveAgenticManagementSession(
+		getCookie(c, "signmos_agentic_management") ?? "",
+		now,
+		requestIp,
+	);
+	if (sessionState.state !== "active") {
+		return c.json(
+			{
+				error: {
+					code:
+						sessionState.state === "expired"
+							? "AGENTIC_MANAGEMENT_SESSION_EXPIRED"
+							: "AGENTIC_MANAGEMENT_SESSION_REQUIRED",
+					message: "Verify your email again to manage Agentic tokens",
+					recoveryUrl: "/?task=agentic",
+				},
+			},
+			401,
+		);
+	}
+	const result = await revokeAgenticToken({
+		session: sessionState.session,
+		tokenId: tokenId.data,
+		now,
+		requestIp,
+	});
+	if (result.state !== "revoked") {
+		return c.json(
+			{
+				error: {
+					code:
+						result.state === "not_found"
+							? "AGENTIC_TOKEN_NOT_FOUND"
+							: "AGENTIC_TOKEN_ALREADY_REVOKED",
+					message:
+						result.state === "not_found"
+							? "Agentic token not found"
+							: "Agentic token is already revoked",
+				},
+			},
+			result.state === "not_found" ? 404 : 409,
+		);
+	}
+	c.header("Cache-Control", "no-store");
+	return c.json({ data: { token: result.token } });
 });
 
 export default agenticEndpoint;

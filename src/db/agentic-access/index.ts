@@ -13,4 +13,9 @@ export {
 	agenticManagementSessions,
 	agenticSecurityEvents,
 } from "./table";
-export { generateAgenticToken } from "./token-authority";
+export { AgenticTokenLimitError, generateAgenticToken } from "./token-authority";
+export {
+	type AgenticTokenMetadata,
+	listAgenticTokens,
+	revokeAgenticToken,
+} from "./token-lifecycle";

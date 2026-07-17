@@ -127,6 +127,13 @@
       "when": 1784299743385,
       "tag": "0017_deep_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784301084712,
+      "tag": "0018_past_captain_universe",
+      "breakpoints": true
     }
   ]
 }

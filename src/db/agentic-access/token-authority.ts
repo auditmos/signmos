@@ -1,9 +1,21 @@
+import { and, eq } from "drizzle-orm";
+import { isUniqueViolation } from "@/core/errors";
 import { getDb } from "@/db/setup";
 import { hashAgenticCredential } from "./request";
 import { appendAgenticSecurityEvent } from "./security-audit";
 import { agenticApiTokens } from "./table";
 
 const tokenSecretBytes = 32;
+export const agenticActiveTokenLimit = 5;
+
+export class AgenticTokenLimitError extends Error {
+	readonly limit = agenticActiveTokenLimit;
+
+	constructor() {
+		super("Five active Agentic tokens are already in use");
+		this.name = "AgenticTokenLimitError";
+	}
+}
 
 export interface GeneratedAgenticToken {
 	secret: string;
@@ -21,24 +33,8 @@ export async function generateAgenticToken(input: {
 	requestIp?: string;
 }): Promise<GeneratedAgenticToken> {
 	const name = input.name.trim();
-	const secretBytes = new Uint8Array(tokenSecretBytes);
-	crypto.getRandomValues(secretBytes);
-	const secretSuffix = toBase64Url(secretBytes);
-	const secret = `signmos_${secretSuffix}`;
-	const tokenHash = await hashAgenticCredential(secret);
-	const tokenHint = `signmos_…${secretSuffix.slice(-4)}`;
-	const rows = await getDb()
-		.insert(agenticApiTokens)
-		.values({
-			email: input.session.email,
-			name,
-			tokenHash,
-			tokenHint,
-			status: "active",
-		})
-		.returning();
-	const token = rows[0];
-	if (!token) throw new Error("Agentic token was not created");
+	const generated = await insertIntoAvailableSlot({ email: input.session.email, name });
+	const { secret, token } = generated;
 	await appendAgenticSecurityEvent({
 		sessionId: input.session.id,
 		tokenId: token.id,
@@ -57,6 +53,51 @@ export async function generateAgenticToken(input: {
 			createdAt: token.createdAt.toISOString(),
 		},
 	};
+}
+
+async function insertIntoAvailableSlot(input: { email: string; name: string }) {
+	const db = getDb();
+	for (let attempt = 0; attempt < agenticActiveTokenLimit; attempt += 1) {
+		const rows = await db
+			.select()
+			.from(agenticApiTokens)
+			.where(and(eq(agenticApiTokens.email, input.email), eq(agenticApiTokens.status, "active")))
+			.limit(agenticActiveTokenLimit);
+		const activeTokens = rows.filter(
+			(token) => token.email === input.email && token.status === "active",
+		);
+		if (activeTokens.length >= agenticActiveTokenLimit) throw new AgenticTokenLimitError();
+		const usedSlots = new Set(activeTokens.map((token) => token.activeSlot));
+		const activeSlot = Array.from(
+			{ length: agenticActiveTokenLimit },
+			(_, index) => index + 1,
+		).find((slot) => !usedSlots.has(slot));
+		if (!activeSlot) throw new AgenticTokenLimitError();
+
+		const secretBytes = new Uint8Array(tokenSecretBytes);
+		crypto.getRandomValues(secretBytes);
+		const secretSuffix = toBase64Url(secretBytes);
+		const secret = `signmos_${secretSuffix}`;
+		try {
+			const inserted = await db
+				.insert(agenticApiTokens)
+				.values({
+					email: input.email,
+					name: input.name,
+					tokenHash: await hashAgenticCredential(secret),
+					tokenHint: `signmos_…${secretSuffix.slice(-4)}`,
+					status: "active",
+					activeSlot,
+				})
+				.returning();
+			const token = inserted[0];
+			if (!token) throw new Error("Agentic token was not created");
+			return { secret, token };
+		} catch (error) {
+			if (!isUniqueViolation(error)) throw error;
+		}
+	}
+	throw new AgenticTokenLimitError();
 }
 
 function toBase64Url(bytes: Uint8Array): string {

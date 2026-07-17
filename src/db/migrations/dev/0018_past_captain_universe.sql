@@ -1,0 +1,2 @@
+ALTER TABLE "agentic_api_tokens" ADD COLUMN "active_slot" integer;--> statement-breakpoint
+CREATE UNIQUE INDEX "agentic_api_tokens_email_active_slot_unique" ON "agentic_api_tokens" USING btree ("email","active_slot");

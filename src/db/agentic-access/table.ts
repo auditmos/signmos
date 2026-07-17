@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const agenticAccessLinks = pgTable(
 	"agentic_access_links",
@@ -66,11 +66,15 @@ export const agenticApiTokens = pgTable(
 		tokenHash: text("token_hash").notNull(),
 		tokenHint: text("token_hint").notNull(),
 		status: text("status").notNull().default("active"),
+		activeSlot: integer("active_slot"),
 		lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
 		revokedAt: timestamp("revoked_at", { withTimezone: true }),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [uniqueIndex("agentic_api_tokens_token_hash_unique").on(table.tokenHash)],
+	(table) => [
+		uniqueIndex("agentic_api_tokens_token_hash_unique").on(table.tokenHash),
+		uniqueIndex("agentic_api_tokens_email_active_slot_unique").on(table.email, table.activeSlot),
+	],
 );
 
 export const agenticSecurityEvents = pgTable("agentic_security_events", {
