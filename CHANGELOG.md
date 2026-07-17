@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/auditmos/signmos/compare/v1.0.0...v1.1.0) (2026-07-17)
+
+
+### Features
+
+* add Agentic token lifecycle management ([#45](https://github.com/auditmos/signmos/issues/45)) ([a60b780](https://github.com/auditmos/signmos/commit/a60b7807669a01ea6735a6b6bfc1938109b2c8d3))
+
 # 1.0.0 (2026-07-17)
 
 
