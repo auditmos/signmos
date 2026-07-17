@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/auditmos/signmos/compare/v1.1.0...v1.2.0) (2026-07-17)
+
+
+### Features
+
+* add Agentic read-only document API ([#46](https://github.com/auditmos/signmos/issues/46)) ([005dde6](https://github.com/auditmos/signmos/commit/005dde643215a272fe05081a46866590258a3952))
+
 # [1.1.0](https://github.com/auditmos/signmos/compare/v1.0.0...v1.1.0) (2026-07-17)
 
 
