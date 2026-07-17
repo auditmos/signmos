@@ -1,26 +1,15 @@
 import { useForm } from "@tanstack/react-form";
 import { Send } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { HistoryRequestForm } from "@/components/history/history-request-form";
+import { readTurnstileToken, TurnstileWidget } from "@/components/turnstile-widget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const turnstileScriptUrl = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-
-type TurnstileApi = {
-	render: (container: HTMLElement, options: { sitekey: string }) => string | undefined;
-	remove?: (widgetId: string) => void;
-};
-
-declare global {
-	interface Window {
-		turnstile?: TurnstileApi;
-	}
-}
-
 interface StartEnvelopePageProps {
+	initialTask?: "my_documents";
 	turnstileSiteKey?: string;
 	testTurnstileToken?: string;
 }
@@ -70,10 +59,11 @@ type SenderStartError = {
 };
 
 export function StartEnvelopePage({
+	initialTask,
 	turnstileSiteKey,
 	testTurnstileToken = "",
 }: StartEnvelopePageProps) {
-	const [activeTask, setActiveTask] = useState<LandingTask | null>(null);
+	const [activeTask, setActiveTask] = useState<LandingTask | null>(initialTask ?? null);
 	const [state, setState] = useState<StartState>({ status: "idle" });
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 	const pendingTurnstileTokenRef = useRef("");
@@ -153,6 +143,8 @@ export function StartEnvelopePage({
 					activeTask={activeTask}
 					onBack={() => setActiveTask(null)}
 					onChoose={chooseTask}
+					turnstileSiteKey={activeTurnstileSiteKey}
+					testTurnstileToken={activeTestTurnstileToken}
 				>
 					<form
 						aria-label="Start envelope"
@@ -242,14 +234,26 @@ function LandingTaskPanel({
 	children,
 	onBack,
 	onChoose,
+	turnstileSiteKey,
+	testTurnstileToken,
 }: {
 	activeTask: LandingTask | null;
 	children: ReactNode;
 	onBack: () => void;
 	onChoose: (task: LandingTask) => void;
+	turnstileSiteKey: string;
+	testTurnstileToken: string;
 }) {
 	if (activeTask === null) return <LandingTaskChooser onChoose={onChoose} />;
-	if (activeTask === "my_documents") return <HistoryRequestForm onBack={onBack} />;
+	if (activeTask === "my_documents") {
+		return (
+			<HistoryRequestForm
+				onBack={onBack}
+				turnstileSiteKey={turnstileSiteKey}
+				testTurnstileToken={testTurnstileToken}
+			/>
+		);
+	}
 	return children;
 }
 
@@ -268,54 +272,6 @@ function LandingTaskChooser({ onChoose }: { onChoose: (task: LandingTask) => voi
 			</Button>
 		</fieldset>
 	);
-}
-
-function TurnstileWidget({ siteKey }: { siteKey: string }) {
-	const containerRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) return;
-		let disposed = false;
-		let widgetId: string | undefined;
-		const renderTurnstile = () => {
-			if (disposed || widgetId || !window.turnstile) return;
-			widgetId = window.turnstile.render(container, { sitekey: siteKey });
-		};
-		const script = getOrCreateTurnstileScript();
-		script.addEventListener("load", renderTurnstile);
-		renderTurnstile();
-		return () => {
-			disposed = true;
-			script.removeEventListener("load", renderTurnstile);
-			if (widgetId) window.turnstile?.remove?.(widgetId);
-		};
-	}, [siteKey]);
-
-	return (
-		<div className="min-h-16">
-			<div ref={containerRef} className="cf-turnstile" />
-		</div>
-	);
-}
-
-function getOrCreateTurnstileScript(): HTMLScriptElement {
-	const existingScript = document.querySelector<HTMLScriptElement>(
-		`script[src="${turnstileScriptUrl}"]`,
-	);
-	if (existingScript) return existingScript;
-
-	const script = document.createElement("script");
-	script.src = turnstileScriptUrl;
-	script.async = true;
-	script.defer = true;
-	document.head.appendChild(script);
-	return script;
-}
-
-function readTurnstileToken(widgetToken: FormDataEntryValue | null, fallbackToken: string): string {
-	const completedWidgetToken = typeof widgetToken === "string" ? widgetToken.trim() : "";
-	return completedWidgetToken || fallbackToken;
 }
 
 function isSenderStartSuccess(value: unknown): value is SenderStartSuccess {

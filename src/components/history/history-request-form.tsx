@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useMemo } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { readTurnstileToken, TurnstileWidget } from "@/components/turnstile-widget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,32 +9,67 @@ import { Label } from "@/components/ui/label";
 
 interface HistoryRequestFormProps {
 	onBack: () => void;
+	turnstileSiteKey: string;
+	testTurnstileToken: string;
 }
 
-export function HistoryRequestForm({ onBack }: HistoryRequestFormProps) {
-	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
+export function HistoryRequestForm({
+	onBack,
+	turnstileSiteKey,
+	testTurnstileToken,
+}: HistoryRequestFormProps) {
+	const [initialIdempotencyKey] = useState(() => crypto.randomUUID());
+	const idempotencyKeyRef = useRef(initialIdempotencyKey);
+	const emailInputRef = useRef<HTMLInputElement>(null);
+	const acceptedStatusRef = useRef<HTMLDivElement>(null);
+	const pendingTurnstileTokenRef = useRef("");
+	const [turnstileError, setTurnstileError] = useState("");
+	const hasTurnstileConfig = Boolean(turnstileSiteKey || testTurnstileToken);
 	const requestMutation = useMutation({
-		mutationFn: async (email: string) => {
+		mutationFn: async (input: { email: string; turnstileToken: string }) => {
+			const idempotencyKey = idempotencyKeyRef.current;
 			const response = await fetch("/api/history/access-requests", {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
 					"idempotency-key": idempotencyKey,
 				},
-				body: JSON.stringify({ email }),
+				body: JSON.stringify(input),
 			});
 			if (!response.ok) throw new Error("Unable to request My documents access");
+			idempotencyKeyRef.current = crypto.randomUUID();
 			return response;
 		},
 	});
 	const form = useForm({
 		defaultValues: { email: "" },
-		onSubmit: ({ value }) => requestMutation.mutate(value.email),
+		onSubmit: ({ value }) =>
+			requestMutation.mutate({
+				email: value.email,
+				turnstileToken: pendingTurnstileTokenRef.current,
+			}),
 	});
+
+	useEffect(() => {
+		if (requestMutation.isSuccess) acceptedStatusRef.current?.focus();
+	}, [requestMutation.isSuccess]);
 
 	function submitForm(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		void form.handleSubmit();
+		const formData = new FormData(event.currentTarget);
+		const turnstileToken = readTurnstileToken(
+			formData.get("cf-turnstile-response"),
+			testTurnstileToken,
+		);
+		if (!turnstileToken) {
+			setTurnstileError("Complete the Turnstile challenge before requesting access.");
+			return;
+		}
+		setTurnstileError("");
+		pendingTurnstileTokenRef.current = turnstileToken;
+		void form.handleSubmit().then(() => {
+			if (!isValidEmail(form.state.values.email)) emailInputRef.current?.focus();
+		});
 	}
 
 	return (
@@ -42,11 +78,18 @@ export function HistoryRequestForm({ onBack }: HistoryRequestFormProps) {
 			onSubmit={submitForm}
 			className="space-y-5 rounded-lg border bg-card p-5 shadow-sm"
 		>
-			<form.Field name="email">
+			<form.Field
+				name="email"
+				validators={{
+					onSubmit: ({ value }) =>
+						isValidEmail(value) ? undefined : "Enter a valid email address",
+				}}
+			>
 				{(field) => (
 					<div className="space-y-2">
 						<Label htmlFor="history-email">Email</Label>
 						<Input
+							ref={emailInputRef}
 							id="history-email"
 							name={field.name}
 							type="email"
@@ -54,17 +97,41 @@ export function HistoryRequestForm({ onBack }: HistoryRequestFormProps) {
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
-							required
+							aria-invalid={field.state.meta.errors.length > 0}
+							aria-describedby={
+								field.state.meta.errors.length > 0 ? "history-email-error" : undefined
+							}
 						/>
+						{field.state.meta.errors.length > 0 ? (
+							<p id="history-email-error" role="alert" className="text-sm text-destructive">
+								Enter a valid email address
+							</p>
+						) : null}
 					</div>
 				)}
 			</form.Field>
 
+			{turnstileSiteKey ? <TurnstileWidget siteKey={turnstileSiteKey} /> : null}
+			{!hasTurnstileConfig ? (
+				<Alert role="alert" variant="destructive">
+					<AlertTitle>Turnstile is not configured</AlertTitle>
+					<AlertDescription>Secure document access is unavailable right now.</AlertDescription>
+				</Alert>
+			) : null}
+			{turnstileError ? (
+				<Alert role="alert" variant="destructive">
+					<AlertTitle>Complete the security check</AlertTitle>
+					<AlertDescription>{turnstileError}</AlertDescription>
+				</Alert>
+			) : null}
+
 			{requestMutation.isSuccess ? (
-				<Alert role="status">
+				<Alert ref={acceptedStatusRef} role="status" tabIndex={-1}>
 					<AlertTitle>Check your email</AlertTitle>
 					<AlertDescription>
-						If documents match this address, a secure access link is on its way.
+						If eligible documents are associated with that address, a secure link is on its way.
+						Check the spelling, look in spam, or try another email address. Completed and expired
+						documents are retained for 90 days unless deleted earlier.
 					</AlertDescription>
 				</Alert>
 			) : null}
@@ -76,7 +143,7 @@ export function HistoryRequestForm({ onBack }: HistoryRequestFormProps) {
 			) : null}
 
 			<div className="flex flex-wrap gap-3">
-				<Button type="submit" disabled={requestMutation.isPending}>
+				<Button type="submit" disabled={requestMutation.isPending || !hasTurnstileConfig}>
 					{requestMutation.isPending ? "Requesting..." : "Email me a secure link"}
 				</Button>
 				<Button type="button" variant="outline" onClick={onBack}>
@@ -85,4 +152,8 @@ export function HistoryRequestForm({ onBack }: HistoryRequestFormProps) {
 			</div>
 		</form>
 	);
+}
+
+function isValidEmail(value: string): boolean {
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }

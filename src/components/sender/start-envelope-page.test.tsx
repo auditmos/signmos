@@ -65,7 +65,7 @@ describe("StartEnvelopePage", () => {
 				"content-type": "application/json",
 				"idempotency-key": "form-idempotency-key",
 			},
-			body: JSON.stringify({ email: "owner@example.com" }),
+			body: JSON.stringify({ email: "owner@example.com", turnstileToken: "test-pass" }),
 		});
 		expect((await screen.findByRole("status")).textContent).toContain("Check your email");
 		expect(screen.getByRole("button", { name: "Back to task choices" })).toBeTruthy();

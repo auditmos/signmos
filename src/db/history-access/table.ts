@@ -16,6 +16,20 @@ export const historyAccessLinks = pgTable(
 	(table) => [uniqueIndex("history_access_links_credential_hash_unique").on(table.credentialHash)],
 );
 
+export const historyAccessRequests = pgTable(
+	"history_access_requests",
+	{
+		id: uuid("id").defaultRandom().primaryKey(),
+		idempotencyKey: text("idempotency_key").notNull(),
+		email: text("email").notNull(),
+		linkId: uuid("link_id").references(() => historyAccessLinks.id),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		uniqueIndex("history_access_requests_idempotency_key_unique").on(table.idempotencyKey),
+	],
+);
+
 export const historyEmailRecords = pgTable("history_email_records", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	linkId: uuid("link_id")
@@ -44,3 +58,13 @@ export const historySessions = pgTable(
 	},
 	(table) => [uniqueIndex("history_sessions_session_hash_unique").on(table.sessionHash)],
 );
+
+export const historySecurityEvents = pgTable("history_security_events", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	linkId: uuid("link_id").references(() => historyAccessLinks.id),
+	sessionId: uuid("session_id").references(() => historySessions.id),
+	email: text("email").notNull(),
+	eventType: text("event_type").notNull(),
+	requestIp: text("request_ip"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

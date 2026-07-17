@@ -1,8 +1,19 @@
-import { envelopeRecipients, envelopes, finalDocuments } from "@/db/envelope";
-import { historyAccessLinks, historyEmailRecords, historySessions } from "@/db/history-access";
+import { envelopeRecipients, envelopes, finalDocuments, rateLimitRecords } from "@/db/envelope";
+import {
+	historyAccessLinks,
+	historyAccessRequests,
+	historyEmailRecords,
+	historySecurityEvents,
+	historySessions,
+} from "@/db/history-access";
 import { apiHono } from "@/hono/api";
 
 const completedEnvelopeId = "00000000-0000-4000-8000-000000000001";
+const historyTestEnv = {
+	APP_BASE_URL: "http://localhost",
+	CLOUDFLARE_ENV: "development",
+	TURNSTILE_TEST_BYPASS: "true",
+};
 
 const state = vi.hoisted(() => ({
 	envelopesTable: null as unknown,
@@ -11,12 +22,18 @@ const state = vi.hoisted(() => ({
 	historyLinksTable: null as unknown,
 	historyEmailRecordsTable: null as unknown,
 	historySessionsTable: null as unknown,
+	historyRequestsTable: null as unknown,
+	historySecurityEventsTable: null as unknown,
+	rateLimitRecordsTable: null as unknown,
 	envelopes: [] as Array<Record<string, unknown>>,
 	recipients: [] as Array<Record<string, unknown>>,
 	finalDocuments: [] as Array<Record<string, unknown>>,
 	historyLinks: [] as Array<Record<string, unknown>>,
 	historyEmailRecords: [] as Array<Record<string, unknown>>,
 	historySessions: [] as Array<Record<string, unknown>>,
+	historyRequests: [] as Array<Record<string, unknown>>,
+	historySecurityEvents: [] as Array<Record<string, unknown>>,
+	rateLimitRecords: [] as Array<Record<string, unknown>>,
 	insertedLinkStatuses: [] as string[],
 }));
 
@@ -27,6 +44,9 @@ function selectRows(table: unknown): Array<Record<string, unknown>> {
 	if (table === state.historyLinksTable) return state.historyLinks;
 	if (table === state.historyEmailRecordsTable) return state.historyEmailRecords;
 	if (table === state.historySessionsTable) return state.historySessions;
+	if (table === state.historyRequestsTable) return state.historyRequests;
+	if (table === state.historySecurityEventsTable) return state.historySecurityEvents;
+	if (table === state.rateLimitRecordsTable) return state.rateLimitRecords;
 	return [];
 }
 
@@ -34,14 +54,7 @@ function insertRows(
 	table: unknown,
 	rows: Array<Record<string, unknown>>,
 ): Array<Record<string, unknown>> {
-	const target =
-		table === state.historyLinksTable
-			? state.historyLinks
-			: table === state.historyEmailRecordsTable
-				? state.historyEmailRecords
-				: table === state.historySessionsTable
-					? state.historySessions
-					: [];
+	const target = selectRows(table);
 	if (table === state.historyLinksTable) {
 		state.insertedLinkStatuses.push(...rows.map((row) => String(row.status)));
 	}
@@ -58,8 +71,22 @@ function updateRows(
 	table: unknown,
 	values: Record<string, unknown>,
 ): Array<Record<string, unknown>> {
+	if (table === state.historyRequestsTable) {
+		const request = [...state.historyRequests].reverse().find((row) => row.linkId == null);
+		if (!request) return [];
+		Object.assign(request, values);
+		return [request];
+	}
 	if (table !== state.historyLinksTable) return [];
 	const targetStatus = String(values.status);
+	if (targetStatus === "revoked") {
+		const eligible = state.historyLinks.filter(
+			(row) => row.status === "active" || row.status === "pending",
+		);
+		if (eligible.length <= 1) return [];
+		Object.assign(eligible[0] ?? {}, values);
+		return eligible[0] ? [eligible[0]] : [];
+	}
 	const eligibleIndex = state.historyLinks.findIndex((row) => {
 		if (targetStatus === "active") return row.status === "pending";
 		if (targetStatus === "consumed") {
@@ -89,15 +116,26 @@ vi.mock("@/db/setup", () => ({
 			}),
 		}),
 		insert: (table: unknown) => ({
-			values: (rows: Array<Record<string, unknown>> | Record<string, unknown>) => ({
-				returning: async () => insertRows(table, Array.isArray(rows) ? rows : [rows]),
-			}),
+			values: (rows: Array<Record<string, unknown>> | Record<string, unknown>) => {
+				const input = Array.isArray(rows) ? rows : [rows];
+				const run = async () => insertRows(table, input);
+				return {
+					returning: run,
+					execute: run,
+					onConflictDoNothing: () => ({ returning: run }),
+				};
+			},
 		}),
 		update: (table: unknown) => ({
 			set: (values: Record<string, unknown>) => ({
-				where: () => ({ returning: async () => updateRows(table, values) }),
+				where: () => {
+					const run = async () => updateRows(table, values);
+					return { returning: run, execute: run };
+				},
 			}),
 		}),
+		batch: async (queries: Array<{ execute: () => Promise<unknown> }>) =>
+			Promise.all(queries.map((query) => query.execute())),
 	}),
 }));
 
@@ -109,6 +147,9 @@ describe("history access tracer", () => {
 		state.historyLinksTable = historyAccessLinks;
 		state.historyEmailRecordsTable = historyEmailRecords;
 		state.historySessionsTable = historySessions;
+		state.historyRequestsTable = historyAccessRequests;
+		state.historySecurityEventsTable = historySecurityEvents;
+		state.rateLimitRecordsTable = rateLimitRecords;
 		state.envelopes = [
 			{
 				id: completedEnvelopeId,
@@ -144,27 +185,30 @@ describe("history access tracer", () => {
 		state.historyLinks = [];
 		state.historyEmailRecords = [];
 		state.historySessions = [];
+		state.historyRequests = [];
+		state.historySecurityEvents = [];
+		state.rateLimitRecords = [];
 		state.insertedLinkStatuses = [];
 	});
 
 	it("issues one hashed completed-document access link and metadata-free email", async () => {
-		// Issue #37 assumptions before RED:
-		// - This tracer handles only a matching retained completed document.
-		// - The link starts pending and becomes active after the delivery boundary accepts it.
-		// - Raw credentials are restricted to delivery and an explicit non-production debug surface.
-		// - Turnstile, rate limits, unmatched parity, and delivery failures belong to issue #38.
+		// Issue #37 RED: matching creates hashed pending-then-active access; raw stays in delivery/debug.
 		const response = await apiHono.request(
 			"/api/history/access-requests",
 			{
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"idempotency-key": "history-request-key",
 					"x-now": "2026-07-17T08:00:00.000Z",
 					"x-signmos-debug": "history-access-link",
 				},
-				body: JSON.stringify({ email: " OWNER@EXAMPLE.COM " }),
+				body: JSON.stringify({
+					email: " OWNER@EXAMPLE.COM ",
+					turnstileToken: "test-pass",
+				}),
 			},
-			{ APP_BASE_URL: "http://localhost", CLOUDFLARE_ENV: "development" },
+			historyTestEnv,
 		);
 
 		expect(response.status).toBe(202);
@@ -196,45 +240,21 @@ describe("history access tracer", () => {
 		expect(JSON.stringify(state.historyEmailRecords)).not.toContain(rawCredential);
 	});
 
-	it("keeps the incomplete tracer request boundary disabled in production", async () => {
-		const response = await apiHono.request(
-			"/api/history/access-requests",
-			{
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ email: "owner@example.com" }),
-			},
-			{ APP_BASE_URL: "https://signmos.example", CLOUDFLARE_ENV: "production" },
-		);
-
-		expect(response.status).toBe(404);
-		await expect(response.json()).resolves.toEqual({
-			error: {
-				code: "HISTORY_ACCESS_NOT_AVAILABLE",
-				message: "My documents access is not available in this environment",
-			},
-		});
-		expect(state.historyLinks).toEqual([]);
-		expect(state.historyEmailRecords).toEqual([]);
-	});
-
 	it("renders repeated link confirmation reads without consuming the credential", async () => {
-		// Issue #37 assumptions before RED:
-		// - GET is an inspection-only boundary for email security scanners and browser previews.
-		// - A valid active link renders confirmation without producing a session.
-		// - Confirmation prevents the raw URL from propagating through the Referrer header.
+		// Issue #37 RED: GET is scanner-safe, creates no session, and sets no-referrer.
 		const requestResponse = await apiHono.request(
 			"/api/history/access-requests",
 			{
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"idempotency-key": "history-request-key",
 					"x-now": "2026-07-17T08:00:00.000Z",
 					"x-signmos-debug": "history-access-link",
 				},
-				body: JSON.stringify({ email: "owner@example.com" }),
+				body: JSON.stringify({ email: "owner@example.com", turnstileToken: "test-pass" }),
 			},
-			{ APP_BASE_URL: "http://localhost", CLOUDFLARE_ENV: "development" },
+			historyTestEnv,
 		);
 		const requestBody = (await requestResponse.json()) as {
 			data: { debug: { accessUrl: string } };
@@ -267,12 +287,13 @@ describe("history access tracer", () => {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"idempotency-key": "history-request-key",
 					"x-now": "2026-07-17T08:00:00.000Z",
 					"x-signmos-debug": "history-access-link",
 				},
-				body: JSON.stringify({ email: "owner@example.com" }),
+				body: JSON.stringify({ email: "owner@example.com", turnstileToken: "test-pass" }),
 			},
-			{ APP_BASE_URL: "http://localhost", CLOUDFLARE_ENV: "development" },
+			historyTestEnv,
 		);
 		const requestBody = (await requestResponse.json()) as {
 			data: { debug: { accessUrl: string } };
@@ -295,23 +316,20 @@ describe("history access tracer", () => {
 	});
 
 	it("atomically redeems one link into one hashed fixed-expiry session", async () => {
-		// Issue #37 assumptions before RED:
-		// - Redemption requires an intentional same-origin POST.
-		// - One conditional link update is the atomic replay/concurrency boundary.
-		// - The raw session credential exists only in the response cookie.
-		// - The session lifetime is fixed at eight hours from successful redemption.
+		// Issue #37 RED: same-origin POST consumes once; raw stays cookie-only for a fixed eight hours.
 		const requestResponse = await apiHono.request(
 			"/api/history/access-requests",
 			{
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"idempotency-key": "history-request-key",
 					"x-now": "2026-07-17T08:00:00.000Z",
 					"x-signmos-debug": "history-access-link",
 				},
-				body: JSON.stringify({ email: "owner@example.com" }),
+				body: JSON.stringify({ email: "owner@example.com", turnstileToken: "test-pass" }),
 			},
-			{ APP_BASE_URL: "http://localhost", CLOUDFLARE_ENV: "development" },
+			historyTestEnv,
 		);
 		const requestBody = (await requestResponse.json()) as {
 			data: { debug: { accessUrl: string } };
@@ -366,10 +384,7 @@ describe("history access tracer", () => {
 	});
 
 	it("lists only session-authorized completed documents and rejects unrelated identifiers", async () => {
-		// Issue #37 assumptions before RED:
-		// - The minimal tracer catalog contains completed envelopes only.
-		// - Creator or recipient email involvement grants read access; unrelated identity does not.
-		// - History URLs use the envelope id plus the HTTP-only session and expose no process token.
+		// Issue #37 RED: completed participant rows require a session and expose no process token.
 		const unrelatedEnvelopeId = "00000000-0000-4000-8000-000000000099";
 		const recipientEnvelopeId = "00000000-0000-4000-8000-000000000050";
 		state.envelopes.push({
@@ -422,12 +437,13 @@ describe("history access tracer", () => {
 				method: "POST",
 				headers: {
 					"content-type": "application/json",
+					"idempotency-key": "history-request-key",
 					"x-now": "2026-07-17T08:00:00.000Z",
 					"x-signmos-debug": "history-access-link",
 				},
-				body: JSON.stringify({ email: "owner@example.com" }),
+				body: JSON.stringify({ email: "owner@example.com", turnstileToken: "test-pass" }),
 			},
-			{ APP_BASE_URL: "http://localhost", CLOUDFLARE_ENV: "development" },
+			historyTestEnv,
 		);
 		const requestBody = (await requestResponse.json()) as {
 			data: { debug: { accessUrl: string } };

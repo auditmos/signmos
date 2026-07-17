@@ -320,7 +320,7 @@ describe("sender start API", () => {
 			{ CLOUDFLARE_ENV: "production", TURNSTILE_TEST_BYPASS: "true" },
 		);
 
-		expect(productionDebug.status).toBe(201);
+		expect(productionDebug.status).toBe(403);
 		expect(JSON.stringify(await productionDebug.json())).not.toContain("/sender-verifications/");
 	});
 

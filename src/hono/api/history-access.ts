@@ -1,23 +1,33 @@
-import { getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { z } from "zod";
 import {
 	authorizeMinimalHistoryDocument,
 	getHistoryCompletedDocumentView,
 	getHistoryFinalDocument,
+	HistoryRequestRateLimitError,
 	inspectHistoryAccessLink,
 	listMinimalHistoryDocuments,
 	redeemHistoryAccessLink,
 	requestHistoryAccess,
 	resolveHistorySession,
+	resolveHistorySessionState,
+	revokeHistorySession,
 } from "@/db/history-access";
 import { createHono } from "@/hono/factory";
+import { getRequestIp, type SenderStartEnv, verifyTurnstileToken } from "./envelope-route-helpers";
 
 const historyAccessEndpoint = createHono();
+const HistoryAccessRequestSchema = z.object({
+	email: z.string().trim().toLowerCase().email(),
+	turnstileToken: z.string().min(1),
+});
 
 historyAccessEndpoint.get("/access-links/:credential", async (c) => {
 	const nowHeader = c.req.header("x-now");
 	const inspection = await inspectHistoryAccessLink(
 		c.req.param("credential"),
 		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
 	c.header("Referrer-Policy", "no-referrer");
 	return c.json({ data: inspection });
@@ -34,6 +44,7 @@ historyAccessEndpoint.post("/access-links/:credential/redeem", async (c) => {
 	const result = await redeemHistoryAccessLink(
 		c.req.param("credential"),
 		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
 	if (result.status !== "authenticated") {
 		const errors = {
@@ -62,19 +73,62 @@ historyAccessEndpoint.post("/access-links/:credential/redeem", async (c) => {
 	return c.json({ data: { status: result.status, redirectUrl: "/my-documents" } }, 201);
 });
 
-historyAccessEndpoint.get("/documents", async (c) => {
+historyAccessEndpoint.post("/session/sign-out", async (c) => {
+	if (c.req.header("origin") !== new URL(c.req.url).origin) {
+		return c.json(
+			{ error: { code: "INVALID_ORIGIN", message: "Use My documents to sign out" } },
+			403,
+		);
+	}
 	const nowHeader = c.req.header("x-now");
-	const session = await resolveHistorySession(
+	await revokeHistorySession(
 		getCookie(c, "signmos_history_session") ?? "",
 		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
-	if (!session) {
+	deleteCookie(c, "signmos_history_session", {
+		path: "/",
+		secure: true,
+		httpOnly: true,
+		sameSite: "Lax",
+	});
+	return c.body(null, 204);
+});
+
+historyAccessEndpoint.get("/documents", async (c) => {
+	const nowHeader = c.req.header("x-now");
+	const sessionState = await resolveHistorySessionState(
+		getCookie(c, "signmos_history_session") ?? "",
+		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+	);
+	if (sessionState.state !== "active") {
+		if (sessionState.state === "expired") {
+			return c.json(
+				{
+					error: {
+						code: "HISTORY_SESSION_EXPIRED",
+						message: "Your My documents session expired",
+						recoveryUrl: "/?task=my-documents",
+					},
+				},
+				401,
+			);
+		}
 		return c.json(
-			{ error: { code: "HISTORY_SESSION_REQUIRED", message: "Request a new My documents link" } },
+			{
+				error: {
+					code: "HISTORY_SESSION_REQUIRED",
+					message: "Request a new My documents link",
+					recoveryUrl: "/?task=my-documents",
+				},
+			},
 			401,
 		);
 	}
-	return c.json({ data: { documents: await listMinimalHistoryDocuments(session.email) } });
+	return c.json({
+		data: { documents: await listMinimalHistoryDocuments(sessionState.session.email) },
+	});
 });
 
 historyAccessEndpoint.get("/documents/:envelopeId", async (c) => {
@@ -152,32 +206,75 @@ historyAccessEndpoint.get("/documents/:envelopeId/pdf", async (c) => {
 });
 
 historyAccessEndpoint.post("/access-requests", async (c) => {
-	if (c.env.CLOUDFLARE_ENV === "production") {
+	const body: unknown = await c.req.json().catch(() => null);
+	const parsed = HistoryAccessRequestSchema.safeParse(body);
+	if (!parsed.success) {
 		return c.json(
 			{
 				error: {
-					code: "HISTORY_ACCESS_NOT_AVAILABLE",
-					message: "My documents access is not available in this environment",
+					code: "INVALID_HISTORY_ACCESS_REQUEST",
+					message: "A valid email and Turnstile token are required",
+					fields: ["email", "turnstileToken"],
 				},
 			},
-			404,
+			400,
 		);
 	}
-	const body: unknown = await c.req.json().catch(() => null);
-	if (!body || typeof body !== "object" || !("email" in body) || typeof body.email !== "string") {
-		return c.json({ error: { code: "INVALID_EMAIL", message: "A valid email is required" } }, 400);
+	const requestIp = getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
+	const turnstilePassed = await verifyTurnstileToken({
+		env: (c.env ?? {}) as SenderStartEnv,
+		token: parsed.data.turnstileToken,
+		ip: requestIp,
+	});
+	if (!turnstilePassed) {
+		return c.json(
+			{ error: { code: "TURNSTILE_FAILED", message: "Turnstile verification failed" } },
+			403,
+		);
 	}
 	const nowHeader = c.req.header("x-now");
-	const result = await requestHistoryAccess(body.email, {
-		emailDelivery: {
-			env: c.env,
-			baseUrl: new URL(c.req.url).origin,
-		},
-		now: nowHeader ? new Date(nowHeader) : undefined,
-	});
+	const idempotencyKey = c.req.header("idempotency-key")?.trim();
+	if (!idempotencyKey) {
+		return c.json(
+			{
+				error: {
+					code: "IDEMPOTENCY_KEY_REQUIRED",
+					message: "An Idempotency-Key header is required",
+				},
+			},
+			400,
+		);
+	}
+	let result: Awaited<ReturnType<typeof requestHistoryAccess>>;
+	try {
+		result = await requestHistoryAccess(parsed.data.email, {
+			emailDelivery: {
+				env: c.env,
+				baseUrl: new URL(c.req.url).origin,
+			},
+			idempotencyKey,
+			requestIp,
+			now: nowHeader ? new Date(nowHeader) : undefined,
+		});
+	} catch (error) {
+		if (error instanceof HistoryRequestRateLimitError) {
+			return c.json(
+				{
+					error: {
+						code: "RATE_LIMITED",
+						message: "Too many My documents access requests",
+						scope: error.scope,
+						resetAt: error.resetAt.toISOString(),
+					},
+				},
+				429,
+			);
+		}
+		throw error;
+	}
 	const exposeDebugLink =
 		c.req.header("x-signmos-debug") === "history-access-link" &&
-		c.env.CLOUDFLARE_ENV !== "production" &&
+		(c.env as Env | undefined)?.CLOUDFLARE_ENV !== "production" &&
 		result.accessUrl;
 
 	return c.json(

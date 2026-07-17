@@ -7,7 +7,7 @@ import {
 	finalDocuments,
 	signerTokens,
 } from "@/db/envelope";
-import { hashHistoryCredential, historySessions } from "@/db/history-access";
+import { hashHistoryCredential, historySecurityEvents, historySessions } from "@/db/history-access";
 import { apiHono } from "@/hono/api";
 
 const envelopeId = "00000000-0000-4000-8000-000000000001";
@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
 	recipients: [] as Array<Record<string, unknown>>,
 	finalDocuments: [] as Array<Record<string, unknown>>,
 	sessions: [] as Array<Record<string, unknown>>,
+	securityEvents: [] as Array<Record<string, unknown>>,
 	r2Objects: new Map<string, Uint8Array>(),
 }));
 
@@ -40,6 +41,29 @@ vi.mock("@/db/setup", () => ({
 				limit: async () => selectRows(table),
 			}),
 		}),
+		update: (table: unknown) => ({
+			set: (values: Record<string, unknown>) => ({
+				where: () => ({
+					returning: async () => {
+						if (table !== state.tables.get("sessions")) return [];
+						const session = state.sessions.find((candidate) => candidate.status === "active");
+						if (!session) return [];
+						Object.assign(session, values);
+						return [session];
+					},
+				}),
+			}),
+		}),
+		insert: (table: unknown) => ({
+			values: (row: Record<string, unknown>) => ({
+				returning: async () => {
+					if (table !== state.tables.get("securityEvents")) return [];
+					const inserted = { id: crypto.randomUUID(), ...row };
+					state.securityEvents.push(inserted);
+					return [inserted];
+				},
+			}),
+		}),
 	}),
 }));
 
@@ -50,6 +74,7 @@ describe("history completed-document gateway", () => {
 			["recipients", envelopeRecipients],
 			["finalDocuments", finalDocuments],
 			["sessions", historySessions],
+			["securityEvents", historySecurityEvents],
 			["fields", envelopeFields],
 			["fieldValues", fieldValues],
 			["auditEvents", auditEvents],
@@ -100,6 +125,7 @@ describe("history completed-document gateway", () => {
 				createdAt: new Date("2026-07-17T08:29:59.000Z"),
 			},
 		];
+		state.securityEvents = [];
 		state.r2Objects = new Map([[finalR2Key, finalPdf]]);
 	});
 
@@ -169,8 +195,9 @@ describe("history completed-document gateway", () => {
 			expect(response.status).toBe(401);
 			await expect(response.json()).resolves.toEqual({
 				error: {
-					code: "HISTORY_SESSION_REQUIRED",
-					message: "Request a new My documents link",
+					code: "HISTORY_SESSION_EXPIRED",
+					message: "Your My documents session expired",
+					recoveryUrl: "/?task=my-documents",
 				},
 			});
 		}

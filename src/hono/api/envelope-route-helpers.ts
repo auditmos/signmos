@@ -60,7 +60,11 @@ export async function verifyTurnstileToken(input: {
 	token: string;
 	ip: string;
 }): Promise<boolean> {
-	if (input.env.TURNSTILE_TEST_BYPASS === "true" && input.token === "test-pass") {
+	if (
+		input.env.CLOUDFLARE_ENV !== "production" &&
+		input.env.TURNSTILE_TEST_BYPASS === "true" &&
+		input.token === "test-pass"
+	) {
 		return true;
 	}
 

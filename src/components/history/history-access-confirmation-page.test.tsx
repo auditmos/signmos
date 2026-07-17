@@ -55,4 +55,29 @@ describe("HistoryAccessConfirmationPage", () => {
 		);
 		expect(onAuthenticated).toHaveBeenCalledWith("/my-documents");
 	});
+
+	it.each([
+		["unknown", "Link not recognized"],
+		["consumed", "Link already used"],
+		["expired", "Link expired"],
+		["revoked", "Link replaced"],
+	] as const)("renders %s as a distinct request-new-link recovery state", async (state, title) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(JSON.stringify({ data: { state } }))),
+		);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		render(
+			<QueryClientProvider client={queryClient}>
+				<HistoryAccessConfirmationPage credential="terminal-link" />
+			</QueryClientProvider>,
+		);
+
+		const heading = await screen.findByRole("heading", { name: title });
+		expect(document.activeElement).toBe(heading);
+		expect(screen.getByRole("link", { name: "Request a new link" }).getAttribute("href")).toBe(
+			"/?task=my-documents",
+		);
+		expect(document.body.textContent).not.toMatch(/credential|token|database/i);
+	});
 });

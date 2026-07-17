@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -19,11 +20,30 @@ interface RedemptionResponse {
 }
 
 const defaultOnAuthenticated = (url: string) => window.location.assign(url);
+const recoveryByState = {
+	unknown: {
+		title: "Link not recognized",
+		message: "This link is not available. Request a new secure link to continue.",
+	},
+	consumed: {
+		title: "Link already used",
+		message: "This one-time link was already used. Request a new link for this browser.",
+	},
+	expired: {
+		title: "Link expired",
+		message: "This secure link has expired. Request a new link to continue.",
+	},
+	revoked: {
+		title: "Link replaced",
+		message: "A newer access request replaced this link. Request another link if needed.",
+	},
+} as const;
 
 export function HistoryAccessConfirmationPage({
 	credential,
 	onAuthenticated = defaultOnAuthenticated,
 }: HistoryAccessConfirmationPageProps) {
+	const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
 	const encodedCredential = encodeURIComponent(credential);
 	const inspection = useQuery({
 		queryKey: ["history-access-link", credential],
@@ -53,6 +73,16 @@ export function HistoryAccessConfirmationPage({
 		},
 		onSuccess: (data) => onAuthenticated(data.redirectUrl),
 	});
+	const recovery =
+		inspection.data && inspection.data.state !== "confirm"
+			? recoveryByState[inspection.data.state]
+			: inspection.isError || redemption.isError
+				? { title: "Link unavailable", message: "Request a new secure link to continue." }
+				: null;
+
+	useEffect(() => {
+		if (recovery) recoveryHeadingRef.current?.focus();
+	}, [recovery]);
 
 	return (
 		<main className="min-h-dvh bg-background px-6 py-10">
@@ -79,13 +109,21 @@ export function HistoryAccessConfirmationPage({
 						</Button>
 					</>
 				) : null}
-				{inspection.isError ||
-				(inspection.data && inspection.data.state !== "confirm") ||
-				redemption.isError ? (
+				{recovery ? (
 					<Alert role="alert" variant="destructive">
-						<AlertTitle>This link cannot be used</AlertTitle>
+						<AlertTitle>
+							<h2 ref={recoveryHeadingRef} tabIndex={-1}>
+								{recovery.title}
+							</h2>
+						</AlertTitle>
 						<AlertDescription>
-							Return to Signmos and request a new My documents link.
+							<p>{recovery.message}</p>
+							<a
+								className="mt-2 inline-flex rounded-sm font-medium underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+								href="/?task=my-documents"
+							>
+								Request a new link
+							</a>
 						</AlertDescription>
 					</Alert>
 				) : null}

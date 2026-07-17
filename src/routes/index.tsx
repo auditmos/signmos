@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { createServerFn, getGlobalStartContext } from "@tanstack/react-start";
 import { StartEnvelopePage } from "@/components/sender/start-envelope-page";
 
@@ -18,7 +18,14 @@ export const Route = createFileRoute("/")({
 
 function IndexPage() {
 	const config = Route.useLoaderData();
-	return <StartEnvelopePage turnstileSiteKey={config.turnstileSiteKey} />;
+	const searchString = useLocation({ select: (location) => location.searchStr });
+	const requestedTask = new URLSearchParams(searchString).get("task");
+	return (
+		<StartEnvelopePage
+			initialTask={requestedTask === "my-documents" ? "my_documents" : undefined}
+			turnstileSiteKey={config.turnstileSiteKey}
+		/>
+	);
 }
 
 function normalizeOptionalValue(value: string | undefined): string | undefined {
