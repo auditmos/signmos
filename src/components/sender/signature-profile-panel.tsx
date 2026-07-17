@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 interface SignatureProfilePanelProps {
 	envelopeId: string;
 	senderSessionToken?: string;
+	historyAccess?: boolean;
 }
 
 type SignatureMode = "typed" | "drawn";
@@ -65,10 +66,11 @@ const typedSignatureFonts: Array<{ label: string; value: TypedSignatureFont; sta
 export function SignatureProfilePanel({
 	envelopeId,
 	senderSessionToken,
+	historyAccess = false,
 }: SignatureProfilePanelProps) {
 	const profileQuery = useQuery({
-		queryKey: ["signature-profile", envelopeId, senderSessionToken],
-		queryFn: () => fetchSelectedSignatureProfile(envelopeId, senderSessionToken),
+		queryKey: ["signature-profile", envelopeId, historyAccess ? "history" : senderSessionToken],
+		queryFn: () => fetchSelectedSignatureProfile(envelopeId, senderSessionToken, historyAccess),
 		staleTime: 30_000,
 	});
 
@@ -92,6 +94,7 @@ export function SignatureProfilePanel({
 					key={profileQuery.data?.id ?? "new-signature-preference"}
 					envelopeId={envelopeId}
 					senderSessionToken={senderSessionToken}
+					historyAccess={historyAccess}
 					initialProfile={profileQuery.data ?? null}
 				/>
 			) : null}
@@ -102,10 +105,12 @@ export function SignatureProfilePanel({
 function SignaturePreferenceEditor({
 	envelopeId,
 	senderSessionToken,
+	historyAccess,
 	initialProfile,
 }: {
 	envelopeId: string;
 	senderSessionToken?: string;
+	historyAccess: boolean;
 	initialProfile: SignatureProfile | null;
 }) {
 	const [drawPoints, setDrawPoints] = useState<DrawPoint[]>([]);
@@ -116,7 +121,7 @@ function SignaturePreferenceEditor({
 	const [validationError, setValidationError] = useState<string | null>(null);
 	const saveMutation = useMutation({
 		mutationFn: (request: SignatureProfileRequest) =>
-			saveProfile(envelopeId, senderSessionToken, request),
+			saveProfile(envelopeId, senderSessionToken, request, historyAccess),
 		onSuccess: () => setValidationError(null),
 	});
 	const form = useForm({
@@ -417,9 +422,10 @@ function buildSignaturePreferenceRequest(
 async function fetchSelectedSignatureProfile(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): Promise<SignatureProfile | null> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/signature-profiles/selected`, {
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 	});
 	const payload: unknown = await response.json().catch(() => null);
 	if (!response.ok) throw new Error("Unable to load signature preference");
@@ -431,10 +437,11 @@ async function saveProfile(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
 	request: SignatureProfileRequest,
+	historyAccess = false,
 ): Promise<string> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/signature-profiles`, {
 		method: "POST",
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 		body: JSON.stringify(request),
 	});
 	const payload: unknown = await response.json().catch(() => null);
@@ -472,7 +479,13 @@ function toSvgPath(points: DrawPoint[]): string {
 	return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 }
 
-function authHeaders(senderSessionToken: string | undefined): Record<string, string> {
+function authHeaders(
+	senderSessionToken: string | undefined,
+	historyAccess = false,
+): Record<string, string> {
+	if (historyAccess) {
+		return { "Content-Type": "application/json", "x-history-session-access": "true" };
+	}
 	if (senderSessionToken) {
 		return {
 			"Content-Type": "application/json",

@@ -12,6 +12,7 @@ export const Route = createFileRoute("/envelope-fields")({
 		partnerName: z.string().optional(),
 		partnerEmail: z.string().optional(),
 		senderSessionToken: z.string().optional(),
+		historyAccess: z.literal("true").optional(),
 	}),
 	component: EnvelopeFieldsRoute,
 });
@@ -44,6 +45,7 @@ function EnvelopeFieldsRoute() {
 		<EnvelopePreparationPage
 			envelopeId={search.envelopeId}
 			senderSessionToken={search.senderSessionToken}
+			historyAccess={search.historyAccess === "true"}
 			recipients={recipients}
 		/>
 	);

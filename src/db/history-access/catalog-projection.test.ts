@@ -239,6 +239,29 @@ describe("full history catalog projection", () => {
 		expect(completed.items[0]).toMatchObject({ group: "completed" });
 	});
 
+	it("moves creator documents through every server-derived lifecycle group", async () => {
+		for (const [sequence, status] of [
+			[1, "awaiting_verification"],
+			[2, "draft"],
+			[3, "sent"],
+			[4, "changes_requested"],
+			[5, "expired"],
+			[6, "completed"],
+		] as const) {
+			addEnvelope({ sequence, status, creator: "owner@example.com" });
+		}
+
+		const result = await listHistoryDocuments({ email: "owner@example.com", page: 1 });
+		expect(Object.fromEntries(result.items.map((item) => [item.status, item.group]))).toEqual({
+			awaiting_verification: "drafts",
+			draft: "drafts",
+			sent: "waiting_on_others",
+			changes_requested: "needs_my_action",
+			expired: "closed",
+			completed: "completed",
+		});
+	});
+
 	it("orders action work first, then meaningful activity, fallback creation, and identity", async () => {
 		addEnvelope({ sequence: 1, status: "completed", createdAt: "2026-04-03T08:00:00.000Z" });
 		addEnvelope({ sequence: 2, status: "completed", createdAt: "2026-04-01T08:00:00.000Z" });

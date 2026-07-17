@@ -45,6 +45,7 @@ export function UploadSourcePdfForm({
 	envelopeId,
 	senderSessionToken,
 	signingMode,
+	historyAccess = false,
 }: SourcePdfUploadPanelProps) {
 	const [file, setFile] = useState<File | null>(null);
 	const [isDragging, setIsDragging] = useState(false);
@@ -52,17 +53,18 @@ export function UploadSourcePdfForm({
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const queryClient = useQueryClient();
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
-	const sourcePdfQuery = useSourcePdfQuery(envelopeId, senderSessionToken);
+	const sourcePdfQuery = useSourcePdfQuery(envelopeId, senderSessionToken, historyAccess);
 	const uploadMutation = useMutation({
 		mutationFn: (selectedFile: File) =>
 			uploadSourcePdf({
 				envelopeId,
 				senderSessionToken,
+				historyAccess,
 				idempotencyKey,
 				file: selectedFile,
 			}),
 		onSuccess: (document) => {
-			queryClient.setQueryData(sourcePdfQueryKey(envelopeId, senderSessionToken), {
+			queryClient.setQueryData(sourcePdfQueryKey(envelopeId, senderSessionToken, historyAccess), {
 				status: "ready",
 				document,
 			});
@@ -199,6 +201,7 @@ export function UploadSourcePdfForm({
 					<SelfSignPreviewAndAction
 						envelopeId={envelopeId}
 						senderSessionToken={senderSessionToken}
+						historyAccess={historyAccess}
 						fieldPage={selfSign.fieldPage}
 						signingUrl={selfSign.signingUrl}
 					/>
@@ -223,11 +226,13 @@ function SelfSignPreviewAndAction({
 	senderSessionToken,
 	fieldPage,
 	signingUrl,
+	historyAccess,
 }: {
 	envelopeId: string;
 	senderSessionToken: string;
 	fieldPage: number;
 	signingUrl: string;
+	historyAccess: boolean;
 }) {
 	return (
 		<section className="space-y-3 rounded-lg border bg-muted/20 p-4" aria-label="PDF preview">
@@ -237,7 +242,7 @@ function SelfSignPreviewAndAction({
 			</div>
 			<iframe
 				className="h-[520px] w-full rounded-md border bg-background"
-				src={buildPreviewUrl(envelopeId, senderSessionToken, fieldPage)}
+				src={buildPreviewUrl(envelopeId, senderSessionToken, fieldPage, historyAccess)}
 				title="Uploaded source PDF preview"
 			/>
 			<Button asChild>
@@ -262,19 +267,30 @@ function SelectedPdf({ file }: { file: File }) {
 	);
 }
 
-function buildPreviewUrl(envelopeId: string, senderSessionToken: string, page: number) {
-	const params = new URLSearchParams({ senderSessionToken });
+function buildPreviewUrl(
+	envelopeId: string,
+	senderSessionToken: string,
+	page: number,
+	historyAccess: boolean,
+) {
+	const params = historyAccess
+		? new URLSearchParams({ historyAccess: "true" })
+		: new URLSearchParams({ senderSessionToken });
 	return `/api/envelopes/${envelopeId}/source-pdf/content?${params.toString()}#toolbar=0&navpanes=0&scrollbar=0&page=${page}`;
 }
 
-function sourcePdfQueryKey(envelopeId: string, senderSessionToken: string) {
-	return ["source-pdf", envelopeId, senderSessionToken] as const;
+function sourcePdfQueryKey(envelopeId: string, senderSessionToken: string, historyAccess = false) {
+	return ["source-pdf", envelopeId, historyAccess ? "history" : senderSessionToken] as const;
 }
 
-export function useSourcePdfQuery(envelopeId: string, senderSessionToken: string) {
+export function useSourcePdfQuery(
+	envelopeId: string,
+	senderSessionToken: string,
+	historyAccess = false,
+) {
 	return useQuery({
-		queryKey: sourcePdfQueryKey(envelopeId, senderSessionToken),
-		queryFn: () => fetchSourcePdf(envelopeId, senderSessionToken),
+		queryKey: sourcePdfQueryKey(envelopeId, senderSessionToken, historyAccess),
+		queryFn: () => fetchSourcePdf(envelopeId, senderSessionToken, historyAccess),
 		staleTime: 30_000,
 	});
 }
@@ -282,9 +298,12 @@ export function useSourcePdfQuery(envelopeId: string, senderSessionToken: string
 async function fetchSourcePdf(
 	envelopeId: string,
 	senderSessionToken: string,
+	historyAccess = false,
 ): Promise<SourcePdfStatus> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/source-pdf`, {
-		headers: { "x-sender-session-token": senderSessionToken },
+		headers: historyAccess
+			? { "x-history-session-access": "true" }
+			: { "x-sender-session-token": senderSessionToken },
 	});
 	const json = (await response.json().catch((): SourcePdfResponse => ({}))) as
 		| SourcePdfResponse
@@ -305,6 +324,7 @@ async function fetchSourcePdf(
 async function uploadSourcePdf(input: {
 	envelopeId: string;
 	senderSessionToken: string;
+	historyAccess?: boolean;
 	idempotencyKey: string;
 	file: File;
 }): Promise<SourceDocumentResponse> {
@@ -314,7 +334,9 @@ async function uploadSourcePdf(input: {
 			"content-type": input.file.type || "application/pdf",
 			"idempotency-key": input.idempotencyKey,
 			"x-source-filename": encodeURIComponent(input.file.name),
-			"x-sender-session-token": input.senderSessionToken,
+			...(input.historyAccess
+				? { "x-history-session-access": "true" }
+				: { "x-sender-session-token": input.senderSessionToken }),
 		},
 		body: input.file,
 	});

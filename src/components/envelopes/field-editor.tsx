@@ -17,6 +17,7 @@ interface EnvelopeFieldEditorProps {
 	envelopeId: string;
 	recipients: FieldEditorRecipient[];
 	senderSessionToken?: string;
+	historyAccess?: boolean;
 }
 
 const defaultFieldValues: PlacedField = {
@@ -33,13 +34,14 @@ export function EnvelopeFieldEditor({
 	envelopeId,
 	recipients,
 	senderSessionToken,
+	historyAccess = false,
 }: EnvelopeFieldEditorProps) {
 	const previewRef = useRef<HTMLFieldSetElement | null>(null);
 	const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
 	const queryClient = useQueryClient();
 	const fieldsQuery = useQuery({
-		queryKey: fieldQueryKey(envelopeId, senderSessionToken),
-		queryFn: () => fetchFields(envelopeId, senderSessionToken),
+		queryKey: fieldQueryKey(envelopeId, senderSessionToken, historyAccess),
+		queryFn: () => fetchFields(envelopeId, senderSessionToken, historyAccess),
 		staleTime: 30_000,
 	});
 	const placedFields = fieldsQuery.data ?? [];
@@ -50,10 +52,11 @@ export function EnvelopeFieldEditor({
 		recipients.length > 0 &&
 		recipients.every((recipient) => signatureRecipientIds.has(recipient.id));
 	const saveMutation = useMutation({
-		mutationFn: (field: PlacedField) => saveField(envelopeId, senderSessionToken, field),
+		mutationFn: (field: PlacedField) =>
+			saveField(envelopeId, senderSessionToken, field, historyAccess),
 		onSuccess: (fields) => {
 			queryClient.setQueryData<EnvelopeFieldResponse[]>(
-				fieldQueryKey(envelopeId, senderSessionToken),
+				fieldQueryKey(envelopeId, senderSessionToken, historyAccess),
 				(existing = []) => [...existing, ...fields],
 			);
 		},
@@ -128,7 +131,11 @@ export function EnvelopeFieldEditor({
 						recipients={recipients}
 						signatureRecipientIds={signatureRecipientIds}
 						placedFields={placedFields}
-						sourcePdfPreviewUrl={buildSourcePdfPreviewUrl(envelopeId, senderSessionToken)}
+						sourcePdfPreviewUrl={buildSourcePdfPreviewUrl(
+							envelopeId,
+							senderSessionToken,
+							historyAccess,
+						)}
 						allSignaturesPlaced={allSignaturesPlaced}
 						isSaving={saveMutation.isPending}
 						isSaveError={saveMutation.isError}
@@ -148,9 +155,10 @@ export function EnvelopeFieldEditor({
 async function fetchFields(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): Promise<EnvelopeFieldResponse[]> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 	});
 	const payload = (await response.json().catch(() => ({}))) as {
 		data?: EnvelopeFieldResponse[];
@@ -165,10 +173,11 @@ async function saveField(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
 	field: PlacedField,
+	historyAccess = false,
 ): Promise<EnvelopeFieldResponse[]> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/fields`, {
 		method: "POST",
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 		body: JSON.stringify({ fields: [field] }),
 	});
 	const payload = (await response.json().catch(() => ({}))) as {
@@ -196,11 +205,21 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
 }
 
-function fieldQueryKey(envelopeId: string, senderSessionToken: string | undefined) {
-	return ["envelope-fields", envelopeId, senderSessionToken] as const;
+function fieldQueryKey(
+	envelopeId: string,
+	senderSessionToken: string | undefined,
+	historyAccess = false,
+) {
+	return ["envelope-fields", envelopeId, historyAccess ? "history" : senderSessionToken] as const;
 }
 
-function authHeaders(senderSessionToken: string | undefined): Record<string, string> {
+function authHeaders(
+	senderSessionToken: string | undefined,
+	historyAccess = false,
+): Record<string, string> {
+	if (historyAccess) {
+		return { "Content-Type": "application/json", "x-history-session-access": "true" };
+	}
 	if (senderSessionToken) {
 		return {
 			"Content-Type": "application/json",
@@ -216,9 +235,11 @@ function authHeaders(senderSessionToken: string | undefined): Record<string, str
 export function buildSourcePdfPreviewUrl(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): string {
 	const params = new URLSearchParams();
-	if (senderSessionToken) params.set("senderSessionToken", senderSessionToken);
+	if (historyAccess) params.set("historyAccess", "true");
+	else if (senderSessionToken) params.set("senderSessionToken", senderSessionToken);
 	const query = params.size > 0 ? `?${params.toString()}` : "";
 	return `/api/envelopes/${envelopeId}/source-pdf/content${query}#toolbar=0&navpanes=0&scrollbar=0&page=1`;
 }

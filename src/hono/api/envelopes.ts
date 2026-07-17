@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { getCookie } from "hono/cookie";
 import {
 	AddFieldsRequestSchema,
 	AddRecipientsRequestSchema,
@@ -44,6 +45,11 @@ import {
 	type VerifiedSenderSession,
 	verifySenderToken,
 } from "@/db/envelope";
+import {
+	authorizeHistoryCreator,
+	type HistoryCreatorAccess,
+	resolveHistorySessionState,
+} from "@/db/history-access";
 import { createHono } from "@/hono/factory";
 import {
 	detectPdfLastPage,
@@ -59,6 +65,53 @@ import {
 
 const envelopesEndpoint = createHono();
 const maxSourcePdfBytes = 10 * 1024 * 1024;
+
+envelopesEndpoint.use("/:id/*", async (c, next) => {
+	if (!isHistoryCreatorRequest(c)) return next();
+	const state = await resolveHistorySessionState(
+		getCookie(c, "signmos_history_session") ?? "",
+		parseNow(c.req.header("x-now")),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+	);
+	if (state.state !== "active") {
+		return c.json(
+			{
+				error: {
+					code: state.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
+					message:
+						state.state === "expired"
+							? "Your My documents session expired"
+							: "Request a new My documents link",
+					recoveryUrl: "/?task=my-documents",
+				},
+			},
+			401,
+		);
+	}
+	const authorization = await authorizeHistoryCreator(
+		state.session.email,
+		c.req.param("id"),
+		parseNow(c.req.header("x-now")),
+	);
+	if (authorization.state === "deleted") {
+		return c.json(
+			{ error: { code: "HISTORY_CREATOR_DELETED", message: "This document was deleted" } },
+			410,
+		);
+	}
+	if (authorization.state === "forbidden") {
+		return c.json(
+			{
+				error: {
+					code: "HISTORY_CREATOR_FORBIDDEN",
+					message: "Only the document creator can use this action",
+				},
+			},
+			403,
+		);
+	}
+	return next();
+});
 envelopesEndpoint.post("/sender-start", async (c) => {
 	const body: unknown = await c.req.json().catch(() => null);
 	const parsed = SenderStartRequestSchema.safeParse(body);
@@ -579,12 +632,17 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 			bytes,
 			now,
 		});
+		const historySafeSelfSign = makeHistorySafeSelfSign(
+			selfSign,
+			envelopeId,
+			uploadActor.historyAccess,
+		);
 
 		return c.json(
 			{
 				data: {
 					...toSourceDocumentResponse(result.document),
-					...(selfSign ? { selfSign } : {}),
+					...(historySafeSelfSign ? { selfSign: historySafeSelfSign } : {}),
 				},
 			},
 			result.reused ? 200 : 201,
@@ -861,6 +919,8 @@ async function getEnvelopeActor(
 	c: Context<{ Bindings: Env }>,
 	envelopeId: string,
 ): Promise<string | null> {
+	const historyAccess = await resolveHistoryCreatorRequestAccess(c, envelopeId);
+	if (historyAccess) return historyAccess.sender.email;
 	const internalUserId = c.req.header("x-internal-user-id");
 	if (internalUserId) return internalUserId;
 	return getVerifiedSenderUploadEmail(
@@ -964,7 +1024,25 @@ async function getSourcePdfUploadActor(
 	c: Context<{ Bindings: Env }>,
 	envelopeId: string,
 	now: Date,
-): Promise<{ uploadedBy: string; senderSession: VerifiedSenderSession | null } | null> {
+): Promise<{
+	uploadedBy: string;
+	senderSession: VerifiedSenderSession | null;
+	historyAccess: boolean;
+} | null> {
+	const historyAccess = await resolveHistoryCreatorRequestAccess(c, envelopeId);
+	if (historyAccess) {
+		return {
+			uploadedBy: historyAccess.sender.email,
+			senderSession: {
+				envelopeId,
+				signingMode: historyAccess.signingMode,
+				name: historyAccess.sender.name,
+				email: historyAccess.sender.email,
+				token: "",
+			},
+			historyAccess: true,
+		};
+	}
 	const senderSessionToken = c.req.header("x-sender-session-token");
 	const senderSession = senderSessionToken
 		? await resolveVerifiedSenderSession(senderSessionToken, envelopeId, now)
@@ -973,7 +1051,31 @@ async function getSourcePdfUploadActor(
 		c.req.header("x-internal-user-id") ??
 		senderSession?.email ??
 		(await getVerifiedSenderUploadEmail(senderSessionToken, envelopeId, c.req.header("x-now")));
-	return uploadedBy ? { uploadedBy, senderSession } : null;
+	return uploadedBy ? { uploadedBy, senderSession, historyAccess: false } : null;
+}
+
+function isHistoryCreatorRequest(c: Context<{ Bindings: Env }>): boolean {
+	return (
+		c.req.header("x-history-session-access") === "true" || c.req.query("historyAccess") === "true"
+	);
+}
+
+async function resolveHistoryCreatorRequestAccess(
+	c: Context<{ Bindings: Env }>,
+	envelopeId: string,
+): Promise<HistoryCreatorAccess | null> {
+	if (!isHistoryCreatorRequest(c)) return null;
+	const session = await resolveHistorySessionState(
+		getCookie(c, "signmos_history_session") ?? "",
+		parseNow(c.req.header("x-now")),
+	);
+	if (session.state !== "active") return null;
+	const authorization = await authorizeHistoryCreator(
+		session.session.email,
+		envelopeId,
+		parseNow(c.req.header("x-now")),
+	);
+	return authorization.state === "active" ? authorization.access : null;
 }
 
 async function prepareSelfSignUploadResponse(input: {
@@ -992,6 +1094,15 @@ async function prepareSelfSignUploadResponse(input: {
 		fieldPage: detectPdfLastPage(input.bytes),
 		now: input.now,
 	});
+}
+
+function makeHistorySafeSelfSign(
+	selfSign: Awaited<ReturnType<typeof prepareSelfSignAfterSourceUpload>> | null,
+	envelopeId: string,
+	historyAccess: boolean,
+) {
+	if (!selfSign || !historyAccess) return selfSign;
+	return { ...selfSign, signingUrl: `/my-documents/${envelopeId}/sign` };
 }
 
 function sourcePdfMissingBody() {

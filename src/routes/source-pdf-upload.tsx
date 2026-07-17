@@ -9,6 +9,7 @@ export const Route = createFileRoute("/source-pdf-upload")({
 		senderName: z.string().optional(),
 		senderEmail: z.string().optional(),
 		signingMode: z.enum(["only_me", "me_and_another_signer"]).optional(),
+		historyAccess: z.literal("true").optional(),
 	}),
 	component: SourcePdfUploadRoute,
 });
@@ -36,6 +37,7 @@ function SourcePdfUploadRoute() {
 					senderName={senderName}
 					senderEmail={senderEmail}
 					signingMode={signingMode}
+					historyAccess={search.historyAccess === "true"}
 				/>
 			</div>
 		</main>

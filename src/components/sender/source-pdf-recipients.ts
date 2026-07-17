@@ -31,10 +31,16 @@ export type RecipientsResult = { recipients: RecipientResponse[]; prepareUrl: st
 export async function fetchVerifiedSender(
 	senderSessionToken: string,
 	envelopeId: string,
+	historyAccess = false,
 ): Promise<SenderVerificationSuccess["data"]> {
-	const response = await fetch(`/api/envelopes/${envelopeId}/sender-session`, {
-		headers: { "x-sender-session-token": senderSessionToken },
-	});
+	const response = await fetch(
+		historyAccess
+			? `/api/history/documents/${envelopeId}/creator`
+			: `/api/envelopes/${envelopeId}/sender-session`,
+		historyAccess
+			? { credentials: "same-origin" }
+			: { headers: { "x-sender-session-token": senderSessionToken } },
+	);
 	const json: unknown = await response.json().catch(() => null);
 	if (!response.ok || !isSenderVerificationSuccess(json) || json.data.envelopeId !== envelopeId) {
 		throw new Error("Unable to load sender details");
@@ -50,6 +56,7 @@ export async function addRecipientPair(input: {
 	senderEmail: string;
 	partnerName: string;
 	partnerEmail: string;
+	historyAccess?: boolean;
 }): Promise<RecipientsResult> {
 	const recipients = [
 		...(findSenderRecipient(input.existingRecipients, input.senderEmail)
@@ -61,7 +68,7 @@ export async function addRecipientPair(input: {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
-			"x-sender-session-token": input.senderSessionToken,
+			...senderAccessHeader(input.senderSessionToken, input.historyAccess),
 		},
 		body: JSON.stringify({ recipients }),
 	});
@@ -76,16 +83,22 @@ export async function addRecipientPair(input: {
 	);
 	return {
 		recipients: nextRecipients,
-		prepareUrl: buildPrepareUrl(input.envelopeId, input.senderSessionToken, nextRecipients),
+		prepareUrl: buildPrepareUrl(
+			input.envelopeId,
+			input.senderSessionToken,
+			nextRecipients,
+			input.historyAccess,
+		),
 	};
 }
 
 export async function fetchRecipients(
 	envelopeId: string,
 	senderSessionToken: string,
+	historyAccess = false,
 ): Promise<RecipientResponse[]> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/recipients`, {
-		headers: { "x-sender-session-token": senderSessionToken },
+		headers: senderAccessHeader(senderSessionToken, historyAccess),
 	});
 	const json: unknown = await response.json().catch(() => null);
 	if (!response.ok || !isRecipientsSuccess(json)) {
@@ -101,6 +114,7 @@ export async function updateRecipientRequest(input: {
 	recipientId: string;
 	name: string;
 	email: string;
+	historyAccess?: boolean;
 }): Promise<RecipientResponse> {
 	const response = await fetch(
 		`/api/envelopes/${input.envelopeId}/recipients/${input.recipientId}`,
@@ -108,7 +122,7 @@ export async function updateRecipientRequest(input: {
 			method: "PATCH",
 			headers: {
 				"content-type": "application/json",
-				"x-sender-session-token": input.senderSessionToken,
+				...senderAccessHeader(input.senderSessionToken, input.historyAccess),
 			},
 			body: JSON.stringify({ name: input.name, email: input.email }),
 		},
@@ -125,12 +139,13 @@ export async function deleteRecipientRequest(input: {
 	envelopeId: string;
 	senderSessionToken: string;
 	recipientId: string;
+	historyAccess?: boolean;
 }): Promise<RecipientResponse> {
 	const response = await fetch(
 		`/api/envelopes/${input.envelopeId}/recipients/${input.recipientId}`,
 		{
 			method: "DELETE",
-			headers: { "x-sender-session-token": input.senderSessionToken },
+			headers: senderAccessHeader(input.senderSessionToken, input.historyAccess),
 		},
 	);
 	const json: unknown = await response.json().catch(() => null);
@@ -145,6 +160,7 @@ export function buildPrepareUrl(
 	envelopeId: string,
 	senderSessionToken: string,
 	recipients: RecipientResponse[],
+	historyAccess = false,
 ): string {
 	const [sender, partner] = recipients;
 	if (!sender || !partner) return "/envelope-fields";
@@ -156,13 +172,48 @@ export function buildPrepareUrl(
 		partnerRecipientId: partner.id,
 		partnerName: partner.name,
 		partnerEmail: partner.email,
-		senderSessionToken,
 	});
+	if (historyAccess) params.set("historyAccess", "true");
+	else params.set("senderSessionToken", senderSessionToken);
 	return `/envelope-fields?${params.toString()}`;
 }
 
-export function recipientsQueryKey(envelopeId: string, senderSessionToken: string) {
-	return ["recipients", envelopeId, senderSessionToken] as const;
+export function recipientsQueryKey(
+	envelopeId: string,
+	senderSessionToken: string,
+	historyAccess = false,
+) {
+	return ["recipients", envelopeId, historyAccess ? "history" : senderSessionToken] as const;
+}
+
+export function hasSenderDetails(name: string, email: string) {
+	return Boolean(name && email);
+}
+
+export function shouldFetchVerifiedSender(
+	senderSessionToken: string,
+	hasSenderProps: boolean,
+	historyAccess = false,
+) {
+	return Boolean(senderSessionToken || historyAccess) && !hasSenderProps;
+}
+
+export function shouldFetchRecipients(
+	envelopeId: string,
+	senderSessionToken: string,
+	sourcePdfReady: boolean,
+	historyAccess = false,
+) {
+	return Boolean(envelopeId && (senderSessionToken || historyAccess) && sourcePdfReady);
+}
+
+function senderAccessHeader(
+	senderSessionToken: string,
+	historyAccess = false,
+): Record<string, string> {
+	return historyAccess
+		? { "x-history-session-access": "true" }
+		: { "x-sender-session-token": senderSessionToken };
 }
 
 export function isRecipientActionDisabled({

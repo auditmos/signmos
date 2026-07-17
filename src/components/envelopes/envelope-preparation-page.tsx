@@ -15,6 +15,7 @@ interface PreparationRecipient {
 interface EnvelopePreparationPageProps {
 	envelopeId?: string;
 	senderSessionToken?: string;
+	historyAccess?: boolean;
 	recipients?: PreparationRecipient[];
 }
 
@@ -76,6 +77,7 @@ const defaultPartner = {
 export function EnvelopePreparationPage({
 	envelopeId,
 	senderSessionToken,
+	historyAccess = false,
 	recipients,
 }: EnvelopePreparationPageProps) {
 	const [preparation, setPreparation] = useState<PreparationState | null>(
@@ -134,15 +136,18 @@ export function EnvelopePreparationPage({
 						<SignatureProfilePanel
 							envelopeId={preparation.envelopeId}
 							senderSessionToken={senderSessionToken}
+							historyAccess={historyAccess}
 						/>
 						<EnvelopeFieldEditor
 							envelopeId={preparation.envelopeId}
 							recipients={preparation.recipients}
 							senderSessionToken={senderSessionToken}
+							historyAccess={historyAccess}
 						/>
 						<SendEnvelopePanel
 							envelopeId={preparation.envelopeId}
 							senderSessionToken={senderSessionToken}
+							historyAccess={historyAccess}
 						/>
 					</>
 				) : (
@@ -168,17 +173,19 @@ export function EnvelopePreparationPage({
 function SendEnvelopePanel({
 	envelopeId,
 	senderSessionToken,
+	historyAccess = false,
 }: {
 	envelopeId: string;
 	senderSessionToken?: string;
+	historyAccess?: boolean;
 }) {
 	const sourcePdfQuery = useQuery({
-		queryKey: ["source-pdf", envelopeId, senderSessionToken],
-		queryFn: () => fetchSourcePdf(envelopeId, senderSessionToken),
+		queryKey: ["source-pdf", envelopeId, historyAccess ? "history" : senderSessionToken],
+		queryFn: () => fetchSourcePdf(envelopeId, senderSessionToken, historyAccess),
 		staleTime: 30_000,
 	});
 	const sendMutation = useMutation({
-		mutationFn: () => sendEnvelopeRequest(envelopeId, senderSessionToken),
+		mutationFn: () => sendEnvelopeRequest(envelopeId, senderSessionToken, historyAccess),
 	});
 	const sourcePdfStatus = sourcePdfQuery.data;
 	const sourcePdfReady = sourcePdfStatus?.status === "ready";
@@ -187,7 +194,7 @@ function SendEnvelopePanel({
 		sourcePdfQuery.error instanceof Error ? sourcePdfQuery.error.message : null;
 	const sendError = sendMutation.error instanceof Error ? sendMutation.error.message : null;
 	const sentEmailCount = sendMutation.data?.emailSendCount;
-	const uploadUrl = buildSourcePdfUploadUrl(envelopeId, senderSessionToken);
+	const uploadUrl = buildSourcePdfUploadUrl(envelopeId, senderSessionToken, historyAccess);
 
 	return (
 		<section className="rounded-lg border bg-card p-5 shadow-sm">
@@ -267,7 +274,13 @@ async function postJson<TResponse>(url: string, body: unknown): Promise<TRespons
 	return (await response.json()) as TResponse;
 }
 
-function authHeaders(senderSessionToken: string | undefined): Record<string, string> {
+function authHeaders(
+	senderSessionToken: string | undefined,
+	historyAccess = false,
+): Record<string, string> {
+	if (historyAccess) {
+		return { "Content-Type": "application/json", "x-history-session-access": "true" };
+	}
 	if (senderSessionToken) {
 		return {
 			"Content-Type": "application/json",
@@ -283,9 +296,10 @@ function authHeaders(senderSessionToken: string | undefined): Record<string, str
 async function fetchSourcePdf(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): Promise<SourcePdfStatus> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/source-pdf`, {
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 	});
 	const json = (await response.json().catch((): SourcePdfResponse => ({}))) as
 		| SourcePdfResponse
@@ -306,10 +320,11 @@ async function fetchSourcePdf(
 async function sendEnvelopeRequest(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): Promise<{ emailSendCount: number }> {
 	const response = await fetch(`/api/envelopes/${envelopeId}/actions`, {
 		method: "POST",
-		headers: authHeaders(senderSessionToken),
+		headers: authHeaders(senderSessionToken, historyAccess),
 		body: JSON.stringify({ action: "send" }),
 	});
 	const json = (await response.json().catch((): SendEnvelopeResponse => ({}))) as
@@ -326,7 +341,9 @@ async function sendEnvelopeRequest(
 function buildSourcePdfUploadUrl(
 	envelopeId: string,
 	senderSessionToken: string | undefined,
+	historyAccess = false,
 ): string {
+	if (historyAccess) return `/my-documents/${envelopeId}/manage`;
 	const params = new URLSearchParams({ envelopeId });
 	if (senderSessionToken) params.set("senderSessionToken", senderSessionToken);
 	return `/source-pdf-upload?${params.toString()}`;

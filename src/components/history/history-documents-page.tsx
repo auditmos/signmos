@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { HistoryCreatorControls } from "./history-creator-controls";
 
 type CatalogRole = "creator" | "signer" | "creator_and_signer";
 type CatalogGroup = "drafts" | "needs_my_action" | "waiting_on_others" | "completed" | "closed";
@@ -316,6 +317,14 @@ function CatalogRows({ items }: { items: HistoryDocumentRow[] }) {
 							</p>
 						) : null}
 						<div className="flex flex-wrap gap-4 text-sm">
+							{item.allowedActions.includes("resume") || item.allowedActions.includes("review") ? (
+								<CatalogLink
+									href={`/my-documents/${encodeURIComponent(item.envelopeId)}/manage`}
+									label={
+										item.allowedActions.includes("resume") ? "Resume preparation" : "Review status"
+									}
+								/>
+							) : null}
 							{item.allowedActions.includes("sign") ? (
 								<CatalogLink
 									href={`/my-documents/${encodeURIComponent(item.envelopeId)}/sign`}
@@ -327,6 +336,11 @@ function CatalogRows({ items }: { items: HistoryDocumentRow[] }) {
 								<CatalogLink href={item.downloadUrl} label="Download PDF" />
 							) : null}
 						</div>
+						<HistoryCreatorControls
+							envelopeId={item.envelopeId}
+							title={item.title}
+							allowedActions={item.allowedActions}
+						/>
 					</article>
 				</li>
 			))}

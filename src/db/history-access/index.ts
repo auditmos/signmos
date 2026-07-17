@@ -1,4 +1,5 @@
 export * from "./catalog";
+export * from "./creator-gateway";
 export * from "./credential-authority";
 export * from "./document-gateway";
 export * from "./request";
