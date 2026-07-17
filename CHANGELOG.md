@@ -1,3 +1,19 @@
+# Unreleased (2026-07-17)
+
+### Features
+
+* add an unselected landing chooser for self-signing, two-party signing, and My Documents
+* add privacy-safe passwordless My Documents access with a single-use 30-minute link and fixed eight-hour browser session
+* add a full retained-document catalog with creator/signer roles, lifecycle groups, search, filters, and numbered pagination
+* add history-session creator recovery and controls, active signer recovery, completed-document detail, and final PDF download
+* allow an active My Documents session to start an already-verified self-sign or two-party draft
+
+### Security and compatibility
+
+* store history link and session credentials only as hashes, keep security events out of the user-facing document timeline, and re-check role/state authorization for history access
+* preserve existing sender, signer, verification, completed-document, and final-download process links alongside the history-session path
+* add browser-smoke, keyboard, scope, credential-hygiene, nested-route, and compatibility release evidence
+
 # [1.2.0](https://github.com/auditmos/tstack-on-cf/compare/v1.1.0...v1.2.0) (2026-05-05)
 
 

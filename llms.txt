@@ -10,12 +10,18 @@
 - [docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md): Detailed agent operating rules distilled from `.claude/rules`.
 - [plans/simple-esignature-prd.md](plans/simple-esignature-prd.md): Product requirements, lifecycle API contract, validation checklist, manual human UI smoke checklist.
 - [plans/simple-esignature.md](plans/simple-esignature.md): Original phase plan for the e-signature workflow.
+- [plans/frictionless-signing-ux-prd.md](plans/frictionless-signing-ux-prd.md): Sender-first signing, verification security, notifications, and completed-detail requirements.
+- [plans/single-signer-mode-prd.md](plans/single-signer-mode-prd.md): Self-sign mode, signature reuse, and earlier confirmed-email history requirements.
+- [plans/my-documents-prd.md](plans/my-documents-prd.md): Passwordless history, recovery, catalog, authorization, and security requirements.
+- [plans/my-documents.md](plans/my-documents.md): Six-slice My Documents implementation plan.
+- [plans/evidence/my-documents-release/](plans/evidence/my-documents-release/): Browser, keyboard, and scope evidence for the compatibility release.
 - [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Current agent-ready endpoint contract, smoke checklist, UI-state evidence, and PRD validation map.
 
 ## Implemented Workflow
 
 - Draft envelope creation.
-- No-account sender start with email verification fallback links.
+- Unselected landing chooser for self-sign, two-party signing, or My Documents.
+- No-account sender start with email verification and restricted fallback links.
 - Source PDF upload to R2 through `DOCUMENTS_BUCKET`.
 - Recipient creation with a 10-recipient limit.
 - Drawn and typed signature profile creation.
@@ -28,6 +34,11 @@
 - Manual expire/delete controls and retention eligibility.
 - Audit event persistence.
 - Completed PDF finalization and final PDF download.
+- Completed-document detail through existing process links.
+- Privacy-safe My Documents request, single-use 30-minute link, and fixed eight-hour HTTP-only session.
+- Retained creator/signer catalog with search, filters, action-first ordering, and numbered pagination.
+- Session-authorized creator recovery/controls, recovered signing, completed detail/PDF access, and sign-out.
+- Session-native self-sign or two-party draft creation without another email verification.
 - Browser-driven local full workflow at `/manual-signing-smoke`.
 
 ## Key Files
@@ -36,7 +47,13 @@
 
 - [src/hono/api.ts](src/hono/api.ts): Mounts API endpoints.
 - [src/hono/api/envelopes.ts](src/hono/api/envelopes.ts): Envelope lifecycle HTTP routes.
+- [src/hono/api/envelope-preparation.ts](src/hono/api/envelope-preparation.ts): Signature profile and default field endpoints.
 - [src/hono/api/signing.ts](src/hono/api/signing.ts): Signer magic-link HTTP routes.
+- [src/hono/api/final-documents.ts](src/hono/api/final-documents.ts): Completed-document process-link routes.
+- [src/hono/api/history-access.ts](src/hono/api/history-access.ts): History requests, credentials/sessions, catalog, detail, and PDF routes.
+- [src/hono/api/history-envelope-start.ts](src/hono/api/history-envelope-start.ts): Session-native envelope start.
+- [src/hono/api/history-creator.ts](src/hono/api/history-creator.ts): Creator recovery and control routes.
+- [src/hono/api/history-signing.ts](src/hono/api/history-signing.ts): Recovered signer routes.
 - [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Agent-ready lifecycle contract and smoke evidence map.
 - [src/hono/factory.ts](src/hono/factory.ts): Typed Hono factory.
 - [src/server.ts](src/server.ts): Cloudflare Worker entry; routes `/api/*` to Hono.
@@ -47,6 +64,7 @@
 - [src/db/envelope/schema.ts](src/db/envelope/schema.ts): Zod schemas and response types.
 - [src/db/envelope/queries.ts](src/db/envelope/queries.ts): Envelope lifecycle operations.
 - [src/db/envelope/finalization.ts](src/db/envelope/finalization.ts): Completed PDF generation/storage/status helpers.
+- [src/db/history-access/](src/db/history-access/): Passwordless credential/session lifecycle, catalog, authorization gateways, session-native start, and security audit.
 - [src/db/schema.ts](src/db/schema.ts): Table re-exports for migrations.
 
 ### UI
@@ -54,6 +72,11 @@
 - [src/routes/envelope-fields.tsx](src/routes/envelope-fields.tsx): Field editor route with query-param context.
 - [src/routes/source-pdf-upload.tsx](src/routes/source-pdf-upload.tsx): Sender source PDF upload route.
 - [src/components/sender/start-envelope-page.tsx](src/components/sender/start-envelope-page.tsx): No-account sender start UI.
+- [src/routes/history-access.$credential.tsx](src/routes/history-access.$credential.tsx): History link confirmation route.
+- [src/routes/my-documents.index.tsx](src/routes/my-documents.index.tsx): My Documents catalog route.
+- [src/routes/my-documents.$envelopeId.manage.tsx](src/routes/my-documents.$envelopeId.manage.tsx): Creator recovery route.
+- [src/routes/my-documents.$envelopeId.sign.tsx](src/routes/my-documents.$envelopeId.sign.tsx): Recovered signer route.
+- [src/components/history/](src/components/history/): My Documents request, confirmation, catalog, new-document start, detail, and creator controls.
 - [src/components/sender/source-pdf-upload-panel.tsx](src/components/sender/source-pdf-upload-panel.tsx): PDF upload/revision UI.
 - [src/components/sender/signature-profile-panel.tsx](src/components/sender/signature-profile-panel.tsx): Drawn/typed signature profile UI.
 - [src/components/envelopes/envelope-preparation-page.tsx](src/components/envelopes/envelope-preparation-page.tsx): Review envelope setup and preparation shell.
@@ -75,6 +98,11 @@
 - [src/components/envelopes/field-editor.test.tsx](src/components/envelopes/field-editor.test.tsx): Field editor interaction.
 - [src/components/signing/signer-page.test.tsx](src/components/signing/signer-page.test.tsx): Signer UI interaction.
 - [src/components/signing/manual-smoke-page.test.tsx](src/components/signing/manual-smoke-page.test.tsx): Manual smoke UI interaction.
+- [src/hono/api/history-envelope-start.test.ts](src/hono/api/history-envelope-start.test.ts): Session-native start authorization and idempotency.
+- [src/hono/api/history-catalog-api.test.ts](src/hono/api/history-catalog-api.test.ts): Catalog authorization, query, and pagination.
+- [src/hono/api/history-creator-recovery.test.ts](src/hono/api/history-creator-recovery.test.ts): Creator recovery and controls.
+- [src/hono/api/history-signing-recovery.test.ts](src/hono/api/history-signing-recovery.test.ts): Recovered signing behavior.
+- [src/release/my-documents-release-contract.test.ts](src/release/my-documents-release-contract.test.ts): Credential, scope, routing, and evidence release guard.
 
 ## Commands
 
@@ -106,4 +134,4 @@ Use this to exercise envelope creation, PDF upload, recipient/field creation, se
 - Do not manually edit `src/routeTree.gen.ts`; TanStack Router regenerates it.
 - Do not edit `src/components/ui/*` manually.
 - Use `AGENTS.md` as the compact context map; load `ARCHITECTURE.md` and `docs/AGENT_GUIDE.md` only when relevant.
-- `/plans/simple-esignature-prd.md` is the source of truth for product requirements and lifecycle API contract.
+- `/plans/simple-esignature-prd.md` defines the core lifecycle contract; feature PRDs such as `/plans/my-documents-prd.md` amend their surfaces.

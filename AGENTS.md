@@ -8,24 +8,27 @@ Use this file as the always-loaded map. Load deeper docs only when the task touc
 
 | Need | Read |
 | --- | --- |
-| Product scope, lifecycle contract, validation checklist | `plans/simple-esignature-prd.md` |
+| Product scope, lifecycle contract, validation checklist | `plans/simple-esignature-prd.md` plus the relevant `plans/*-prd.md` amendment |
 | Physical code map, boundaries, invariants | `ARCHITECTURE.md` |
 | Agent workflow and coding rules from `.claude/rules` | `docs/AGENT_GUIDE.md` |
 | Manual setup, API examples, smoke flow | `README.md` |
-| Current implementation plan and issue drafts | `plans/simple-esignature.md`, `plans/issues/` |
+| Implementation plans, issue drafts, and release evidence | `plans/`, `plans/issues/`, `plans/evidence/` |
 | Compact LLM index | `llms.txt` |
 
 ## Current Product Surface
 
 - Draft envelope creation, one source PDF upload under 10 MB, recipients, signature/date fields, send, signer links, signer completion/decline, final PDF status/download.
+- `/` is an unselected chooser for self-signing, signing with another person, or requesting passwordless My Documents access.
+- `/my-documents` is the verified-email worklist for retained creator/signer documents, including search, filters, paging, resume/sign/review, final PDF download, and creator controls.
+- An active My Documents session can start a new self-sign or two-party draft without repeating email verification.
 - `/manual-signing-smoke` is the local browser smoke path for create -> prepare -> send -> sign -> final PDF.
 - `/envelope-fields` is a field placement/review screen, not a full envelope dashboard.
-- Email delivery is represented by persisted send records and API-returned signing links; production email UI is not complete.
+- Resend delivers transactional email when configured; development/test flows may expose restricted fallback links.
 
 ## Issue Implementation Workflow
 
 1. Fetch the live issue before implementing: `gh issue view <number> --json number,title,body,state,labels,url`.
-2. Read `plans/simple-esignature-prd.md`, `plans/simple-esignature.md`, and the matching local file in `plans/issues/` when present.
+2. Read `plans/simple-esignature-prd.md`, the relevant feature PRD/plan under `plans/`, and the matching local file in `plans/issues/` when present.
 3. Load the local TDD skill for the implementation process. Do not duplicate that workflow in repo docs.
 4. Final status must enumerate verified, failing, and unverified acceptance criteria with evidence.
 
@@ -35,9 +38,11 @@ Open issue state changes, so do not hardcode issue status from memory.
 
 - API routes: `src/hono/api/*`
 - Envelope persistence and lifecycle behavior: `src/db/envelope/*`
+- Passwordless history identity, catalog, and authorization: `src/db/history-access/*`
 - Worker entry and API/app routing: `src/server.ts`
 - Field placement UI: `src/routes/envelope-fields.tsx`, `src/components/envelopes/*`
 - Signer UI and manual smoke path: `src/routes/signing.$token.tsx`, `src/routes/manual-signing-smoke.tsx`, `src/components/signing/*`
+- My Documents UI: `src/routes/my-documents*.tsx`, `src/routes/history-access.$credential.tsx`, `src/components/history/*`
 - Styling primitives: `src/components/ui/*` are generated Shadcn files; do not edit manually.
 
 ## Non-Negotiables
