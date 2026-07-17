@@ -16,6 +16,7 @@ export type SourceDocumentResponse = {
 	sha256: string;
 	byteSize: number;
 	contentType: "application/pdf";
+	originalFilename: string;
 	uploadedBy: string;
 	uploadedAt: string;
 	selfSign?: {
@@ -312,6 +313,7 @@ async function uploadSourcePdf(input: {
 		headers: {
 			"content-type": input.file.type || "application/pdf",
 			"idempotency-key": input.idempotencyKey,
+			"x-source-filename": encodeURIComponent(input.file.name),
 			"x-sender-session-token": input.senderSessionToken,
 		},
 		body: input.file,

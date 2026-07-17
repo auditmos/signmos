@@ -17,15 +17,23 @@ describe("HistoryDocumentsPage", () => {
 					new Response(
 						JSON.stringify({
 							data: {
-								documents: [
+								items: [
 									{
 										envelopeId: "00000000-0000-4000-8000-000000000001",
+										title: "Completed document",
+										shortReference: "A1B2C3D4",
 										status: "completed",
+										group: "completed",
 										role: "creator_and_signer",
+										participants: [],
+										allowedActions: ["view_completed", "download_final_pdf"],
+										createdAt: "2026-07-16T08:00:00.000Z",
+										activityAt: "2026-07-16T09:00:00.000Z",
 										detailUrl: "/my-documents/00000000-0000-4000-8000-000000000001",
 										downloadUrl: "/api/history/documents/00000000-0000-4000-8000-000000000001/pdf",
 									},
 								],
+								pagination: { page: 1, pageSize: 25, totalItems: 1, totalPages: 1 },
 							},
 						}),
 					),
@@ -40,7 +48,7 @@ describe("HistoryDocumentsPage", () => {
 
 		expect(await screen.findByRole("heading", { name: "My documents" })).toBeTruthy();
 		expect(await screen.findByText("Completed document")).toBeTruthy();
-		expect(screen.getByText("Completed")).toBeTruthy();
+		expect(screen.getByRole("article").textContent).toContain("Completed");
 		expect(screen.getByRole("article").textContent).toContain("Creator and signer");
 		expect(screen.getByRole("link", { name: "View details" }).getAttribute("href")).toBe(
 			"/my-documents/00000000-0000-4000-8000-000000000001",
@@ -85,7 +93,14 @@ describe("HistoryDocumentsPage", () => {
 	it("signs out through the protected session mutation and announces success", async () => {
 		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
 			if (String(input).endsWith("/session/sign-out")) return new Response(null, { status: 204 });
-			return new Response(JSON.stringify({ data: { documents: [] } }));
+			return new Response(
+				JSON.stringify({
+					data: {
+						items: [],
+						pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 1 },
+					},
+				}),
+			);
 		});
 		vi.stubGlobal("fetch", fetchMock);
 		const onSignedOut = vi.fn();

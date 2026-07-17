@@ -1,0 +1,1 @@
+ALTER TABLE "source_documents" ADD COLUMN "original_filename" text DEFAULT 'document.pdf' NOT NULL;

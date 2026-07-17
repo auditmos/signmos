@@ -144,11 +144,8 @@ describe("source PDF upload API", () => {
 	});
 
 	it("allows a verified sender session to upload one PDF and records metadata plus audit evidence", async () => {
-		// Assumptions for issue #15 RED:
-		// - x-sender-session-token from issue #14 authorizes source PDF upload for the same envelope.
 		// - PDF bytes are stored in R2 and metadata/hash are persisted in the document row.
 		// - A successful upload appends an immutable audit event.
-		// - Field placement, partner sending, signing, final PDFs, and retention jobs stay out of scope.
 		const pdfBytes = new TextEncoder().encode("%PDF-1.7\n%");
 		const response = await apiHono.request(
 			"/api/envelopes/00000000-0000-4000-8000-000000000001/source-pdf",
@@ -159,6 +156,7 @@ describe("source PDF upload API", () => {
 					"x-now": "2026-05-21T09:10:00.000Z",
 					"idempotency-key": "source-upload-1",
 					"content-type": "application/pdf",
+					"x-source-filename": "contract.pdf",
 				},
 				body: pdfBytes,
 			},
@@ -183,6 +181,7 @@ describe("source PDF upload API", () => {
 				sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
 				byteSize: pdfBytes.byteLength,
 				contentType: "application/pdf",
+				originalFilename: "contract.pdf",
 				uploadedBy: "ada@example.com",
 				uploadedAt: expect.any(String),
 			},
@@ -192,6 +191,7 @@ describe("source PDF upload API", () => {
 				r2Key: body.data.r2Key,
 				byteSize: pdfBytes.byteLength,
 				contentType: "application/pdf",
+				originalFilename: "contract.pdf",
 				uploadedBy: "ada@example.com",
 			}),
 		]);
@@ -237,6 +237,7 @@ describe("source PDF upload API", () => {
 				sha256: "a".repeat(64),
 				byteSize: 10,
 				contentType: "application/pdf",
+				originalFilename: "document.pdf",
 				uploadedBy: "ada@example.com",
 				uploadedAt: "2026-05-21T09:10:00.000Z",
 			},
@@ -467,6 +468,7 @@ describe("source PDF upload API", () => {
 					"x-sender-session-token": "verified-sender-token",
 					"x-now": "2026-05-21T09:10:00.000Z",
 					"content-type": "application/pdf",
+					"x-source-filename": "revised-contract.pdf",
 				},
 				body: new TextEncoder().encode("%PDF-1.7 revised\n%"),
 			},
@@ -485,6 +487,7 @@ describe("source PDF upload API", () => {
 			data: expect.objectContaining({
 				r2Key: expect.stringContaining("source-v2.pdf"),
 				version: 2,
+				originalFilename: "revised-contract.pdf",
 			}),
 		});
 		expect(state.fields).toHaveLength(0);

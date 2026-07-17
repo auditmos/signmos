@@ -133,6 +133,7 @@ export async function attachSourceDocument(
 			sha256: input.sha256,
 			byteSize: input.byteSize,
 			contentType: input.contentType,
+			originalFilename: input.originalFilename,
 			uploadedBy: input.uploadedBy,
 		})
 		.returning();

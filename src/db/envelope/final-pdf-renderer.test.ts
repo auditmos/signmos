@@ -130,6 +130,7 @@ async function sourceDocumentFixture(): Promise<SourceDocument> {
 		sha256: "a".repeat(64),
 		byteSize: bytes.byteLength,
 		contentType: "application/pdf",
+		originalFilename: "contract.pdf",
 		uploadedBy: "tom@auditmos.com",
 		uploadedAt: new Date("2026-05-25T12:00:00.000Z"),
 	};

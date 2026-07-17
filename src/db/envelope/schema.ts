@@ -70,7 +70,6 @@ export const EnvelopeActionRequestSchema = z.object({
 	action: EnvelopeLifecycleActionSchema,
 });
 export type EnvelopeActionInput = z.infer<typeof EnvelopeActionRequestSchema>;
-
 export const SourceDocumentSchema = z.object({
 	id: z.string().uuid(),
 	envelopeId: z.string().uuid(),
@@ -79,11 +78,11 @@ export const SourceDocumentSchema = z.object({
 	sha256: z.string().regex(/^[a-f0-9]{64}$/),
 	byteSize: z.coerce.number().int().nonnegative(),
 	contentType: z.literal("application/pdf"),
+	originalFilename: z.string().min(1).default("document.pdf"),
 	uploadedBy: z.string().min(1),
 	uploadedAt: z.date(),
 });
 export type SourceDocument = z.infer<typeof SourceDocumentSchema>;
-
 export const AttachSourceDocumentInputSchema = z.object({
 	envelopeId: z.string().uuid(),
 	uploadedBy: z.string().min(1),
@@ -93,9 +92,9 @@ export const AttachSourceDocumentInputSchema = z.object({
 	sha256: z.string().regex(/^[a-f0-9]{64}$/),
 	byteSize: z.number().int().nonnegative(),
 	contentType: z.literal("application/pdf"),
+	originalFilename: z.string().min(1).default("document.pdf"),
 });
 export type AttachSourceDocumentInput = z.infer<typeof AttachSourceDocumentInputSchema>;
-
 export const SourceDocumentResponseSchema = z.object({
 	id: z.string().uuid(),
 	envelopeId: z.string().uuid(),
@@ -104,11 +103,11 @@ export const SourceDocumentResponseSchema = z.object({
 	sha256: z.string(),
 	byteSize: z.number(),
 	contentType: z.literal("application/pdf"),
+	originalFilename: z.string(),
 	uploadedBy: z.string(),
 	uploadedAt: z.string(),
 });
 export type SourceDocumentResponse = z.infer<typeof SourceDocumentResponseSchema>;
-
 export const SenderStartRequestSchema = z.object({
 	signingMode: SigningModeSchema.default("me_and_another_signer"),
 	name: z.string().trim().min(1).max(120),
@@ -448,6 +447,7 @@ export function toSourceDocumentResponse(document: SourceDocument): SourceDocume
 		sha256: document.sha256,
 		byteSize: document.byteSize,
 		contentType: document.contentType,
+		originalFilename: document.originalFilename,
 		uploadedBy: document.uploadedBy,
 		uploadedAt: document.uploadedAt.toISOString(),
 	};

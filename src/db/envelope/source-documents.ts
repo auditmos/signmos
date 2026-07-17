@@ -28,6 +28,7 @@ interface UploadSourcePdfInput {
 	bytes: Uint8Array;
 	sha256: string;
 	contentType: "application/pdf";
+	originalFilename: string;
 	documentsBucket: R2Bucket;
 }
 
@@ -85,6 +86,7 @@ export async function uploadSourcePdfDocument(
 			sha256: input.sha256,
 			byteSize: input.bytes.byteLength,
 			contentType: input.contentType,
+			originalFilename: input.originalFilename,
 			uploadedBy: input.uploadedBy,
 		})
 		.returning();

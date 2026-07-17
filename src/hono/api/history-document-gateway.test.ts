@@ -33,13 +33,18 @@ function selectRows(table: unknown): Array<Record<string, unknown>> {
 	return [];
 }
 
+function selectQuery(table: unknown) {
+	const load = async () => selectRows(table);
+	return Object.assign(load(), {
+		where: () => ({ limit: load }),
+		limit: load,
+	});
+}
+
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({
-			from: (table: unknown) => ({
-				where: () => ({ limit: async () => selectRows(table) }),
-				limit: async () => selectRows(table),
-			}),
+			from: (table: unknown) => selectQuery(table),
 		}),
 		update: (table: unknown) => ({
 			set: (values: Record<string, unknown>) => ({

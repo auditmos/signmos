@@ -68,15 +68,23 @@ describe("history recovery tracer accessibility", () => {
 					new Response(
 						JSON.stringify({
 							data: {
-								documents: [
+								items: [
 									{
 										envelopeId,
+										title: "Completed document",
+										shortReference: "A1B2C3D4",
 										status: "completed",
+										group: "completed",
 										role: "creator",
+										participants: [],
+										allowedActions: ["view_completed", "download_final_pdf"],
+										createdAt: "2026-07-16T08:00:00.000Z",
+										activityAt: "2026-07-16T09:00:00.000Z",
 										detailUrl: `/my-documents/${envelopeId}`,
 										downloadUrl: `/api/history/documents/${envelopeId}/pdf`,
 									},
 								],
+								pagination: { page: 1, pageSize: 25, totalItems: 1, totalPages: 1 },
 							},
 						}),
 					),

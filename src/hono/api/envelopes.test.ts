@@ -271,6 +271,7 @@ describe("envelopes API", () => {
 				sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
 				byteSize: pdfBytes.byteLength,
 				contentType: "application/pdf",
+				originalFilename: "document.pdf",
 				uploadedBy: "user_123",
 				uploadedAt: expect.any(String),
 			},

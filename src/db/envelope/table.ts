@@ -101,6 +101,7 @@ export const sourceDocuments = pgTable("source_documents", {
 	sha256: text("sha256").notNull(),
 	byteSize: integer("byte_size").notNull(),
 	contentType: text("content_type").notNull(),
+	originalFilename: text("original_filename").notNull().default("document.pdf"),
 	uploadedBy: text("uploaded_by").notNull(),
 	uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
 });

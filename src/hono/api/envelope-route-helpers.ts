@@ -34,6 +34,15 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 	return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+export function parseSourceFilename(value: string | undefined): string {
+	if (!value) return "document.pdf";
+	try {
+		return decodeURIComponent(value).trim().slice(0, 255) || "document.pdf";
+	} catch {
+		return "document.pdf";
+	}
+}
+
 export function getRequestIp(
 	cfConnectingIp: string | undefined,
 	forwardedFor: string | undefined,

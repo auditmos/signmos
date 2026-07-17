@@ -51,6 +51,7 @@ import {
 	getVerifiedSenderUploadEmail,
 	isPdf,
 	parseNow,
+	parseSourceFilename,
 	type SenderStartEnv,
 	sha256Hex,
 	verifyTurnstileToken,
@@ -569,6 +570,7 @@ envelopesEndpoint.post("/:id/source-pdf", async (c) => {
 			bytes,
 			sha256,
 			contentType: "application/pdf",
+			originalFilename: parseSourceFilename(c.req.header("x-source-filename")),
 			documentsBucket: bucket,
 		});
 		const selfSign = await prepareSelfSignUploadResponse({

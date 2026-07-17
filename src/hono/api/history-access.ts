@@ -5,8 +5,10 @@ import {
 	getHistoryCompletedDocumentView,
 	getHistoryFinalDocument,
 	HistoryRequestRateLimitError,
+	historyCatalogGroups,
+	historyCatalogRoles,
 	inspectHistoryAccessLink,
-	listMinimalHistoryDocuments,
+	listHistoryDocuments,
 	redeemHistoryAccessLink,
 	requestHistoryAccess,
 	resolveHistorySession,
@@ -20,6 +22,23 @@ const historyAccessEndpoint = createHono();
 const HistoryAccessRequestSchema = z.object({
 	email: z.string().trim().toLowerCase().email(),
 	turnstileToken: z.string().min(1),
+});
+const HistoryCatalogQuerySchema = z.object({
+	search: z.string().trim().max(200).optional(),
+	role: z.enum(historyCatalogRoles).optional(),
+	group: z.enum(historyCatalogGroups).optional(),
+	status: z
+		.enum([
+			"awaiting_verification",
+			"draft",
+			"changes_requested",
+			"sent",
+			"completed",
+			"declined",
+			"expired",
+		])
+		.optional(),
+	page: z.coerce.number().int().positive().default(1),
 });
 
 historyAccessEndpoint.get("/access-links/:credential", async (c) => {
@@ -126,8 +145,20 @@ historyAccessEndpoint.get("/documents", async (c) => {
 			401,
 		);
 	}
+	const query = HistoryCatalogQuerySchema.safeParse(c.req.query());
+	if (!query.success) {
+		return c.json(
+			{
+				error: {
+					code: "INVALID_HISTORY_CATALOG_QUERY",
+					message: "Use a positive page and supported history filters",
+				},
+			},
+			400,
+		);
+	}
 	return c.json({
-		data: { documents: await listMinimalHistoryDocuments(sessionState.session.email) },
+		data: await listHistoryDocuments({ email: sessionState.session.email, ...query.data }),
 	});
 });
 

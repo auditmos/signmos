@@ -50,6 +50,7 @@ describe("SourcePdfUploadPanel", () => {
 				headers: {
 					"content-type": "application/pdf",
 					"idempotency-key": "upload-idempotency-key",
+					"x-source-filename": "contract.pdf",
 					"x-sender-session-token": "verified-sender-token",
 				},
 				body: file,

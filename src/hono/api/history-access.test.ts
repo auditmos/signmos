@@ -107,13 +107,18 @@ function updateRows(
 	return [updated];
 }
 
+function selectQuery(table: unknown) {
+	const load = async () => selectRows(table);
+	return Object.assign(load(), {
+		where: () => ({ limit: load }),
+		limit: load,
+	});
+}
+
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({
-			from: (table: unknown) => ({
-				where: () => ({ limit: async () => selectRows(table) }),
-				limit: async () => selectRows(table),
-			}),
+			from: (table: unknown) => selectQuery(table),
 		}),
 		insert: (table: unknown) => ({
 			values: (rows: Array<Record<string, unknown>> | Record<string, unknown>) => {
@@ -241,7 +246,6 @@ describe("history access tracer", () => {
 	});
 
 	it("renders repeated link confirmation reads without consuming the credential", async () => {
-		// Issue #37 RED: GET is scanner-safe, creates no session, and sets no-referrer.
 		const requestResponse = await apiHono.request(
 			"/api/history/access-requests",
 			{
@@ -316,7 +320,6 @@ describe("history access tracer", () => {
 	});
 
 	it("atomically redeems one link into one hashed fixed-expiry session", async () => {
-		// Issue #37 RED: same-origin POST consumes once; raw stays cookie-only for a fixed eight hours.
 		const requestResponse = await apiHono.request(
 			"/api/history/access-requests",
 			{
@@ -384,7 +387,6 @@ describe("history access tracer", () => {
 	});
 
 	it("lists only session-authorized completed documents and rejects unrelated identifiers", async () => {
-		// Issue #37 RED: completed participant rows require a session and expose no process token.
 		const unrelatedEnvelopeId = "00000000-0000-4000-8000-000000000099";
 		const recipientEnvelopeId = "00000000-0000-4000-8000-000000000050";
 		state.envelopes.push({
@@ -459,27 +461,19 @@ describe("history access tracer", () => {
 			headers: { cookie, "x-now": "2026-07-17T16:29:58.000Z" },
 		});
 		expect(catalogResponse.status).toBe(200);
-		const catalog = await catalogResponse.json();
-		expect(catalog).toEqual({
-			data: {
-				documents: [
-					{
-						envelopeId: completedEnvelopeId,
-						status: "completed",
-						role: "creator_and_signer",
-						detailUrl: `/my-documents/${completedEnvelopeId}`,
-						downloadUrl: `/api/history/documents/${completedEnvelopeId}/pdf`,
-					},
-					{
-						envelopeId: recipientEnvelopeId,
-						status: "completed",
-						role: "signer",
-						detailUrl: `/my-documents/${recipientEnvelopeId}`,
-						downloadUrl: `/api/history/documents/${recipientEnvelopeId}/pdf`,
-					},
-				],
-			},
+		const catalog = (await catalogResponse.json()) as {
+			data: { items: Array<Record<string, unknown>>; pagination: Record<string, unknown> };
+		};
+		expect(catalog.data.pagination).toEqual({
+			page: 1,
+			pageSize: 25,
+			totalItems: 2,
+			totalPages: 1,
 		});
+		expect(catalog.data.items).toEqual([
+			expect.objectContaining({ envelopeId: completedEnvelopeId, role: "creator_and_signer" }),
+			expect.objectContaining({ envelopeId: recipientEnvelopeId, role: "signer" }),
+		]);
 		expect(JSON.stringify(catalog)).not.toContain("30000000-0000-4000-8000-000000000001");
 
 		const unrelatedResponse = await apiHono.request(
