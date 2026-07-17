@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Send } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { HistoryRequestForm } from "@/components/history/history-request-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,20 +25,8 @@ interface StartEnvelopePageProps {
 	testTurnstileToken?: string;
 }
 
-const signingModeOptions = [
-	{
-		value: "only_me",
-		label: "Only me",
-		description: "Verify your email, upload a PDF, and sign it yourself.",
-	},
-	{
-		value: "me_and_another_signer",
-		label: "Me and another signer",
-		description: "Use the existing two-person envelope workflow.",
-	},
-] as const;
-
-type SigningMode = (typeof signingModeOptions)[number]["value"];
+type SigningMode = "only_me" | "me_and_another_signer";
+type LandingTask = SigningMode | "my_documents";
 
 type StartFormValues = {
 	signingMode: SigningMode;
@@ -84,9 +73,9 @@ export function StartEnvelopePage({
 	turnstileSiteKey,
 	testTurnstileToken = "",
 }: StartEnvelopePageProps) {
+	const [activeTask, setActiveTask] = useState<LandingTask | null>(null);
 	const [state, setState] = useState<StartState>({ status: "idle" });
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
-	const turnstileContainerRef = useRef<HTMLDivElement>(null);
 	const pendingTurnstileTokenRef = useRef("");
 	const activeTurnstileSiteKey = turnstileSiteKey?.trim() ?? "";
 	const activeTestTurnstileToken = testTurnstileToken.trim();
@@ -97,28 +86,10 @@ export function StartEnvelopePage({
 		onSubmit: ({ value }) => submitStart(value, pendingTurnstileTokenRef.current),
 	});
 
-	useEffect(() => {
-		const container = turnstileContainerRef.current;
-		if (!activeTurnstileSiteKey || !container) return;
-
-		let disposed = false;
-		let widgetId: string | undefined;
-
-		const renderTurnstile = () => {
-			if (disposed || widgetId || !window.turnstile) return;
-			widgetId = window.turnstile.render(container, { sitekey: activeTurnstileSiteKey });
-		};
-
-		const script = getOrCreateTurnstileScript();
-		script.addEventListener("load", renderTurnstile);
-		renderTurnstile();
-
-		return () => {
-			disposed = true;
-			script.removeEventListener("load", renderTurnstile);
-			if (widgetId) window.turnstile?.remove?.(widgetId);
-		};
-	}, [activeTurnstileSiteKey]);
+	function chooseTask(task: LandingTask) {
+		if (task !== "my_documents") form.setFieldValue("signingMode", task);
+		setActiveTask(task);
+	}
 
 	function submitForm(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -178,121 +149,153 @@ export function StartEnvelopePage({
 					</p>
 				</div>
 
-				<form
-					aria-label="Start envelope"
-					onSubmit={submitForm}
-					className="rounded-lg border bg-card p-5 shadow-sm"
+				<LandingTaskPanel
+					activeTask={activeTask}
+					onBack={() => setActiveTask(null)}
+					onChoose={chooseTask}
 				>
-					<div className="space-y-5">
-						<form.Field name="signingMode">
-							{(field) => (
-								<fieldset className="space-y-2">
-									<legend className="font-medium text-sm">Signing mode</legend>
-									<div className="grid gap-2">
-										{signingModeOptions.map((option) => (
-											<label
-												key={option.value}
-												className="flex cursor-pointer gap-3 rounded-md border bg-background p-3 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-											>
-												<input
-													type="radio"
-													aria-label={option.label}
-													name={field.name}
-													value={option.value}
-													checked={field.state.value === option.value}
-													onBlur={field.handleBlur}
-													onChange={() => field.handleChange(option.value)}
-													className="mt-1"
-												/>
-												<span>
-													<span className="block font-medium">{option.label}</span>
-													<span className="block text-muted-foreground text-xs">
-														{option.description}
-													</span>
-												</span>
-											</label>
-										))}
+					<form
+						aria-label="Start envelope"
+						onSubmit={submitForm}
+						className="rounded-lg border bg-card p-5 shadow-sm"
+					>
+						<div className="space-y-5">
+							<form.Field name="name">
+								{(field) => (
+									<div className="space-y-2">
+										<Label htmlFor="sender-name">Name</Label>
+										<Input
+											id="sender-name"
+											name={field.name}
+											autoComplete="name"
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(event) => field.handleChange(event.target.value)}
+											required
+										/>
 									</div>
-								</fieldset>
-							)}
-						</form.Field>
-						<form.Field name="name">
-							{(field) => (
-								<div className="space-y-2">
-									<Label htmlFor="sender-name">Name</Label>
-									<Input
-										id="sender-name"
-										name={field.name}
-										autoComplete="name"
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(event) => field.handleChange(event.target.value)}
-										required
-									/>
-								</div>
-							)}
-						</form.Field>
-						<form.Field name="email">
-							{(field) => (
-								<div className="space-y-2">
-									<Label htmlFor="sender-email">Email</Label>
-									<Input
-										id="sender-email"
-										name={field.name}
-										type="email"
-										autoComplete="email"
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(event) => field.handleChange(event.target.value)}
-										required
-									/>
-								</div>
-							)}
-						</form.Field>
+								)}
+							</form.Field>
+							<form.Field name="email">
+								{(field) => (
+									<div className="space-y-2">
+										<Label htmlFor="sender-email">Email</Label>
+										<Input
+											id="sender-email"
+											name={field.name}
+											type="email"
+											autoComplete="email"
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(event) => field.handleChange(event.target.value)}
+											required
+										/>
+									</div>
+								)}
+							</form.Field>
 
-						{activeTurnstileSiteKey ? (
-							<div className="min-h-16">
-								<div ref={turnstileContainerRef} className="cf-turnstile" />
-							</div>
-						) : null}
+							{activeTurnstileSiteKey ? <TurnstileWidget siteKey={activeTurnstileSiteKey} /> : null}
 
-						{!hasTurnstileConfig ? (
-							<Alert variant="destructive" role="alert">
-								<AlertTitle>Turnstile is not configured</AlertTitle>
-								<AlertDescription>
-									Set TURNSTILE_SITE_KEY in .dev.vars and restart the dev server.
-								</AlertDescription>
-							</Alert>
-						) : null}
+							{!hasTurnstileConfig ? (
+								<Alert variant="destructive" role="alert">
+									<AlertTitle>Turnstile is not configured</AlertTitle>
+									<AlertDescription>
+										Set TURNSTILE_SITE_KEY in .dev.vars and restart the dev server.
+									</AlertDescription>
+								</Alert>
+							) : null}
 
-						{state.status === "error" ? (
-							<Alert variant="destructive" role="alert">
-								<AlertTitle>Start failed</AlertTitle>
-								<AlertDescription>{state.message}</AlertDescription>
-							</Alert>
-						) : null}
+							{state.status === "error" ? (
+								<Alert variant="destructive" role="alert">
+									<AlertTitle>Start failed</AlertTitle>
+									<AlertDescription>{state.message}</AlertDescription>
+								</Alert>
+							) : null}
 
-						{state.status === "success" ? (
-							<Alert>
-								<AlertTitle>Check your email</AlertTitle>
-								<AlertDescription>
-									Verification was sent to {state.response.sender.email}.
-								</AlertDescription>
-							</Alert>
-						) : null}
+							{state.status === "success" ? (
+								<Alert>
+									<AlertTitle>Check your email</AlertTitle>
+									<AlertDescription>
+										Verification was sent to {state.response.sender.email}.
+									</AlertDescription>
+								</Alert>
+							) : null}
 
-						<Button
-							type="submit"
-							className="w-full"
-							disabled={state.status === "submitting" || !hasTurnstileConfig}
-						>
-							<Send className="mr-2 size-4" />
-							{state.status === "submitting" ? "Starting..." : "Start envelope"}
-						</Button>
-					</div>
-				</form>
+							<Button
+								type="submit"
+								className="w-full"
+								disabled={state.status === "submitting" || !hasTurnstileConfig}
+							>
+								<Send className="mr-2 size-4" />
+								{state.status === "submitting" ? "Starting..." : "Start envelope"}
+							</Button>
+						</div>
+					</form>
+				</LandingTaskPanel>
 			</section>
 		</main>
+	);
+}
+
+function LandingTaskPanel({
+	activeTask,
+	children,
+	onBack,
+	onChoose,
+}: {
+	activeTask: LandingTask | null;
+	children: ReactNode;
+	onBack: () => void;
+	onChoose: (task: LandingTask) => void;
+}) {
+	if (activeTask === null) return <LandingTaskChooser onChoose={onChoose} />;
+	if (activeTask === "my_documents") return <HistoryRequestForm onBack={onBack} />;
+	return children;
+}
+
+function LandingTaskChooser({ onChoose }: { onChoose: (task: LandingTask) => void }) {
+	return (
+		<fieldset className="grid gap-3">
+			<legend className="sr-only">Choose a task</legend>
+			<Button type="button" variant="outline" onClick={() => onChoose("only_me")}>
+				Sign by myself
+			</Button>
+			<Button type="button" variant="outline" onClick={() => onChoose("me_and_another_signer")}>
+				Sign with someone else
+			</Button>
+			<Button type="button" variant="outline" onClick={() => onChoose("my_documents")}>
+				My documents
+			</Button>
+		</fieldset>
+	);
+}
+
+function TurnstileWidget({ siteKey }: { siteKey: string }) {
+	const containerRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+		let disposed = false;
+		let widgetId: string | undefined;
+		const renderTurnstile = () => {
+			if (disposed || widgetId || !window.turnstile) return;
+			widgetId = window.turnstile.render(container, { sitekey: siteKey });
+		};
+		const script = getOrCreateTurnstileScript();
+		script.addEventListener("load", renderTurnstile);
+		renderTurnstile();
+		return () => {
+			disposed = true;
+			script.removeEventListener("load", renderTurnstile);
+			if (widgetId) window.turnstile?.remove?.(widgetId);
+		};
+	}, [siteKey]);
+
+	return (
+		<div className="min-h-16">
+			<div ref={containerRef} className="cf-turnstile" />
+		</div>
 	);
 }
 

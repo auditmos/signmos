@@ -15,3 +15,4 @@ export {
 	signerTokens,
 	sourceDocuments,
 } from "./envelope/table";
+export { historyAccessLinks, historyEmailRecords, historySessions } from "./history-access/table";

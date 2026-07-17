@@ -1,27 +1,77 @@
 // @vitest-environment jsdom
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { StartEnvelopePage } from "./start-envelope-page";
+
+function renderStartEnvelopePage(props: ComponentProps<typeof StartEnvelopePage> = {}) {
+	const queryClient = new QueryClient({
+		defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+	});
+	return render(
+		<QueryClientProvider client={queryClient}>
+			<StartEnvelopePage {...props} />
+		</QueryClientProvider>,
+	);
+}
 
 describe("StartEnvelopePage", () => {
 	beforeEach(() => {
 		vi.stubGlobal("crypto", { randomUUID: () => "form-idempotency-key" });
 	});
 
-	it("renders the single-signer mode selector with Only me selected by default", () => {
-		// Assumptions for issue #29:
-		// - The public landing page owns the human-visible mode choice.
-		// - "Only me" maps to the single-signer start path and is selected by default.
-		// - "Me and another signer" maps to the existing two-person flow.
-		// - PDF upload, saved signatures, document history, and final PDF behavior stay out of scope.
-		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+	it("starts with three equal task choices and reveals only the selected task", () => {
+		// Issue #37 assumptions before RED:
+		// - No task is selected when the landing page first renders.
+		// - The three task labels are the stable public choice contract.
+		// - My documents asks for email only; request submission is tested in a later slice.
+		// - Returning to the chooser removes task-specific form state from the visible UI.
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
 
-		expect((screen.getByRole("radio", { name: "Only me" }) as HTMLInputElement).checked).toBe(true);
-		expect(
-			(screen.getByRole("radio", { name: "Me and another signer" }) as HTMLInputElement).checked,
-		).toBe(false);
+		expect(screen.getByRole("button", { name: "Sign by myself" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Sign with someone else" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "My documents" })).toBeTruthy();
+		expect(screen.queryByRole("form", { name: "Start envelope" })).toBeNull();
+		expect(screen.queryByRole("form", { name: "Request My documents access" })).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "My documents" }));
+
+		expect(screen.getByRole("form", { name: "Request My documents access" })).toBeTruthy();
+		expect(screen.getByLabelText("Email")).toBeTruthy();
+		expect(screen.queryByLabelText("Name")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: "Back to task choices" }));
+		expect(screen.queryByRole("form", { name: "Request My documents access" })).toBeNull();
 	});
 
-	it("keeps sender details while switching modes and submits the selected mode", async () => {
+	it("requests My documents access with email only", async () => {
+		const fetchMock = vi.fn(
+			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: "My documents" }));
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "owner@example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Email me a secure link" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		expect(fetchMock).toHaveBeenCalledWith("/api/history/access-requests", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"idempotency-key": "form-idempotency-key",
+			},
+			body: JSON.stringify({ email: "owner@example.com" }),
+		});
+		expect((await screen.findByRole("status")).textContent).toContain("Check your email");
+		expect(screen.getByRole("button", { name: "Back to task choices" })).toBeTruthy();
+	});
+
+	it("submits the selected partner-signing task through the existing sender-start contract", async () => {
 		const fetchMock = vi.fn(
 			async () =>
 				new Response(
@@ -46,16 +96,17 @@ describe("StartEnvelopePage", () => {
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
-		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign with someone else" }));
 
 		const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
 		const emailInput = screen.getByLabelText("Email") as HTMLInputElement;
 		fireEvent.change(nameInput, { target: { value: "Ada Lovelace" } });
 		fireEvent.change(emailInput, { target: { value: "ada@example.com" } });
-		fireEvent.click(screen.getByRole("radio", { name: "Me and another signer" }));
 
 		expect(nameInput.value).toBe("Ada Lovelace");
 		expect(emailInput.value).toBe("ada@example.com");
+		expect(screen.queryByRole("radio")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Start envelope" }));
 
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -76,7 +127,8 @@ describe("StartEnvelopePage", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 
-		render(<StartEnvelopePage />);
+		renderStartEnvelopePage();
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		const alert = screen.getByRole("alert");
 		const startButton = screen.getByRole("button", { name: "Start envelope" });
@@ -95,7 +147,8 @@ describe("StartEnvelopePage", () => {
 		});
 		vi.stubGlobal("turnstile", { render: renderTurnstile });
 
-		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+		renderStartEnvelopePage({ turnstileSiteKey: "site-key" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		await waitFor(() =>
 			expect(renderTurnstile).toHaveBeenCalledWith(expect.any(HTMLElement), {
@@ -109,7 +162,8 @@ describe("StartEnvelopePage", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 
-		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+		renderStartEnvelopePage({ turnstileSiteKey: "site-key" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
 		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
@@ -143,7 +197,8 @@ describe("StartEnvelopePage", () => {
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
-		render(<StartEnvelopePage turnstileSiteKey="site-key" />);
+		renderStartEnvelopePage({ turnstileSiteKey: "site-key" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		const widgetResponse = document.createElement("input");
 		widgetResponse.type = "hidden";
@@ -198,7 +253,8 @@ describe("StartEnvelopePage", () => {
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
-		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
 		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
@@ -244,7 +300,8 @@ describe("StartEnvelopePage", () => {
 			),
 		);
 
-		render(<StartEnvelopePage testTurnstileToken="invalid" />);
+		renderStartEnvelopePage({ testTurnstileToken: "invalid" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
 		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
@@ -260,7 +317,8 @@ describe("StartEnvelopePage", () => {
 			vi.fn(async () => new Response("Internal Server Error", { status: 500 })),
 		);
 
-		render(<StartEnvelopePage testTurnstileToken="test-pass" />);
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+		fireEvent.click(screen.getByRole("button", { name: "Sign by myself" }));
 
 		fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
 		fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ada@example.com" } });
