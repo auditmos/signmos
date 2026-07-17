@@ -1,3 +1,11 @@
+export {
+	agenticAccessLinks,
+	agenticAccessRequests,
+	agenticApiTokens,
+	agenticEmailRecords,
+	agenticManagementSessions,
+	agenticSecurityEvents,
+} from "./agentic-access/table";
 export { clients } from "./client/table";
 export {
 	auditEvents,

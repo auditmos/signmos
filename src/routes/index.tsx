@@ -20,12 +20,13 @@ function IndexPage() {
 	const config = Route.useLoaderData();
 	const searchString = useLocation({ select: (location) => location.searchStr });
 	const requestedTask = new URLSearchParams(searchString).get("task");
-	return (
-		<StartEnvelopePage
-			initialTask={requestedTask === "my-documents" ? "my_documents" : undefined}
-			turnstileSiteKey={config.turnstileSiteKey}
-		/>
-	);
+	const initialTask =
+		requestedTask === "my-documents"
+			? "my_documents"
+			: requestedTask === "agentic"
+				? "agentic"
+				: undefined;
+	return <StartEnvelopePage initialTask={initialTask} turnstileSiteKey={config.turnstileSiteKey} />;
 }
 
 function normalizeOptionalValue(value: string | undefined): string | undefined {

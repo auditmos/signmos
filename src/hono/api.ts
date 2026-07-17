@@ -1,3 +1,5 @@
+import agentV1Endpoint from "@/hono/api/agent-v1";
+import agenticEndpoint from "@/hono/api/agentic";
 import clientsEndpoint from "@/hono/api/clients";
 import envelopePreparationEndpoint from "@/hono/api/envelope-preparation";
 import envelopesEndpoint from "@/hono/api/envelopes";
@@ -13,6 +15,8 @@ import { createHono } from "./factory";
 export const apiHono = createHono().basePath("/api");
 
 apiHono.route("/health", healthEndpoint);
+apiHono.route("/agentic", agenticEndpoint);
+apiHono.route("/v1", agentV1Endpoint);
 apiHono.route("/history", historyAccessEndpoint);
 apiHono.route("/history", historyCreatorEndpoint);
 apiHono.route("/history", historyEnvelopeStartEndpoint);

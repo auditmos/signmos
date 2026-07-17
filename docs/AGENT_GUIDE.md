@@ -6,7 +6,7 @@ This guide is the detailed operating manual for agents working in signmos. Keep 
 
 - Start from `AGENTS.md`.
 - For code navigation, read `ARCHITECTURE.md`.
-- For product behavior and acceptance criteria, read `plans/simple-esignature-prd.md` plus the relevant feature amendment: `plans/frictionless-signing-ux-prd.md`, `plans/single-signer-mode-prd.md`, or `plans/my-documents-prd.md`.
+- For product behavior and acceptance criteria, read `plans/simple-esignature-prd.md` plus the relevant feature amendment: `plans/frictionless-signing-ux-prd.md`, `plans/single-signer-mode-prd.md`, `plans/my-documents-prd.md`, or `plans/agentic-mode-prd.md`.
 - For issue implementation, fetch the live GitHub issue, then read the matching local plan in `plans/issues/` if it exists.
 - For API examples and manual smoke instructions, read `README.md`.
 - Do not load all docs by default. Add context only when the current task needs it.

@@ -21,10 +21,11 @@ describe("StartEnvelopePage", () => {
 		vi.stubGlobal("crypto", { randomUUID: () => "form-idempotency-key" });
 	});
 
-	it("starts with three equal task choices and reveals only the selected task", () => {
-		// Issue #37 assumptions before RED:
+	it("starts with four equal task choices and reveals only the selected task", () => {
+		// Issue #44 assumptions before RED:
 		// - No task is selected when the landing page first renders.
-		// - The three task labels are the stable public choice contract.
+		// - The four task labels are the stable public choice contract.
+		// - Agentic mode uses dedicated credentials and never falls through to sender or My Documents.
 		// - My documents asks for email only; request submission is tested in a later slice.
 		// - Returning to the chooser removes task-specific form state from the visible UI.
 		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
@@ -32,6 +33,7 @@ describe("StartEnvelopePage", () => {
 		expect(screen.getByRole("button", { name: "Sign by myself" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Sign with someone else" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "My documents" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Agentic mode" })).toBeTruthy();
 		expect(screen.queryByRole("form", { name: "Start envelope" })).toBeNull();
 		expect(screen.queryByRole("form", { name: "Request My documents access" })).toBeNull();
 
@@ -69,6 +71,33 @@ describe("StartEnvelopePage", () => {
 		});
 		expect((await screen.findByRole("status")).textContent).toContain("Check your email");
 		expect(screen.getByRole("button", { name: "Back to task choices" })).toBeTruthy();
+	});
+
+	it("requests dedicated Agentic access with email and Turnstile", async () => {
+		const fetchMock = vi.fn(
+			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: "Agentic mode" }));
+		expect(screen.getByRole("form", { name: "Request Agentic access" })).toBeTruthy();
+		expect(screen.queryByLabelText("Name")).toBeNull();
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "Agent.User@Example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Email me an Agentic link" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		expect(fetchMock).toHaveBeenCalledWith("/api/agentic/access-requests", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				"idempotency-key": "form-idempotency-key",
+			},
+			body: JSON.stringify({ email: "Agent.User@Example.com", turnstileToken: "test-pass" }),
+		});
+		expect((await screen.findByRole("status")).textContent).toContain("Check your email");
 	});
 
 	it("submits the selected partner-signing task through the existing sender-start contract", async () => {

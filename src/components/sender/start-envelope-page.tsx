@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Send } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
+import { AgenticAccessRequestForm } from "@/components/agentic/agentic-access-request-form";
 import { HistoryRequestForm } from "@/components/history/history-request-form";
 import { readTurnstileToken, TurnstileWidget } from "@/components/turnstile-widget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -9,13 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 interface StartEnvelopePageProps {
-	initialTask?: "my_documents";
+	initialTask?: "my_documents" | "agentic";
 	turnstileSiteKey?: string;
 	testTurnstileToken?: string;
 }
 
 type SigningMode = "only_me" | "me_and_another_signer";
-type LandingTask = SigningMode | "my_documents";
+type LandingTask = SigningMode | "my_documents" | "agentic";
 
 type StartFormValues = {
 	signingMode: SigningMode;
@@ -77,7 +78,9 @@ export function StartEnvelopePage({
 	});
 
 	function chooseTask(task: LandingTask) {
-		if (task !== "my_documents") form.setFieldValue("signingMode", task);
+		if (task === "only_me" || task === "me_and_another_signer") {
+			form.setFieldValue("signingMode", task);
+		}
 		setActiveTask(task);
 	}
 
@@ -254,6 +257,15 @@ function LandingTaskPanel({
 			/>
 		);
 	}
+	if (activeTask === "agentic") {
+		return (
+			<AgenticAccessRequestForm
+				onBack={onBack}
+				turnstileSiteKey={turnstileSiteKey}
+				testTurnstileToken={testTurnstileToken}
+			/>
+		);
+	}
 	return children;
 }
 
@@ -269,6 +281,9 @@ function LandingTaskChooser({ onChoose }: { onChoose: (task: LandingTask) => voi
 			</Button>
 			<Button type="button" variant="outline" onClick={() => onChoose("my_documents")}>
 				My documents
+			</Button>
+			<Button type="button" variant="outline" onClick={() => onChoose("agentic")}>
+				Agentic mode
 			</Button>
 		</fieldset>
 	);

@@ -3,6 +3,7 @@
 import handler from "@tanstack/react-start/server-entry";
 import { initDatabase } from "@/db";
 import { apiHono } from "@/hono/api";
+import { publicAgentContractHono } from "@/hono/public-agent-contract";
 
 export default {
 	fetch(request: Request, env: Env, ctx: ExecutionContext) {
@@ -16,6 +17,9 @@ export default {
 
 		if (url.pathname.startsWith("/api/")) {
 			return apiHono.fetch(request, env, ctx);
+		}
+		if (url.pathname === "/agent.md" || url.pathname === "/openapi.json") {
+			return publicAgentContractHono.fetch(request, env, ctx);
 		}
 
 		return handler.fetch(request, {

@@ -39,6 +39,8 @@ All requests enter `src/server.ts`.
 - `src/hono/api/history-access.ts` owns passwordless history requests, scanner-safe link redemption, history sessions, catalog/detail reads, and session-authorized final PDF access.
 - `src/hono/api/history-envelope-start.ts` starts a verified draft from an active history session.
 - `src/hono/api/history-creator.ts` and `src/hono/api/history-signing.ts` adapt history-authorized creator and signer recovery actions.
+- `src/hono/api/agentic.ts` owns Agentic email verification, management-session, and browser token-generation routes.
+- `src/hono/api/agent-v1.ts` begins the stable Bearer-authenticated `/api/v1` contract; `src/hono/public-agent-contract.ts` publishes `/agent.md` and `/openapi.json` from its runtime schemas.
 - `src/hono/api/clients.ts` and `src/hono/api/health.ts` are starter/demo and health surfaces, not core signing workflow.
 
 ### Envelope Domain
@@ -58,6 +60,14 @@ All requests enter `src/server.ts`.
 - `src/db/history-access/session-envelope-start.ts` creates an idempotent already-verified draft from an active history session.
 - `src/db/history-access/security-audit.ts` records credential/session/document access separately from the user-facing envelope audit timeline.
 - `src/db/history-access/index.ts` is the public import boundary for the history-access domain.
+
+### Agentic Access Domain
+
+- `src/db/agentic-access/table.ts` defines hashed Agentic links, 15-minute management sessions, named API-token metadata, delivery records, and security events.
+- `src/db/agentic-access/request.ts` and `credential-authority.ts` own enumeration-safe access requests, fragment-delivered link credentials, atomic redemption, and exact expiry boundaries.
+- `src/db/agentic-access/token-authority.ts` generates one-time `signmos_` secrets from 256 bits of CSPRNG material and persists only deterministic hashes plus safe hints.
+- `src/db/agentic-access/bearer-principal.ts` resolves the verified email/token principal and records agent-attributed sensitive reads.
+- `src/db/agentic-access/schema.ts` is the shared runtime/OpenAPI trust boundary, and `index.ts` is the domain's narrow public interface.
 
 ### Other DB Domains
 
@@ -86,6 +96,7 @@ All requests enter `src/server.ts`.
 - `src/components/signing/signer-page.tsx` loads assigned fields and posts completion, change requests, and decline for process-link or recovered-history access.
 - `src/routes/completed-documents.$token.tsx` and `src/components/completed-documents/completed-document-page.tsx` render process-link completed details.
 - `src/routes/manual-signing-smoke.tsx` and `src/components/signing/manual-smoke-page.tsx` provide the local browser-driven full workflow smoke path.
+- `src/routes/agentic-access.tsx` removes the emailed fragment credential from browser history before scanner-safe inspection; `src/routes/agentic-console.tsx` hosts one-time token generation and secret-free agent guidance.
 - `src/routes/clients.tsx` and `src/components/clients/*` remain a demo client CRUD surface outside the signing workflow.
 
 ### Design System And Styling
@@ -130,13 +141,15 @@ Envelope creation, source PDF upload, public history requests, and history-sessi
 
 Signmos has no password account. Existing sender/signer/final-document credentials remain process-specific. My Documents adds a parallel normalized-email identity proven by a single-use link and held in a fixed, revocable HTTP-only session. History routes must authorize both the email's envelope role and current lifecycle state, must not reveal process bearer credentials, and must require same-origin protection for cookie-authenticated mutations.
 
+Agentic mode adds a separate 30-minute single-use email credential, a 15-minute HTTP-only management session, and long-lived hash-only personal Bearer tokens. Management cookies cannot authorize `/api/v1`, Bearer tokens cannot substitute for browser management, and every sensitive Bearer read records normalized email plus safe token identity with `actorType: "agent"`.
+
 ### Document Storage
 
 Envelope metadata lives in Neon. Source and final PDFs live in R2 under envelope-scoped keys. The database stores R2 key, content type, byte size, and SHA-256 hash so API status and audit behavior do not need to inspect R2 for every decision.
 
 ### Time
 
-Sender verification and history access links expire after 30 minutes, history sessions after a fixed eight hours, and signer tokens after seven days. Tests that depend on time should control time explicitly through a boundary such as headers, fake timers, or injectable clock behavior.
+Sender verification, history access links, and Agentic access links expire after 30 minutes; Agentic management sessions expire after 15 minutes, history sessions after a fixed eight hours, and signer tokens after seven days. Tests that depend on time should control time explicitly through a boundary such as headers, fake timers, or injectable clock behavior.
 
 ### UI
 

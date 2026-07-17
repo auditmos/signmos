@@ -14,6 +14,8 @@ import { Route as MyDocumentsRouteImport } from './routes/my-documents'
 import { Route as ManualSigningSmokeRouteImport } from './routes/manual-signing-smoke'
 import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ClientsRouteImport } from './routes/clients'
+import { Route as AgenticConsoleRouteImport } from './routes/agentic-console'
+import { Route as AgenticAccessRouteImport } from './routes/agentic-access'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MyDocumentsIndexRouteImport } from './routes/my-documents.index'
 import { Route as SigningTokenRouteImport } from './routes/signing.$token'
@@ -49,6 +51,16 @@ const EnvelopeFieldsRoute = EnvelopeFieldsRouteImport.update({
 const ClientsRoute = ClientsRouteImport.update({
   id: '/clients',
   path: '/clients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgenticConsoleRoute = AgenticConsoleRouteImport.update({
+  id: '/agentic-console',
+  path: '/agentic-console',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgenticAccessRoute = AgenticAccessRouteImport.update({
+  id: '/agentic-access',
+  path: '/agentic-access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -114,6 +126,8 @@ const MyDocumentsEnvelopeIdManageRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agentic-access': typeof AgenticAccessRoute
+  '/agentic-console': typeof AgenticConsoleRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
@@ -132,6 +146,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agentic-access': typeof AgenticAccessRoute
+  '/agentic-console': typeof AgenticConsoleRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
@@ -149,6 +165,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agentic-access': typeof AgenticAccessRoute
+  '/agentic-console': typeof AgenticConsoleRoute
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
@@ -169,6 +187,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agentic-access'
+    | '/agentic-console'
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
@@ -187,6 +207,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agentic-access'
+    | '/agentic-console'
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
@@ -203,6 +225,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/agentic-access'
+    | '/agentic-console'
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
@@ -222,6 +246,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgenticAccessRoute: typeof AgenticAccessRoute
+  AgenticConsoleRoute: typeof AgenticConsoleRoute
   ClientsRoute: typeof ClientsRoute
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
   ManualSigningSmokeRoute: typeof ManualSigningSmokeRoute
@@ -269,6 +295,20 @@ declare module '@tanstack/react-router' {
       path: '/clients'
       fullPath: '/clients'
       preLoaderRoute: typeof ClientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agentic-console': {
+      id: '/agentic-console'
+      path: '/agentic-console'
+      fullPath: '/agentic-console'
+      preLoaderRoute: typeof AgenticConsoleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agentic-access': {
+      id: '/agentic-access'
+      path: '/agentic-access'
+      fullPath: '/agentic-access'
+      preLoaderRoute: typeof AgenticAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -384,6 +424,8 @@ const MyDocumentsRouteWithChildren = MyDocumentsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgenticAccessRoute: AgenticAccessRoute,
+  AgenticConsoleRoute: AgenticConsoleRoute,
   ClientsRoute: ClientsRoute,
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
   ManualSigningSmokeRoute: ManualSigningSmokeRoute,
