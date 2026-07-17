@@ -1,3 +1,10 @@
+# 1.0.0 (2026-07-17)
+
+
+### Features
+
+* add verified Agentic onboarding ([#44](https://github.com/auditmos/signmos/issues/44)) ([116a96f](https://github.com/auditmos/signmos/commit/116a96ff1ae6ffaeabb220db997dd7ef0c790d47))
+
 # Unreleased (2026-07-17)
 
 ### Features
