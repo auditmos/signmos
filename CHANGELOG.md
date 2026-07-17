@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/auditmos/signmos/compare/v1.2.0...v1.3.0) (2026-07-17)
+
+
+### Features
+
+* add Agentic self-sign lifecycle ([#47](https://github.com/auditmos/signmos/issues/47)) ([46f2b2c](https://github.com/auditmos/signmos/commit/46f2b2c504628c6a4720608f6b64dd48fd1dd098))
+
 # [1.2.0](https://github.com/auditmos/signmos/compare/v1.1.0...v1.2.0) (2026-07-17)
 
 
