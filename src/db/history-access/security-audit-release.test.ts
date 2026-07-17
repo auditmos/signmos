@@ -37,6 +37,7 @@ describe("My documents release security-audit contract", () => {
 			"history.completed.opened",
 			"history.final_pdf.downloaded",
 			"history.creator.opened",
+			"history.creator.started",
 			"history.creator.canceled",
 			"history.creator.deleted",
 			"history.signer.source_pdf.opened",

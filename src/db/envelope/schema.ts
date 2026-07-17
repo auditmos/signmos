@@ -22,7 +22,6 @@ export const envelopeAllowedActionsByStatus = {
 
 export const EnvelopeStatusSchema = z.enum(envelopeStatuses);
 export type EnvelopeStatus = z.infer<typeof EnvelopeStatusSchema>;
-
 export const SigningModeSchema = z.enum(signingModes);
 export type SigningMode = z.infer<typeof SigningModeSchema>;
 
@@ -46,6 +45,7 @@ export const EnvelopeSchema = z.object({
 	status: EnvelopeStatusSchema,
 	signingMode: SigningModeSchema.default("me_and_another_signer"),
 	createdBy: z.string().min(1),
+	createdByName: z.string().nullable().optional(),
 	createdAt: z.date(),
 	sentBy: z.string().nullable().optional(),
 	sentAt: z.date().nullable().optional(),

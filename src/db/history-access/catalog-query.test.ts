@@ -32,6 +32,7 @@ function rows(table: unknown): StoredRow[] {
 function addEnvelope(input: {
 	sequence: number;
 	creator?: string;
+	creatorName?: string;
 	status?: string;
 	createdAt?: Date;
 }) {
@@ -40,6 +41,7 @@ function addEnvelope(input: {
 		status: input.status ?? "completed",
 		signingMode: "me_and_another_signer",
 		createdBy: input.creator ?? "owner@example.com",
+		createdByName: input.creatorName ?? null,
 		createdAt: input.createdAt ?? new Date("2026-01-01T08:00:00.000Z"),
 		sentBy: null,
 		sentAt: null,
@@ -134,6 +136,41 @@ describe("history catalog authorized query", () => {
 
 		expect(result.items).toEqual([]);
 		expect(result.pagination.totalItems).toBe(0);
+	});
+
+	it("suggests the newest name for the exact session email independently of filters", async () => {
+		// Approved prefill assumptions before RED:
+		// - The exact normalized session email selects a name; aliases remain distinct.
+		// - Most recent means the authorized document with the newest meaningful activity.
+		// - The suggestion is advisory/editable and does not change with search or pagination.
+		addEnvelope({
+			sequence: 1,
+			creatorName: "Older Creator Name",
+			createdAt: new Date("2026-01-01T08:00:00.000Z"),
+		});
+		addEnvelope({
+			sequence: 2,
+			creator: "someone-else@example.com",
+			createdAt: new Date("2026-01-03T08:00:00.000Z"),
+		});
+		addRecipient({
+			sequence: 2,
+			envelope: 2,
+			email: "OWNER@example.com",
+			name: "Newest Signer Name",
+		});
+
+		const result = await listHistoryDocuments({
+			email: " owner@EXAMPLE.com ",
+			page: 1,
+			search: "no matching document",
+		});
+
+		expect(result.items).toEqual([]);
+		expect(result.identity).toEqual({
+			email: "owner@example.com",
+			suggestedName: "Newest Signer Name",
+		});
 	});
 
 	it("combines role, group, and exact-status filters after authorization", async () => {

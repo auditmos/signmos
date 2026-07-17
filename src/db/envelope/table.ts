@@ -21,6 +21,7 @@ export const envelopes = pgTable("envelopes", {
 	status: text("status").notNull().default("draft"),
 	signingMode: text("signing_mode").notNull().default("me_and_another_signer"),
 	createdBy: text("created_by").notNull(),
+	createdByName: text("created_by_name"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	sentBy: text("sent_by"),
 	sentAt: timestamp("sent_at", { withTimezone: true }),

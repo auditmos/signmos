@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HistoryCreatorControls } from "./history-creator-controls";
+import { HistoryEnvelopeStart, type HistorySessionIdentity } from "./history-envelope-start";
 
 type CatalogRole = "creator" | "signer" | "creator_and_signer";
 type CatalogGroup = "drafts" | "needs_my_action" | "waiting_on_others" | "completed" | "closed";
@@ -17,7 +18,6 @@ type CatalogStatus =
 	| "completed"
 	| "declined"
 	| "expired";
-
 interface HistoryDocumentRow {
 	envelopeId: string;
 	title: string;
@@ -32,18 +32,19 @@ interface HistoryDocumentRow {
 	detailUrl: string | null;
 	downloadUrl: string | null;
 }
-
 interface CatalogPagination {
 	page: number;
 	pageSize: number;
 	totalItems: number;
 	totalPages: number;
 }
-
 interface HistoryDocumentsResponse {
-	data: { items: HistoryDocumentRow[]; pagination: CatalogPagination };
+	data: {
+		identity: HistorySessionIdentity;
+		items: HistoryDocumentRow[];
+		pagination: CatalogPagination;
+	};
 }
-
 interface HistoryRecoveryResponse {
 	error: {
 		code: "HISTORY_SESSION_EXPIRED" | "HISTORY_SESSION_REQUIRED";
@@ -51,22 +52,23 @@ interface HistoryRecoveryResponse {
 		recoveryUrl: string;
 	};
 }
-
 type HistoryLoadResult =
-	| { state: "documents"; items: HistoryDocumentRow[]; pagination: CatalogPagination }
+	| {
+			state: "documents";
+			identity: HistorySessionIdentity;
+			items: HistoryDocumentRow[];
+			pagination: CatalogPagination;
+	  }
 	| { state: "recovery"; recoveryUrl: string; expired: boolean };
-
 interface HistoryDocumentsPageProps {
 	onSignedOut?: (recoveryUrl: string) => void;
 }
-
 interface CatalogFilterValues {
 	search: string;
 	role: "" | CatalogRole;
 	group: "" | CatalogGroup;
 	status: "" | CatalogStatus;
 }
-
 type CatalogRequest = CatalogFilterValues & { page: number };
 
 const defaultOnSignedOut = (url: string) => window.location.assign(url);
@@ -144,6 +146,7 @@ export function HistoryDocumentsPage({
 					Completed and expired documents are retained for 90 days unless deleted earlier. My
 					documents is not permanent storage.
 				</p>
+				{catalog?.identity ? <HistoryEnvelopeStart identity={catalog.identity} /> : null}
 				<CatalogFilters onApply={applyFilters} />
 
 				{documentsQuery.isPending ? (

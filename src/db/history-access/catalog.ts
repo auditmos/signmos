@@ -61,6 +61,10 @@ export interface HistoryCatalogQuery {
 }
 
 export interface HistoryCatalogResult {
+	identity: {
+		email: string;
+		suggestedName: string | null;
+	};
 	items: HistoryCatalogItem[];
 	pagination: {
 		page: number;
@@ -87,12 +91,14 @@ interface CatalogRows {
 export async function listHistoryDocuments(
 	query: HistoryCatalogQuery,
 ): Promise<HistoryCatalogResult> {
-	const authorizedItems = await loadAuthorizedCatalog(query.email);
+	const email = normalizeHistoryEmail(query.email);
+	const authorizedItems = await loadAuthorizedCatalog(email);
 	const matchingItems = authorizedItems.filter((item) => matchesCatalogQuery(item, query));
 	const totalItems = matchingItems.length;
 	const totalPages = Math.max(1, Math.ceil(totalItems / historyCatalogPageSize));
 	const pageStart = (query.page - 1) * historyCatalogPageSize;
 	return {
+		identity: historyCatalogIdentity(email, authorizedItems),
 		items: matchingItems.slice(pageStart, pageStart + historyCatalogPageSize),
 		pagination: {
 			page: query.page,
@@ -101,6 +107,23 @@ export async function listHistoryDocuments(
 			totalPages,
 		},
 	};
+}
+
+function historyCatalogIdentity(
+	email: string,
+	items: HistoryCatalogItem[],
+): HistoryCatalogResult["identity"] {
+	const suggestedName = items
+		.flatMap((item) =>
+			item.participants
+				.filter((participant) => normalizeHistoryEmail(participant.email) === email)
+				.map((participant) => ({ name: participant.name.trim(), activityAt: item.activityAt })),
+		)
+		.filter(
+			(candidate) => candidate.name.length > 0 && normalizeHistoryEmail(candidate.name) !== email,
+		)
+		.sort((left, right) => right.activityAt.localeCompare(left.activityAt))[0]?.name;
+	return { email, suggestedName: suggestedName ?? null };
 }
 
 export async function authorizeHistoryDocument(
@@ -262,7 +285,7 @@ function projectParticipants(
 ): HistoryCatalogParticipant[] {
 	return [
 		{
-			name: latestSender?.name ?? envelope.createdBy,
+			name: envelope.createdByName ?? latestSender?.name ?? envelope.createdBy,
 			email: envelope.createdBy,
 			role: "creator" as const,
 		},

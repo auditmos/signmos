@@ -92,7 +92,10 @@ export async function authorizeHistoryCreator(
 			envelopeId,
 			status,
 			signingMode: envelope.signingMode,
-			sender: { name: token?.name ?? normalizedEmail, email: normalizedEmail },
+			sender: {
+				name: envelope.createdByName ?? token?.name ?? normalizedEmail,
+				email: normalizedEmail,
+			},
 			allowedActions: creatorActions(status),
 			resumeUrl: `/my-documents/${envelopeId}/manage`,
 		},

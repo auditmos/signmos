@@ -17,6 +17,7 @@ describe("HistoryDocumentsPage", () => {
 					new Response(
 						JSON.stringify({
 							data: {
+								identity: { email: "owner@example.com", suggestedName: "Ada Lovelace" },
 								items: [
 									{
 										envelopeId: "00000000-0000-4000-8000-000000000001",
@@ -47,6 +48,7 @@ describe("HistoryDocumentsPage", () => {
 		);
 
 		expect(await screen.findByRole("heading", { name: "My documents" })).toBeTruthy();
+		expect(await screen.findByRole("button", { name: "Start a new document" })).toBeTruthy();
 		expect(await screen.findByText("Completed document")).toBeTruthy();
 		expect(screen.getByRole("article").textContent).toContain("Completed");
 		expect(screen.getByRole("article").textContent).toContain("Creator and signer");

@@ -5,5 +5,6 @@ export * from "./document-gateway";
 export * from "./request";
 export * from "./request-abuse";
 export * from "./security-audit";
+export * from "./session-envelope-start";
 export * from "./signer-gateway";
 export * from "./table";

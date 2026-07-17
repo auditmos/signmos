@@ -114,6 +114,7 @@ export async function startSenderEnvelope(
 		.insert(envelopes)
 		.values({
 			createdBy: email,
+			createdByName: input.name,
 			signingMode: input.signingMode,
 			status: "awaiting_verification",
 		})

@@ -1,0 +1,1 @@
+ALTER TABLE "envelopes" ADD COLUMN "created_by_name" text;
