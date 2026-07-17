@@ -1,0 +1,1 @@
+ALTER TABLE "agentic_security_events" ADD COLUMN "document_id" uuid;

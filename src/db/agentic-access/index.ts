@@ -4,6 +4,12 @@ export {
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,
 } from "./credential-authority";
+export {
+	getAgentDocumentDetail,
+	getAgentFinalDocumentAccess,
+	listAgentDocuments,
+	recordAgentDocumentRead,
+} from "./documents";
 export { requestAgenticAccess } from "./request";
 export {
 	agenticAccessLinks,

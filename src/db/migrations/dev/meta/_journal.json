@@ -134,6 +134,13 @@
       "when": 1784301084712,
       "tag": "0018_past_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784308663890,
+      "tag": "0019_ambitious_giant_man",
+      "breakpoints": true
     }
   ]
 }

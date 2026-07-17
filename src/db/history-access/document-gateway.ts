@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { finalDocuments, getCompletedDocumentView } from "@/db/envelope";
+import { FinalDocumentSchema, finalDocuments, getCompletedDocumentView } from "@/db/envelope";
 import { getDb } from "@/db/setup";
 import { authorizeMinimalHistoryDocument } from "./catalog";
 import { recordHistoryEnvelopeSecurityEvent } from "./security-audit";
@@ -10,7 +10,7 @@ export async function getHistoryCompletedDocumentView(
 	now = new Date(),
 ) {
 	const document = await getHistoryFinalDocument(email, envelopeId);
-	if (!document) return null;
+	if (!document?.id) return null;
 	const view = await getCompletedDocumentView(document.id, { now });
 	if (!view) return null;
 	const { token: _omittedBearerToken, ...tokenlessView } = view;
@@ -31,7 +31,8 @@ export async function getHistoryFinalDocument(email: string, envelopeId: string)
 		.from(finalDocuments)
 		.where(eq(finalDocuments.envelopeId, envelopeId))
 		.limit(1);
-	return rows.find((document) => document.envelopeId === envelopeId) ?? null;
+	const document = rows.find((candidate) => candidate.envelopeId === envelopeId);
+	return document ? FinalDocumentSchema.parse(document) : null;
 }
 
 export async function recordHistoryDocumentAudit(input: {

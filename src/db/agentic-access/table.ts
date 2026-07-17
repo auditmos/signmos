@@ -83,6 +83,7 @@ export const agenticSecurityEvents = pgTable("agentic_security_events", {
 	sessionId: uuid("session_id").references(() => agenticManagementSessions.id),
 	tokenId: uuid("token_id").references(() => agenticApiTokens.id),
 	tokenName: text("token_name"),
+	documentId: uuid("document_id"),
 	email: text("email").notNull(),
 	eventType: text("event_type").notNull(),
 	actorType: text("actor_type").notNull(),

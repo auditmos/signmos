@@ -49,7 +49,7 @@ interface CompletedDocumentParty {
 	signedAt: string | null;
 }
 
-interface CompletedDocumentHistoryEvent {
+export interface CompletedDocumentHistoryEvent {
 	type: string;
 	title: string;
 	detail: string | null;
@@ -92,6 +92,25 @@ export async function getCompletedDocumentView(
 		parties: buildParties(context),
 		history: buildHistory(context),
 	};
+}
+
+export async function getPublicEnvelopeHistory(
+	envelopeId: string,
+): Promise<CompletedDocumentHistoryEvent[]> {
+	const db = getDb();
+	const recipients = (
+		await db
+			.select()
+			.from(envelopeRecipients)
+			.where(eq(envelopeRecipients.envelopeId, envelopeId))
+			.limit(100)
+	).map((recipient) => RecipientSchema.parse(recipient));
+	const events = await db
+		.select()
+		.from(auditEvents)
+		.where(eq(auditEvents.envelopeId, envelopeId))
+		.limit(100);
+	return buildHistory({ recipients, events });
 }
 
 export async function getFinalDocumentByToken(
@@ -263,7 +282,9 @@ function buildParties(context: CompletedDocumentContext | null) {
 	});
 }
 
-function buildHistory(context: CompletedDocumentContext | null) {
+function buildHistory(
+	context: Pick<CompletedDocumentContext, "recipients" | "events"> | null,
+): CompletedDocumentHistoryEvent[] {
 	if (!context) return [];
 	const recipientNameById = new Map(
 		context.recipients.map((recipient) => [recipient.id, recipient.name]),
