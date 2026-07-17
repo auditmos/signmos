@@ -78,7 +78,10 @@ export async function resolveSignerToken(token: string): Promise<SignerToken | n
 	return found ? SignerTokenSchema.parse(found) : null;
 }
 
-export async function getSignerSession(token: SignerToken): Promise<SignerSession> {
+export async function getSignerSession(
+	token: SignerToken,
+	options: { sourceDownloadUrl?: string } = {},
+): Promise<SignerSession> {
 	const db = getDb();
 	const [envelope] = await db
 		.select()
@@ -144,7 +147,7 @@ export async function getSignerSession(token: SignerToken): Promise<SignerSessio
 		sourceDocument: {
 			version: sourceDocument.version,
 			contentType: sourceDocument.contentType,
-			downloadUrl: `/api/signing/${token.token}/source-pdf`,
+			downloadUrl: options.sourceDownloadUrl ?? `/api/signing/${token.token}/source-pdf`,
 		},
 		fields: fields.map((field) => ({
 			id: field.id,
@@ -260,7 +263,11 @@ export async function completeSigning(
 			.from(envelopeFields)
 			.where(eq(envelopeFields.recipientId, token.recipientId))
 			.limit(100)
-	).map((field) => EnvelopeFieldSchema.parse(field));
+	)
+		.map((field) => EnvelopeFieldSchema.parse(field))
+		.filter(
+			(field) => field.envelopeId === token.envelopeId && field.recipientId === token.recipientId,
+		);
 	if (fields.length === 0) throw new SigningNoAssignedFieldsError();
 
 	const recipients = (

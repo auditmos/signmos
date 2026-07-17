@@ -9,6 +9,7 @@ import {
 	historyCatalogRoles,
 	inspectHistoryAccessLink,
 	listHistoryDocuments,
+	recordHistoryDocumentAudit,
 	redeemHistoryAccessLink,
 	requestHistoryAccess,
 	resolveHistorySession,
@@ -202,6 +203,7 @@ historyAccessEndpoint.get("/documents/:envelopeId", async (c) => {
 			404,
 		);
 	}
+	await recordHistoryDocumentAudit(document.envelopeId, "history.completed.opened");
 	return c.json({ data: view });
 });
 
@@ -231,6 +233,7 @@ historyAccessEndpoint.get("/documents/:envelopeId/pdf", async (c) => {
 			404,
 		);
 	}
+	await recordHistoryDocumentAudit(c.req.param("envelopeId"), "history.final_pdf.downloaded");
 	return new Response(await object.arrayBuffer(), {
 		headers: { "content-type": document.contentType },
 	});

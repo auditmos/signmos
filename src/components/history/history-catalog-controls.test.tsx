@@ -67,6 +67,9 @@ describe("full history catalog controls", () => {
 		expect(screen.getByText("Sent")).toBeTruthy();
 		expect(screen.getByText(/A1B2C3D4/)).toBeTruthy();
 		expect(screen.getByText(/Grace Hopper/).textContent).toContain("grace@example.com");
+		expect(screen.getByRole("link", { name: "Review and sign" }).getAttribute("href")).toBe(
+			"/my-documents/00000000-0000-4000-8000-000000000001/sign",
+		);
 
 		fireEvent.change(screen.getByLabelText("Search documents"), {
 			target: { value: " Contract " },

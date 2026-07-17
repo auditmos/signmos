@@ -214,6 +214,31 @@ describe("full history catalog projection", () => {
 		});
 	});
 
+	it("updates signer and creator perspectives as each recipient acts", async () => {
+		addEnvelope({ sequence: 1, status: "sent", creator: "owner@example.com" });
+		addRecipient({ sequence: 1, envelope: 1, email: "owner@example.com", status: "sent" });
+		addRecipient({ sequence: 2, envelope: 1, email: "partner@example.com", status: "sent" });
+
+		const needsAction = await listHistoryDocuments({ email: "owner@example.com", page: 1 });
+		expect(needsAction.items[0]).toMatchObject({
+			role: "creator_and_signer",
+			group: "needs_my_action",
+			allowedActions: ["sign", "review", "cancel", "delete"],
+		});
+
+		Object.assign(state.recipients[0] ?? {}, { status: "completed" });
+		const waiting = await listHistoryDocuments({ email: "owner@example.com", page: 1 });
+		expect(waiting.items[0]).toMatchObject({
+			group: "waiting_on_others",
+			allowedActions: ["review", "cancel", "delete"],
+		});
+
+		Object.assign(state.recipients[1] ?? {}, { status: "completed" });
+		Object.assign(state.envelopes[0] ?? {}, { status: "completed" });
+		const completed = await listHistoryDocuments({ email: "owner@example.com", page: 1 });
+		expect(completed.items[0]).toMatchObject({ group: "completed" });
+	});
+
 	it("orders action work first, then meaningful activity, fallback creation, and identity", async () => {
 		addEnvelope({ sequence: 1, status: "completed", createdAt: "2026-04-03T08:00:00.000Z" });
 		addEnvelope({ sequence: 2, status: "completed", createdAt: "2026-04-01T08:00:00.000Z" });

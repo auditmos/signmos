@@ -316,6 +316,12 @@ function CatalogRows({ items }: { items: HistoryDocumentRow[] }) {
 							</p>
 						) : null}
 						<div className="flex flex-wrap gap-4 text-sm">
+							{item.allowedActions.includes("sign") ? (
+								<CatalogLink
+									href={`/my-documents/${encodeURIComponent(item.envelopeId)}/sign`}
+									label="Review and sign"
+								/>
+							) : null}
 							{item.detailUrl ? <CatalogLink href={item.detailUrl} label="View details" /> : null}
 							{item.downloadUrl ? (
 								<CatalogLink href={item.downloadUrl} label="Download PDF" />

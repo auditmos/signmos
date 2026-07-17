@@ -22,11 +22,13 @@ interface SigningError {
 	verificationUrl?: string;
 }
 
-interface SignerPageProps {
-	token: string;
-}
+type SignerPageProps = { token: string } | { historyEnvelopeId: string };
 
-export function SignerPage({ token }: SignerPageProps) {
+export function SignerPage(props: SignerPageProps) {
+	const historyMode = "historyEnvelopeId" in props;
+	const endpoint = historyMode
+		? `/api/history/documents/${encodeURIComponent(props.historyEnvelopeId)}/signing`
+		: `/api/signing/${encodeURIComponent(props.token)}`;
 	const [session, setSession] = useState<SignerSession | null>(null);
 	const [completedDocument, setCompletedDocument] = useState<CompletedDocumentLink | null>(null);
 	const [changeComment, setChangeComment] = useState("");
@@ -39,7 +41,7 @@ export function SignerPage({ token }: SignerPageProps) {
 
 	const refreshSigningState = useCallback(
 		async (isActive: () => boolean = () => true) => {
-			const response = await fetch(`/api/signing/${token}`);
+			const response = await fetch(endpoint);
 			const body = (await response.json()) as {
 				data?: SignerSession | { completedDocument: CompletedDocumentLink };
 				error?: SigningError;
@@ -54,7 +56,7 @@ export function SignerPage({ token }: SignerPageProps) {
 			setCompletedDocument(null);
 			setSession(body.data ?? null);
 		},
-		[token],
+		[endpoint],
 	);
 
 	useEffect(() => {
@@ -66,7 +68,7 @@ export function SignerPage({ token }: SignerPageProps) {
 	}, [refreshSigningState]);
 
 	async function completeSigning(payload: CompleteSigningPayload) {
-		const response = await fetch(`/api/signing/${token}/complete`, {
+		const response = await fetch(`${endpoint}/complete`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload),
@@ -84,23 +86,25 @@ export function SignerPage({ token }: SignerPageProps) {
 
 	async function declineSigning(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const response = await fetch(`/api/signing/${token}/decline`, {
+		const response = await fetch(`${endpoint}/decline`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ reason, comment: comment || undefined }),
 		});
 		setMessage(response.ok ? "Signing declined" : "Unable to decline");
+		if (response.ok && historyMode) await refreshSigningState();
 	}
 
 	async function requestChanges(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		const response = await fetch(`/api/signing/${token}/change-request`, {
+		const response = await fetch(`${endpoint}/change-request`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ comment: changeComment }),
 		});
 		if (response.ok) setChangeRequested(true);
 		setMessage(response.ok ? "Changes requested" : "Unable to request changes");
+		if (response.ok && historyMode) await refreshSigningState();
 	}
 
 	function startFieldDrag(
@@ -141,7 +145,7 @@ export function SignerPage({ token }: SignerPageProps) {
 		dragRef.current = null;
 		const field = session?.fields.find((candidate) => candidate.id === drag.fieldId);
 		if (!field || session?.signingMode !== "only_me") return;
-		const response = await fetch(`/api/signing/${token}/fields/${field.id}`, {
+		const response = await fetch(`${endpoint}/fields/${field.id}`, {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ page: field.page, x: field.x, y: field.y }),
@@ -157,7 +161,9 @@ export function SignerPage({ token }: SignerPageProps) {
 			<div>
 				<h1 className="text-balance text-2xl font-semibold">Review and sign</h1>
 				<p className="text-pretty text-sm text-muted-foreground">
-					No account is required for this signing link.
+					{historyMode
+						? "Your verified My documents session protects this signing task."
+						: "No account is required for this signing link."}
 				</p>
 			</div>
 			{error && (

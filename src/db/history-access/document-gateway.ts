@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { finalDocuments, getCompletedDocumentView } from "@/db/envelope";
+import { auditEvents, finalDocuments, getCompletedDocumentView } from "@/db/envelope";
 import { getDb } from "@/db/setup";
 import { authorizeMinimalHistoryDocument } from "./catalog";
 
@@ -31,4 +31,14 @@ export async function getHistoryFinalDocument(email: string, envelopeId: string)
 		.where(eq(finalDocuments.envelopeId, envelopeId))
 		.limit(1);
 	return rows.find((document) => document.envelopeId === envelopeId) ?? null;
+}
+
+export async function recordHistoryDocumentAudit(
+	envelopeId: string,
+	eventType: "history.completed.opened" | "history.final_pdf.downloaded",
+): Promise<void> {
+	await getDb()
+		.insert(auditEvents)
+		.values({ envelopeId, recipientId: null, eventType, message: null })
+		.returning();
 }

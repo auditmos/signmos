@@ -21,6 +21,7 @@ import { Route as SenderVerificationsTokenRouteImport } from './routes/sender-ve
 import { Route as MyDocumentsEnvelopeIdRouteImport } from './routes/my-documents.$envelopeId'
 import { Route as HistoryAccessCredentialRouteImport } from './routes/history-access.$credential'
 import { Route as CompletedDocumentsTokenRouteImport } from './routes/completed-documents.$token'
+import { Route as MyDocumentsEnvelopeIdSignRouteImport } from './routes/my-documents.$envelopeId.sign'
 
 const SourcePdfUploadRoute = SourcePdfUploadRouteImport.update({
   id: '/source-pdf-upload',
@@ -84,6 +85,12 @@ const CompletedDocumentsTokenRoute = CompletedDocumentsTokenRouteImport.update({
   path: '/completed-documents/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MyDocumentsEnvelopeIdSignRoute =
+  MyDocumentsEnvelopeIdSignRouteImport.update({
+    id: '/sign',
+    path: '/sign',
+    getParentRoute: () => MyDocumentsEnvelopeIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -94,10 +101,11 @@ export interface FileRoutesByFullPath {
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
-  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRoute
+  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRouteWithChildren
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
+  '/my-documents/$envelopeId/sign': typeof MyDocumentsEnvelopeIdSignRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -108,10 +116,11 @@ export interface FileRoutesByTo {
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
-  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRoute
+  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRouteWithChildren
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
+  '/my-documents/$envelopeId/sign': typeof MyDocumentsEnvelopeIdSignRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -123,10 +132,11 @@ export interface FileRoutesById {
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
-  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRoute
+  '/my-documents/$envelopeId': typeof MyDocumentsEnvelopeIdRouteWithChildren
   '/sender-verifications/$token': typeof SenderVerificationsTokenRoute
   '/signing-verifications/$token': typeof SigningVerificationsTokenRoute
   '/signing/$token': typeof SigningTokenRoute
+  '/my-documents/$envelopeId/sign': typeof MyDocumentsEnvelopeIdSignRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
+    | '/my-documents/$envelopeId/sign'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
+    | '/my-documents/$envelopeId/sign'
   id:
     | '__root__'
     | '/'
@@ -171,6 +183,7 @@ export interface FileRouteTypes {
     | '/sender-verifications/$token'
     | '/signing-verifications/$token'
     | '/signing/$token'
+    | '/my-documents/$envelopeId/sign'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -273,15 +286,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CompletedDocumentsTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/my-documents/$envelopeId/sign': {
+      id: '/my-documents/$envelopeId/sign'
+      path: '/sign'
+      fullPath: '/my-documents/$envelopeId/sign'
+      preLoaderRoute: typeof MyDocumentsEnvelopeIdSignRouteImport
+      parentRoute: typeof MyDocumentsEnvelopeIdRoute
+    }
   }
 }
 
+interface MyDocumentsEnvelopeIdRouteChildren {
+  MyDocumentsEnvelopeIdSignRoute: typeof MyDocumentsEnvelopeIdSignRoute
+}
+
+const MyDocumentsEnvelopeIdRouteChildren: MyDocumentsEnvelopeIdRouteChildren = {
+  MyDocumentsEnvelopeIdSignRoute: MyDocumentsEnvelopeIdSignRoute,
+}
+
+const MyDocumentsEnvelopeIdRouteWithChildren =
+  MyDocumentsEnvelopeIdRoute._addFileChildren(
+    MyDocumentsEnvelopeIdRouteChildren,
+  )
+
 interface MyDocumentsRouteChildren {
-  MyDocumentsEnvelopeIdRoute: typeof MyDocumentsEnvelopeIdRoute
+  MyDocumentsEnvelopeIdRoute: typeof MyDocumentsEnvelopeIdRouteWithChildren
 }
 
 const MyDocumentsRouteChildren: MyDocumentsRouteChildren = {
-  MyDocumentsEnvelopeIdRoute: MyDocumentsEnvelopeIdRoute,
+  MyDocumentsEnvelopeIdRoute: MyDocumentsEnvelopeIdRouteWithChildren,
 }
 
 const MyDocumentsRouteWithChildren = MyDocumentsRoute._addFileChildren(
