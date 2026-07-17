@@ -1,0 +1,2 @@
+ALTER TABLE "history_security_events" ADD COLUMN "envelope_id" uuid;--> statement-breakpoint
+ALTER TABLE "history_security_events" ADD CONSTRAINT "history_security_events_envelope_id_envelopes_id_fk" FOREIGN KEY ("envelope_id") REFERENCES "public"."envelopes"("id") ON DELETE no action ON UPDATE no action;

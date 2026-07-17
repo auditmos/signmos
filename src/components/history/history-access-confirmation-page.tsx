@@ -46,7 +46,8 @@ export function HistoryAccessConfirmationPage({
 	const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
 	const encodedCredential = encodeURIComponent(credential);
 	const inspection = useQuery({
-		queryKey: ["history-access-link", credential],
+		queryKey: ["history-access-link"],
+		gcTime: 0,
 		queryFn: async () => {
 			const response = await fetch(`/api/history/access-links/${encodedCredential}`, {
 				method: "GET",

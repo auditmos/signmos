@@ -1,11 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { HistoryDocumentDetailPage } from "@/components/history/history-document-detail-page";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/my-documents/$envelopeId")({
-	component: HistoryDocumentDetailRoute,
+	component: HistoryDocumentRoute,
 });
 
-function HistoryDocumentDetailRoute() {
-	const { envelopeId } = Route.useParams();
-	return <HistoryDocumentDetailPage envelopeId={envelopeId} />;
+function HistoryDocumentRoute() {
+	return <Outlet />;
 }

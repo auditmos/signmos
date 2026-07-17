@@ -12,6 +12,7 @@ import {
 } from "@/db/envelope";
 import { getDb } from "@/db/setup";
 import { normalizeHistoryEmail } from "./request";
+import { recordHistoryEnvelopeSecurityEvent } from "./security-audit";
 
 export type HistorySignerAuthorization =
 	| { state: "active"; token: SignerToken }
@@ -85,14 +86,16 @@ export async function authorizeHistorySigner(
 }
 
 export async function recordHistorySignerAudit(input: {
+	session: { id: string; email: string };
 	envelopeId: string;
-	recipientId: string;
-	eventType: string;
+	eventType:
+		| "history.signer.source_pdf.opened"
+		| "history.signer.completed"
+		| "history.signer.change_requested"
+		| "history.signer.declined";
+	requestIp?: string | null;
 }): Promise<void> {
-	await getDb()
-		.insert(auditEvents)
-		.values({ ...input, message: null })
-		.returning();
+	await recordHistoryEnvelopeSecurityEvent(input);
 }
 
 function isTerminalStatus(status: EnvelopeStatus): status is "declined" | "expired" | "deleted" {

@@ -10,6 +10,7 @@ import {
 } from "@/db/history-access";
 import { createHono } from "@/hono/factory";
 import { getRequestIp } from "./envelope-route-helpers";
+import { historyError } from "./history-errors";
 
 const historyCreatorEndpoint = createHono();
 const HistoryCreatorActionSchema = z.object({ action: z.enum(["cancel", "delete"]) });
@@ -18,8 +19,10 @@ historyCreatorEndpoint.get("/documents/:envelopeId/creator", async (c) => {
 	const context = await requireHistoryCreator(c);
 	if (context instanceof Response) return context;
 	await recordHistoryCreatorAudit({
+		session: context.session,
 		envelopeId: context.access.envelopeId,
 		eventType: "history.creator.opened",
+		requestIp: requestIp(c),
 	});
 	return c.json({ data: context.access });
 });
@@ -42,13 +45,9 @@ historyCreatorEndpoint.post("/documents/:envelopeId/creator-actions", async (c) 
 	if (context instanceof Response) return context;
 	if (!context.access.allowedActions.includes(parsed.data.action)) {
 		return c.json(
-			{
-				error: {
-					code: "HISTORY_CREATOR_ACTION_BLOCKED",
-					message: "This creator action is not allowed in the current state",
-					allowedActions: context.access.allowedActions,
-				},
-			},
+			historyError("HISTORY_CREATOR_ACTION_BLOCKED", {
+				allowedActions: context.access.allowedActions,
+			}),
 			409,
 		);
 	}
@@ -63,21 +62,19 @@ historyCreatorEndpoint.post("/documents/:envelopeId/creator-actions", async (c) 
 			},
 		);
 		await recordHistoryCreatorAudit({
+			session: context.session,
 			envelopeId: context.access.envelopeId,
 			eventType:
 				parsed.data.action === "cancel" ? "history.creator.canceled" : "history.creator.deleted",
+			requestIp: requestIp(c),
 		});
 		return c.json({ data: result });
 	} catch (error) {
 		if (error instanceof EnvelopeControlError) {
 			return c.json(
-				{
-					error: {
-						code: "HISTORY_CREATOR_ACTION_BLOCKED",
-						message: "This creator action is not allowed in the current state",
-						allowedActions: error.allowedActions,
-					},
-				},
+				historyError("HISTORY_CREATOR_ACTION_BLOCKED", {
+					allowedActions: error.allowedActions,
+				}),
 				409,
 			);
 		}
@@ -106,36 +103,23 @@ async function requireHistorySession(
 	if (state.state === "active") return state.session;
 	const expired = state.state === "expired";
 	return Response.json(
-		{
-			error: {
-				code: expired ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
-				message: expired ? "Your My documents session expired" : "Request a new My documents link",
-				recoveryUrl: "/?task=my-documents",
-			},
-		},
+		historyError(expired ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED"),
 		{ status: 401 },
 	);
 }
 
 function creatorError(state: "deleted" | "forbidden"): Response {
 	return state === "deleted"
-		? Response.json(
-				{ error: { code: "HISTORY_CREATOR_DELETED", message: "This document was deleted" } },
-				{ status: 410 },
-			)
-		: Response.json(
-				{
-					error: {
-						code: "HISTORY_CREATOR_FORBIDDEN",
-						message: "Only the document creator can use this action",
-					},
-				},
-				{ status: 403 },
-			);
+		? Response.json(historyError("HISTORY_CREATOR_DELETED"), { status: 410 })
+		: Response.json(historyError("HISTORY_CREATOR_FORBIDDEN"), { status: 403 });
 }
 
 function requestNow(c: Context<{ Bindings: Env }>): Date {
 	return new Date(c.req.header("x-now") ?? Date.now());
+}
+
+function requestIp(c: Context<{ Bindings: Env }>): string {
+	return getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
 }
 
 export default historyCreatorEndpoint;

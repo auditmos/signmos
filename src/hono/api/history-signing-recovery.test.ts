@@ -15,29 +15,24 @@ import { hashHistoryCredential, historySecurityEvents, historySessions } from "@
 import { apiHono } from "@/hono/api";
 
 type StoredRow = Record<string, unknown>;
-
 const envelopeId = "00000000-0000-4000-8000-000000000040";
 const recipientId = "20000000-0000-4000-8000-000000000040";
 const otherRecipientId = "20000000-0000-4000-8000-000000000041";
 const tokenValue = "invitation-token-must-never-reach-history-client";
 const rawSession = "opaque-history-session";
 const now = "2026-07-17T09:00:00.000Z";
-
 const state = vi.hoisted(() => ({
 	tables: new Map<string, unknown>(),
 	rows: new Map<unknown, StoredRow[]>(),
 	r2Objects: new Map<string, Uint8Array>(),
 }));
-
 function rowsFor(table: unknown): StoredRow[] {
 	return state.rows.get(table) ?? [];
 }
-
 function selectQuery(table: unknown) {
 	const load = async () => rowsFor(table);
 	return Object.assign(load(), { where: () => ({ limit: load }), limit: load });
 }
-
 function updateRows(table: unknown, values: StoredRow): StoredRow[] {
 	const rows = rowsFor(table);
 	const row = rows[0];
@@ -45,7 +40,6 @@ function updateRows(table: unknown, values: StoredRow): StoredRow[] {
 	Object.assign(row, values);
 	return [row];
 }
-
 vi.mock("@/db/setup", () => ({
 	getDb: () => ({
 		select: () => ({ from: (table: unknown) => selectQuery(table) }),
@@ -72,13 +66,11 @@ vi.mock("@/db/setup", () => ({
 		}),
 	}),
 }));
-
 function tableRows(name: string): StoredRow[] {
 	const table = state.tables.get(name);
 	if (!table) throw new Error(`Missing test table ${name}`);
 	return rowsFor(table);
 }
-
 async function resetState() {
 	state.tables = new Map<string, unknown>([
 		["envelopes", envelopes],
@@ -245,9 +237,13 @@ describe("history-session signer recovery", () => {
 		);
 		expect(pdf.status).toBe(200);
 		expect(new TextDecoder().decode(await pdf.arrayBuffer())).toContain("source-v2");
-		expect(tableRows("auditEvents")).toEqual(
+		expect(tableRows("securityEvents")).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ eventType: "history.signer.source_pdf.opened" }),
+				expect.objectContaining({
+					envelopeId,
+					eventType: "history.signer.source_pdf.opened",
+					sessionId: tableRows("sessions")[0]?.id,
+				}),
 			]),
 		);
 	});
@@ -351,6 +347,11 @@ describe("history-session signer recovery", () => {
 			expect.arrayContaining([
 				expect.objectContaining({ eventType: "field.value.completed" }),
 				expect.objectContaining({ eventType: "recipient.completed" }),
+			]),
+		);
+		expect(tableRows("securityEvents")).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ envelopeId, eventType: "history.signer.completed" }),
 			]),
 		);
 
@@ -477,9 +478,9 @@ describe("history-session signer recovery", () => {
 			{ DOCUMENTS_BUCKET: bucket },
 		);
 		expect(pdf.status).toBe(200);
-		expect(tableRows("auditEvents")).toEqual(
+		expect(tableRows("securityEvents")).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ eventType: "history.final_pdf.downloaded", message: null }),
+				expect.objectContaining({ envelopeId, eventType: "history.final_pdf.downloaded" }),
 			]),
 		);
 		expect(JSON.stringify(tableRows("auditEvents"))).not.toContain(rawSession);

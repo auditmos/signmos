@@ -29,6 +29,7 @@ import {
 } from "@/db/history-access";
 import { createHono } from "@/hono/factory";
 import { getRequestIp } from "./envelope-route-helpers";
+import { historyError } from "./history-errors";
 
 const historySigningEndpoint = createHono();
 const HistorySigningFieldPlacementSchema = z.object({
@@ -75,9 +76,10 @@ historySigningEndpoint.get("/documents/:envelopeId/signing/source-pdf", async (c
 		);
 	}
 	await recordHistorySignerAudit({
+		session: context.session,
 		envelopeId: context.token.envelopeId,
-		recipientId: context.token.recipientId,
 		eventType: "history.signer.source_pdf.opened",
+		requestIp: requestIp(c),
 	});
 	return new Response(await object.arrayBuffer(), {
 		headers: { "content-type": document.contentType },
@@ -158,9 +160,10 @@ historySigningEndpoint.post("/documents/:envelopeId/signing/complete", async (c)
 			emailDelivery: historyEmailDelivery(c),
 		});
 		await recordHistorySignerAudit({
+			session: context.session,
 			envelopeId: context.token.envelopeId,
-			recipientId: context.token.recipientId,
 			eventType: "history.signer.completed",
+			requestIp: requestIp(c),
 		});
 		return c.json({ data: result });
 	} catch (error) {
@@ -210,9 +213,10 @@ historySigningEndpoint.post("/documents/:envelopeId/signing/change-request", asy
 			emailDelivery: historyEmailDelivery(c),
 		});
 		await recordHistorySignerAudit({
+			session: context.session,
 			envelopeId: context.token.envelopeId,
-			recipientId: context.token.recipientId,
 			eventType: "history.signer.change_requested",
+			requestIp: requestIp(c),
 		});
 		return c.json({ data: result });
 	} catch (error) {
@@ -241,9 +245,10 @@ historySigningEndpoint.post("/documents/:envelopeId/signing/decline", async (c) 
 	}
 	const result = await declineSigning(context.token, parsed.data);
 	await recordHistorySignerAudit({
+		session: context.session,
 		envelopeId: context.token.envelopeId,
-		recipientId: context.token.recipientId,
 		eventType: "history.signer.declined",
+		requestIp: requestIp(c),
 	});
 	return c.json({ data: result });
 });
@@ -253,10 +258,7 @@ async function requireActiveHistorySigner(c: Context<{ Bindings: Env }>) {
 	if (session instanceof Response) return session;
 	const envelopeId = c.req.param("envelopeId");
 	if (!envelopeId) {
-		return Response.json(
-			{ error: { code: "HISTORY_SIGNING_NOT_FOUND", message: "Signing task not found" } },
-			{ status: 404 },
-		);
+		return Response.json(historyError("HISTORY_SIGNING_NOT_FOUND"), { status: 404 });
 	}
 	const authorization = await authorizeHistorySigner(session.email, envelopeId, requestNow(c));
 	return authorization.state === "active"
@@ -275,13 +277,7 @@ async function requireHistorySession(
 	if (state.state === "active") return state.session;
 	const expired = state.state === "expired";
 	return Response.json(
-		{
-			error: {
-				code: expired ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
-				message: expired ? "Your My documents session expired" : "Request a new My documents link",
-				recoveryUrl: "/?task=my-documents",
-			},
-		},
+		historyError(expired ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED"),
 		{ status: 401 },
 	);
 }
@@ -290,29 +286,17 @@ function historySigningError(
 	authorization: Exclude<Awaited<ReturnType<typeof authorizeHistorySigner>>, { state: "active" }>,
 ): Response {
 	if (authorization.state === "terminal") {
-		const labels = {
-			declined: ["HISTORY_SIGNING_DECLINED", "This document was declined"],
-			expired: ["HISTORY_SIGNING_EXPIRED", "This document expired"],
-			deleted: ["HISTORY_SIGNING_DELETED", "This document was deleted"],
+		const codes = {
+			declined: "HISTORY_SIGNING_DECLINED",
+			expired: "HISTORY_SIGNING_EXPIRED",
+			deleted: "HISTORY_SIGNING_DELETED",
 		} as const;
-		const [code, message] = labels[authorization.status];
-		return Response.json({ error: { code, message } }, { status: 410 });
+		return Response.json(historyError(codes[authorization.status]), { status: 410 });
 	}
 	if (authorization.state === "inactive" || authorization.state === "completed") {
-		return Response.json(
-			{ error: { code: "HISTORY_SIGNING_NOT_ACTIVE", message: "This signing task is not active" } },
-			{ status: 409 },
-		);
+		return Response.json(historyError("HISTORY_SIGNING_NOT_ACTIVE"), { status: 409 });
 	}
-	return Response.json(
-		{
-			error: {
-				code: "HISTORY_SIGNING_NOT_FOUND",
-				message: "Signing task not found for this My documents session",
-			},
-		},
-		{ status: 404 },
-	);
+	return Response.json(historyError("HISTORY_SIGNING_NOT_FOUND"), { status: 404 });
 }
 
 function requireSameOrigin(c: Context<{ Bindings: Env }>): Response | null {
@@ -325,6 +309,10 @@ function requireSameOrigin(c: Context<{ Bindings: Env }>): Response | null {
 
 function requestNow(c: Context<{ Bindings: Env }>): Date {
 	return new Date(c.req.header("x-now") ?? Date.now());
+}
+
+function requestIp(c: Context<{ Bindings: Env }>): string {
+	return getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
 }
 
 function historyEmailDelivery(c: Context<{ Bindings: Env }>) {

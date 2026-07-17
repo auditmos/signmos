@@ -314,6 +314,7 @@ describe("history access tracer", () => {
 			error: {
 				code: "HISTORY_LINK_EXPIRED",
 				message: "This My documents link has expired",
+				recoveryUrl: "/?task=my-documents",
 			},
 		});
 		expect(state.historySessions).toEqual([]);
@@ -359,6 +360,7 @@ describe("history access tracer", () => {
 			error: {
 				code: "HISTORY_LINK_CONSUMED",
 				message: "This My documents link has already been used",
+				recoveryUrl: "/?task=my-documents",
 			},
 		});
 
@@ -485,6 +487,7 @@ describe("history access tracer", () => {
 			error: {
 				code: "HISTORY_DOCUMENT_NOT_FOUND",
 				message: "Document not found for this My documents session",
+				recoveryUrl: "/my-documents",
 			},
 		});
 	});

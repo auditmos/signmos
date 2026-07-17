@@ -10,6 +10,7 @@ import {
 } from "@/db/envelope";
 import { getDb } from "@/db/setup";
 import { normalizeHistoryEmail } from "./request";
+import { recordHistoryEnvelopeSecurityEvent } from "./security-audit";
 
 export type HistoryCreatorAction =
 	| "resume"
@@ -99,18 +100,12 @@ export async function authorizeHistoryCreator(
 }
 
 export async function recordHistoryCreatorAudit(input: {
+	session: { id: string; email: string };
 	envelopeId: string;
 	eventType: "history.creator.opened" | "history.creator.canceled" | "history.creator.deleted";
+	requestIp?: string | null;
 }): Promise<void> {
-	await getDb()
-		.insert(auditEvents)
-		.values({
-			envelopeId: input.envelopeId,
-			recipientId: null,
-			eventType: input.eventType,
-			message: null,
-		})
-		.returning();
+	await recordHistoryEnvelopeSecurityEvent(input);
 }
 
 function creatorActions(status: Exclude<EnvelopeStatus, "deleted">): HistoryCreatorAction[] {

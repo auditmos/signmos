@@ -198,9 +198,15 @@ describe("history-session creator recovery", () => {
 			verifiedAt: new Date(now),
 		});
 		expect(tableRows("auditEvents")).toEqual(
+			expect.arrayContaining([expect.objectContaining({ eventType: "sender.verified" })]),
+		);
+		expect(tableRows("securityEvents")).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ eventType: "sender.verified" }),
-				expect.objectContaining({ eventType: "history.creator.opened" }),
+				expect.objectContaining({
+					envelopeId,
+					eventType: "history.creator.opened",
+					sessionId: tableRows("sessions")[0]?.id,
+				}),
 			]),
 		);
 	});
@@ -321,12 +327,19 @@ describe("history-session creator recovery", () => {
 				expect.objectContaining({
 					eventType: action === "cancel" ? "envelope.canceled" : "envelope.deleted",
 				}),
+			]),
+		);
+		expect(tableRows("securityEvents")).toEqual(
+			expect.arrayContaining([
 				expect.objectContaining({
+					envelopeId,
 					eventType: action === "cancel" ? "history.creator.canceled" : "history.creator.deleted",
 				}),
 			]),
 		);
-		expect(JSON.stringify(tableRows("auditEvents"))).not.toContain(rawSession);
+		expect(
+			JSON.stringify([...tableRows("auditEvents"), ...tableRows("securityEvents")]),
+		).not.toContain(rawSession);
 
 		const second = await creatorAction(action, "http://localhost");
 		expect(second.status).toBeGreaterThanOrEqual(400);
@@ -350,6 +363,9 @@ describe("history-session creator recovery", () => {
 		expect(opened.status).toBe(200);
 		expect((await creatorAction("delete", "http://localhost", bucket)).status).toBe(200);
 
+		const catalog = await apiHono.request("/api/history/documents", {
+			headers: historyHeaders(),
+		});
 		const responses = await Promise.all([
 			apiHono.request(`/api/history/documents/${envelopeId}/creator`, {
 				headers: historyHeaders(),
@@ -363,9 +379,19 @@ describe("history-session creator recovery", () => {
 			apiHono.request(`/api/envelopes/${envelopeId}/source-pdf`, {
 				headers: historyHeaders({ "x-history-session-access": "true" }),
 			}),
+			apiHono.request(`/api/history/documents/${envelopeId}/signing`, {
+				headers: historyHeaders(),
+			}),
 			creatorAction("cancel", "http://localhost"),
+			creatorAction("delete", "http://localhost"),
 		]);
-		expect(responses.map((response) => response.status)).toEqual([410, 404, 404, 410, 410]);
+		expect(catalog.status).toBe(200);
+		await expect(catalog.json()).resolves.toEqual({
+			data: expect.objectContaining({ items: [] }),
+		});
+		expect(responses.map((response) => response.status)).toEqual([
+			410, 404, 404, 410, 404, 410, 410,
+		]);
 	});
 
 	it("keeps the existing sender verification and sender-session link contracts", async () => {

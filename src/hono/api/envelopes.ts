@@ -62,6 +62,7 @@ import {
 	sha256Hex,
 	verifyTurnstileToken,
 } from "./envelope-route-helpers";
+import { historyError } from "./history-errors";
 
 const envelopesEndpoint = createHono();
 const maxSourcePdfBytes = 10 * 1024 * 1024;
@@ -75,16 +76,9 @@ envelopesEndpoint.use("/:id/*", async (c, next) => {
 	);
 	if (state.state !== "active") {
 		return c.json(
-			{
-				error: {
-					code: state.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
-					message:
-						state.state === "expired"
-							? "Your My documents session expired"
-							: "Request a new My documents link",
-					recoveryUrl: "/?task=my-documents",
-				},
-			},
+			historyError(
+				state.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
+			),
 			401,
 		);
 	}
@@ -94,21 +88,10 @@ envelopesEndpoint.use("/:id/*", async (c, next) => {
 		parseNow(c.req.header("x-now")),
 	);
 	if (authorization.state === "deleted") {
-		return c.json(
-			{ error: { code: "HISTORY_CREATOR_DELETED", message: "This document was deleted" } },
-			410,
-		);
+		return c.json(historyError("HISTORY_CREATOR_DELETED"), 410);
 	}
 	if (authorization.state === "forbidden") {
-		return c.json(
-			{
-				error: {
-					code: "HISTORY_CREATOR_FORBIDDEN",
-					message: "Only the document creator can use this action",
-				},
-			},
-			403,
-		);
+		return c.json(historyError("HISTORY_CREATOR_FORBIDDEN"), 403);
 	}
 	return next();
 });

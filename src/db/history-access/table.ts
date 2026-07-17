@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { envelopes } from "@/db/envelope/table";
 
 export const historyAccessLinks = pgTable(
 	"history_access_links",
@@ -63,6 +64,7 @@ export const historySecurityEvents = pgTable("history_security_events", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	linkId: uuid("link_id").references(() => historyAccessLinks.id),
 	sessionId: uuid("session_id").references(() => historySessions.id),
+	envelopeId: uuid("envelope_id").references(() => envelopes.id),
 	email: text("email").notNull(),
 	eventType: text("event_type").notNull(),
 	requestIp: text("request_ip"),

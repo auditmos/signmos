@@ -1,6 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { HistoryDocumentsPage } from "@/components/history/history-documents-page";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/my-documents")({
-	component: HistoryDocumentsPage,
+	component: MyDocumentsRoute,
 });
+
+function MyDocumentsRoute() {
+	return <Outlet />;
+}

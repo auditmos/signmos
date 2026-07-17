@@ -12,12 +12,12 @@ import {
 	recordHistoryDocumentAudit,
 	redeemHistoryAccessLink,
 	requestHistoryAccess,
-	resolveHistorySession,
 	resolveHistorySessionState,
 	revokeHistorySession,
 } from "@/db/history-access";
 import { createHono } from "@/hono/factory";
 import { getRequestIp, type SenderStartEnv, verifyTurnstileToken } from "./envelope-route-helpers";
+import { type HistoryErrorCode, historyError } from "./history-errors";
 
 const historyAccessEndpoint = createHono();
 const HistoryAccessRequestSchema = z.object({
@@ -67,20 +67,14 @@ historyAccessEndpoint.post("/access-links/:credential/redeem", async (c) => {
 		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
 	if (result.status !== "authenticated") {
-		const errors = {
-			unknown: { code: "HISTORY_LINK_UNKNOWN", message: "This My documents link is not valid" },
-			consumed: {
-				code: "HISTORY_LINK_CONSUMED",
-				message: "This My documents link has already been used",
-			},
-			expired: { code: "HISTORY_LINK_EXPIRED", message: "This My documents link has expired" },
-			revoked: {
-				code: "HISTORY_LINK_REVOKED",
-				message: "This My documents link is no longer active",
-			},
-		} as const;
+		const codes: Record<typeof result.status, HistoryErrorCode> = {
+			unknown: "HISTORY_LINK_UNKNOWN",
+			consumed: "HISTORY_LINK_CONSUMED",
+			expired: "HISTORY_LINK_EXPIRED",
+			revoked: "HISTORY_LINK_REVOKED",
+		};
 		const status = result.status === "unknown" ? 404 : result.status === "consumed" ? 409 : 410;
-		return c.json({ error: errors[result.status] }, status);
+		return c.json(historyError(codes[result.status]), status);
 	}
 	setCookie(c, "signmos_history_session", result.rawSession, {
 		path: "/",
@@ -123,26 +117,10 @@ historyAccessEndpoint.get("/documents", async (c) => {
 		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
 	if (sessionState.state !== "active") {
-		if (sessionState.state === "expired") {
-			return c.json(
-				{
-					error: {
-						code: "HISTORY_SESSION_EXPIRED",
-						message: "Your My documents session expired",
-						recoveryUrl: "/?task=my-documents",
-					},
-				},
-				401,
-			);
-		}
 		return c.json(
-			{
-				error: {
-					code: "HISTORY_SESSION_REQUIRED",
-					message: "Request a new My documents link",
-					recoveryUrl: "/?task=my-documents",
-				},
-			},
+			historyError(
+				sessionState.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
+			),
 			401,
 		);
 	}
@@ -165,27 +143,23 @@ historyAccessEndpoint.get("/documents", async (c) => {
 
 historyAccessEndpoint.get("/documents/:envelopeId", async (c) => {
 	const nowHeader = c.req.header("x-now");
-	const session = await resolveHistorySession(
+	const sessionState = await resolveHistorySessionState(
 		getCookie(c, "signmos_history_session") ?? "",
 		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
-	if (!session) {
+	if (sessionState.state !== "active") {
 		return c.json(
-			{ error: { code: "HISTORY_SESSION_REQUIRED", message: "Request a new My documents link" } },
+			historyError(
+				sessionState.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
+			),
 			401,
 		);
 	}
+	const session = sessionState.session;
 	const document = await authorizeMinimalHistoryDocument(session.email, c.req.param("envelopeId"));
 	if (!document) {
-		return c.json(
-			{
-				error: {
-					code: "HISTORY_DOCUMENT_NOT_FOUND",
-					message: "Document not found for this My documents session",
-				},
-			},
-			404,
-		);
+		return c.json(historyError("HISTORY_DOCUMENT_NOT_FOUND"), 404);
 	}
 	const view = await getHistoryCompletedDocumentView(
 		session.email,
@@ -193,47 +167,45 @@ historyAccessEndpoint.get("/documents/:envelopeId", async (c) => {
 		nowHeader ? new Date(nowHeader) : new Date(),
 	);
 	if (!view) {
-		return c.json(
-			{
-				error: {
-					code: "HISTORY_DOCUMENT_NOT_FOUND",
-					message: "Document not found for this My documents session",
-				},
-			},
-			404,
-		);
+		return c.json(historyError("HISTORY_DOCUMENT_NOT_FOUND"), 404);
 	}
-	await recordHistoryDocumentAudit(document.envelopeId, "history.completed.opened");
+	await recordHistoryDocumentAudit({
+		session,
+		envelopeId: document.envelopeId,
+		eventType: "history.completed.opened",
+		requestIp: getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+	});
 	return c.json({ data: view });
 });
 
 historyAccessEndpoint.get("/documents/:envelopeId/pdf", async (c) => {
 	const nowHeader = c.req.header("x-now");
-	const session = await resolveHistorySession(
+	const sessionState = await resolveHistorySessionState(
 		getCookie(c, "signmos_history_session") ?? "",
 		nowHeader ? new Date(nowHeader) : new Date(),
+		getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
 	);
-	if (!session) {
+	if (sessionState.state !== "active") {
 		return c.json(
-			{ error: { code: "HISTORY_SESSION_REQUIRED", message: "Request a new My documents link" } },
+			historyError(
+				sessionState.state === "expired" ? "HISTORY_SESSION_EXPIRED" : "HISTORY_SESSION_REQUIRED",
+			),
 			401,
 		);
 	}
+	const session = sessionState.session;
 	const document = await getHistoryFinalDocument(session.email, c.req.param("envelopeId"));
 	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
 	const object = document ? await bucket?.get(document.r2Key) : null;
 	if (!document || !bucket || !object) {
-		return c.json(
-			{
-				error: {
-					code: "HISTORY_DOCUMENT_NOT_FOUND",
-					message: "Document not found for this My documents session",
-				},
-			},
-			404,
-		);
+		return c.json(historyError("HISTORY_DOCUMENT_NOT_FOUND"), 404);
 	}
-	await recordHistoryDocumentAudit(c.req.param("envelopeId"), "history.final_pdf.downloaded");
+	await recordHistoryDocumentAudit({
+		session,
+		envelopeId: c.req.param("envelopeId"),
+		eventType: "history.final_pdf.downloaded",
+		requestIp: getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for")),
+	});
 	return new Response(await object.arrayBuffer(), {
 		headers: { "content-type": document.contentType },
 	});

@@ -7,6 +7,7 @@ import {
 	finalDocuments,
 	signerTokens,
 } from "@/db/envelope";
+import { historySecurityEventTypes } from "@/db/history-access/security-audit";
 import { apiHono } from "@/hono/api";
 
 const envelopeId = "00000000-0000-4000-8000-000000000001";
@@ -254,6 +255,25 @@ describe("completed document access", () => {
 		expect(serialized).not.toContain("partner.verified");
 		expect(serialized).not.toContain("field.value.completed");
 		expect(serialized).not.toContain("partner.link.expired");
+	});
+
+	it("filters every My documents technical event while retaining normal lifecycle history", async () => {
+		state.auditEvents.push(
+			...historySecurityEventTypes.map((eventType, index) => ({
+				id: `history-${index}`,
+				envelopeId,
+				recipientId: null,
+				eventType,
+				message: "safe-reference",
+				createdAt: new Date(`2026-05-21T10:${String(index).padStart(2, "0")}:00.000Z`),
+			})),
+		);
+
+		const response = await apiHono.request(`/api/final-documents/${finalDocumentToken}`);
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { data: { history: Array<{ type: string }> } };
+		expect(body.data.history.map((event) => event.type)).toEqual(["sent", "viewed", "signed"]);
+		expect(JSON.stringify(body)).not.toContain("history.");
 	});
 
 	it("downloads the final PDF with only the final document token", async () => {
