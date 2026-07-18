@@ -25,11 +25,10 @@ import {
 } from "@/db/agentic-access/schema";
 import { EnvelopeStatusSchema } from "@/db/envelope/schema";
 import { createHono } from "./factory";
-import {
-	agentCreatorControlGuidance,
-	buildAgentCreatorControlPaths,
-} from "./public-agent-creator-control-contract";
-import { agentPartnerGuidance, buildAgentPartnerPaths } from "./public-agent-partner-contract";
+import { buildAgentCreatorControlPaths } from "./public-agent-creator-control-contract";
+import { buildAgentGuidance } from "./public-agent-guidance";
+import { buildAgentPartnerPaths } from "./public-agent-partner-contract";
+import { agentRateLimitErrorResponse } from "./public-agent-rate-limit-contract";
 import { buildAgentTwoPartyPaths } from "./public-agent-two-party-contract";
 
 export const publicAgentContractHono = createHono();
@@ -330,7 +329,10 @@ function jsonOperation(input: {
 				},
 			},
 			...(input.documentErrors === false
-				? { "401": agentErrorResponses()["401"] }
+				? {
+						"401": agentErrorResponses()["401"],
+						"429": agentRateLimitErrorResponse(),
+					}
 				: agentErrorResponses()),
 		},
 	};
@@ -347,6 +349,7 @@ function agentErrorResponses() {
 		},
 		"404": agentErrorResponse("Document is not visible to this identity"),
 		"409": agentErrorResponse("Final PDF is not ready"),
+		"429": agentRateLimitErrorResponse(),
 		"503": agentErrorResponse("Final PDF object is temporarily unavailable"),
 		"502": agentErrorResponse("Configured delivery provider rejected the request"),
 	};
@@ -389,105 +392,4 @@ function sourceFilenameParameter() {
 		required: false,
 		schema: { type: "string", maxLength: 255 },
 	};
-}
-
-function buildAgentGuidance(): string {
-	return `# Signmos Agent API
-
-Read this guide and [/openapi.json](/openapi.json) before acting. Signmos Agentic tokens represent one verified email. Use only documented operations and stay within the user goal.
-
-## Secret handling
-
-Provide the token through the SIGNMOS_TOKEN environment variable. Never paste it into prompts, URLs, issue bodies, source control, or logs. Send it only in the Authorization: Bearer $SIGNMOS_TOKEN header.
-
-## Confirm identity
-
-Call GET /api/v1/me first and confirm the normalized verified email before reading documents.
-
-## Discover documents
-
-Call GET /api/v1/documents. Search and combine role, group, status, and page filters. Catalog order puts documents needing action first. Begin from this catalog; never probe guessed IDs.
-
-## Creator, signer, and dual roles
-
-Each response reports creator, signer, or creator_and_signer plus server-derived allowed actions. Treat these as current lifecycle facts. This API phase is read-only even when an action is reported.
-
-## Poll document status
-
-Use GET /api/v1/documents/{documentId}/status and follow machine fields such as retryable, allowedActions, and recoveryUrl. Do not infer state from prose or poll undocumented routes.
-
-## Inspect detail and history
-
-Use the document detail and history routes for authorized lifecycle, retention, parties, and public events. Responses never contain browser cookies, process links, internal headers, or security-audit rows.
-
-## Download a completed PDF
-
-When download_final_pdf is allowed, request GET /api/v1/documents/{documentId}/pdf and accept application/pdf. A not-ready response may be polled through its recovery URL.
-
-## Revoked, deleted, or unavailable
-
-A revoked token returns 401 and must be replaced through fresh email verification. Deleted or unauthorized documents return the same 404 without revealing existence. An unavailable final object returns a retryable 503 with a safe recovery URL.
-
-## Create a self-sign draft
-
-POST /api/v1/documents with your signer name. The verified Bearer email owns the draft; no additional verification or emailed credential is used.
-
-## Upload one source PDF
-
-PUT /api/v1/documents/{documentId}/source-pdf with application/pdf bytes under 10 MB. Inspect metadata or download the authorized preparation copy from the documented source routes.
-
-## Save a signature profile
-
-POST a typed or drawn profile with rememberSignature true. Reusable signature content is stored only with this explicit consent.
-
-## Place signature and date fields
-
-Use explicit coordinates or the default-fields command. One signature placeholder is permitted for the self-signer, and preparation commands are draft-only.
-
-## Review and reposition
-
-GET the signing task and PATCH only assigned fields where the self-sign workflow permits. Follow returned source URLs and field identifiers; never use or request a process token.
-
-## Complete self-signing
-
-POST a typed or drawn signature to the completion command. The server controls the signing date. Poll status until the completed detail, history, and final PDF are available.
-
-## Create a two-party draft
-
-POST /api/v1/documents with signingMode me_and_another_signer. The normalized Bearer email is the creator and receives no extra verification credential.
-
-## Manage draft recipients
-
-List, add, update, or delete partner recipients while draft. Use normalized valid emails, keep the total between 1 and 10, and follow duplicate, limit, and recovery errors.
-
-## Prepare both parties
-
-Place explicit fields with recipientId or default fields with recipientIds for the creator and every partner. Each recipient needs its own valid signature/date assignments.
-
-## Complete creator signing
-
-Use the same completion command with a typed or drawn creator signature before delivery. The server fixes the signing date and the response remains draft until send succeeds.
-
-## Send the partner invitation
-
-POST the send command only after source, partner recipients, all fields, and creator signing are ready. Signmos delivers only eligible partner invitations and never returns invitation or process credentials.
-
-## Resend an eligible invitation
-
-POST the recipient resend command only when server-derived actions permit it. A successful resend creates one fresh partner invitation without duplicating recipients.
-
-## Poll partner progress
-
-Poll document status and history for recipient states and allowed actions. Do not infer delivery or signing progress from a prior response.
-
-## Delivery-provider failure
-
-EMAIL_DELIVERY_FAILED is retryable and leaves the document unsent. Retry the exact request with the same Idempotency-Key to recover the original result; use a fresh key only for a new intended attempt.
-${agentPartnerGuidance}
-${agentCreatorControlGuidance}
-
-## Use a fresh Idempotency-Key
-
-Every POST, PUT, or PATCH command requires a fresh Idempotency-Key for one intended mutation. Exact retries return the original status and body. Reusing a key for a changed operation, JSON body, or PDF returns IDEMPOTENCY_CONFLICT without executing the changed intent.
-`;
 }

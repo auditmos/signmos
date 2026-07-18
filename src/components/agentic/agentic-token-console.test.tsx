@@ -77,6 +77,12 @@ describe("agent token console", () => {
 		expect(prompt).toContain("/openapi.json");
 		expect(prompt).not.toContain(secret);
 		expect(prompt).not.toMatch(/Codex|Claude/i);
+		expect(screen.getByRole("link", { name: "Open Agent guide" }).getAttribute("href")).toBe(
+			"/agent.md",
+		);
+		expect(screen.getByRole("link", { name: "OpenAPI schema" }).getAttribute("href")).toBe(
+			"/openapi.json",
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Copy token setup" }));
 		fireEvent.click(screen.getByRole("button", { name: "Copy agent prompt" }));

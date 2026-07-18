@@ -10,6 +10,7 @@ import {
 	AgentDocumentErrorSchema,
 	AgentV1AuthenticationErrorSchema,
 } from "@/db/agentic-access/schema";
+import { agentRateLimitErrorResponse } from "./public-agent-rate-limit-contract";
 
 const documentIdParameter = {
 	name: "documentId",
@@ -111,6 +112,7 @@ function errorResponses() {
 		"404": error("Signing task was not found"),
 		"409": error("Signing state or idempotency conflict"),
 		"410": error("Signing task is terminal"),
+		"429": agentRateLimitErrorResponse(),
 		"502": error("Configured delivery provider rejected the notification"),
 	};
 }

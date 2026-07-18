@@ -148,6 +148,7 @@ describe("ManualSigningSmokePage", () => {
 			"/api/signing/valid-token/complete",
 			expect.objectContaining({
 				method: "POST",
+				headers: expect.objectContaining({ "x-email-delivery-test-bypass": "true" }),
 				body: JSON.stringify({ signatureName: "Ada Lovelace", date: "2026-05-20" }),
 			}),
 		);

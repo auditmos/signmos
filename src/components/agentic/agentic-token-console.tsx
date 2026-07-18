@@ -213,6 +213,14 @@ export function AgenticTokenConsole() {
 					>
 						{agentPrompt}
 					</pre>
+					<nav aria-label="Agent API resources" className="flex flex-wrap gap-4 text-sm">
+						<a className="font-medium text-primary underline" href="/agent.md">
+							Open Agent guide
+						</a>
+						<a className="font-medium text-primary underline" href="/openapi.json">
+							OpenAPI schema
+						</a>
+					</nav>
 					<Button
 						type="button"
 						variant="outline"

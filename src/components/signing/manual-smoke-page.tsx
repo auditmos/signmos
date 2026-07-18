@@ -72,7 +72,10 @@ export function ManualSigningSmokePage() {
 		const sent = await postJson<{ verificationLinks: VerificationLink[] }>(
 			`/api/envelopes/${envelope.id}/actions`,
 			{ action: "send" },
-			{ "x-internal-user-id": "manual-ui" },
+			{
+				"x-internal-user-id": "manual-ui",
+				"x-email-delivery-test-bypass": "true",
+			},
 		);
 		const verificationLink = sent.verificationLinks[0] ?? {
 			recipientId,
@@ -104,7 +107,11 @@ export function ManualSigningSmokePage() {
 	async function completeInPage(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		if (!state?.signingLink) return;
-		await postJson(`/api/signing/${state.signingLink.token}/complete`, { signatureName, date });
+		await postJson(
+			`/api/signing/${state.signingLink.token}/complete`,
+			{ signatureName, date },
+			{ "x-email-delivery-test-bypass": "true" },
+		);
 		const status = await getJson<{ finalPdfAvailable: boolean }>(
 			`/api/envelopes/${state.envelopeId}/status`,
 		);
@@ -219,12 +226,18 @@ async function postJson<T = unknown>(
 		headers: { "content-type": "application/json", ...headers },
 		body: body === undefined ? undefined : JSON.stringify(body),
 	});
-	const payload = (await response.json()) as { data: T };
+	const payload = (await response.json()) as { data?: T; error?: { message?: string } };
+	if (!response.ok || payload.data === undefined) {
+		throw new Error(payload.error?.message ?? `Request failed with status ${response.status}`);
+	}
 	return payload.data;
 }
 
 async function getJson<T>(path: string): Promise<T> {
 	const response = await fetch(path);
-	const payload = (await response.json()) as { data: T };
+	const payload = (await response.json()) as { data?: T; error?: { message?: string } };
+	if (!response.ok || payload.data === undefined) {
+		throw new Error(payload.error?.message ?? `Request failed with status ${response.status}`);
+	}
 	return payload.data;
 }

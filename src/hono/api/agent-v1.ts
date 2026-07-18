@@ -22,6 +22,11 @@ import {
 import { createAgentHono } from "@/hono/factory";
 import agentCreatorControlsEndpoint from "./agent-v1-creator-controls";
 import agentPartnerDecisionEndpoint from "./agent-v1-partner-decisions";
+import {
+	AgentApiRateLimitError,
+	agentRateLimitHeaders,
+	consumeAgentApiRateLimits,
+} from "./agent-v1-rate-limit";
 import agentSelfSignSourceEndpoint from "./agent-v1-self-sign-source";
 import agentSelfSignSigningEndpoint from "./agent-v1-self-signing";
 import agentTwoPartyEndpoint from "./agent-v1-two-party";
@@ -51,6 +56,38 @@ agentV1Endpoint.use("*", async (c, next) => {
 	}
 	c.set("agenticPrincipal", principal);
 	await next();
+});
+
+agentV1Endpoint.use("*", async (c, next) => {
+	const now = rateLimitNow(c);
+	try {
+		const state = await consumeAgentApiRateLimits({
+			tokenId: c.get("agenticPrincipal").token.id,
+			requestIp: requestIp(c),
+			now,
+		});
+		await next();
+		for (const [name, value] of Object.entries(agentRateLimitHeaders(state, now))) {
+			if (name !== "Retry-After") c.res.headers.set(name, value);
+		}
+	} catch (error) {
+		if (!(error instanceof AgentApiRateLimitError)) throw error;
+		for (const [name, value] of Object.entries(agentRateLimitHeaders(error.state, now))) {
+			c.header(name, value);
+		}
+		return c.json(
+			agentDocumentError({
+				code: "AGENT_RATE_LIMITED",
+				message: "Agent API rate limit exceeded",
+				limit: error.state.limit,
+				retryable: true,
+				retryAfter: Math.max(1, Math.ceil((error.state.resetAt.getTime() - now.getTime()) / 1_000)),
+				allowedActions: ["retry_after_backoff"],
+				recoveryUrl: "/agent.md#polling-and-rate-limits",
+			}),
+			429,
+		);
+	}
 });
 
 agentV1Endpoint.use("*", async (c, next) => {
@@ -229,6 +266,10 @@ function requestNow(c: Parameters<typeof requestIp>[0]): Date {
 	return nowHeader ? new Date(nowHeader) : new Date();
 }
 
+function rateLimitNow(c: Parameters<typeof requestIp>[0] & { env?: { CLOUDFLARE_ENV?: string } }) {
+	return c.env?.CLOUDFLARE_ENV ? new Date() : requestNow(c);
+}
+
 function requestIp(c: {
 	req: { header: (name: string) => string | undefined };
 }): string | undefined {
@@ -264,6 +305,8 @@ function agentDocumentError(error: {
 	validValues?: string[];
 	fields?: string[];
 	limitBytes?: number;
+	limit?: number;
+	retryAfter?: number;
 }) {
 	return AgentDocumentErrorSchema.parse({ error });
 }

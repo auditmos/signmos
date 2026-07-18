@@ -1,6 +1,7 @@
 export interface EmailDeliveryEnv {
 	APP_BASE_URL?: string;
 	CLOUDFLARE_ENV?: string;
+	EMAIL_DELIVERY_TEST_BYPASS?: string;
 	RESEND_API_KEY?: string;
 	RESEND_FROM_EMAIL?: string;
 	RESEND_REPLY_TO_EMAIL?: string;
@@ -160,6 +161,9 @@ export function toAbsoluteDeliveryUrl(pathOrUrl: string, options: EmailDeliveryO
 }
 
 function getResendConfig(env: EmailDeliveryEnv | undefined): ResendConfig | null {
+	if (env?.CLOUDFLARE_ENV !== "production" && env?.EMAIL_DELIVERY_TEST_BYPASS === "true") {
+		return null;
+	}
 	const apiKey = env?.RESEND_API_KEY?.trim();
 	const fromEmail = env?.RESEND_FROM_EMAIL?.trim();
 	const replyToEmail = env?.RESEND_REPLY_TO_EMAIL?.trim();

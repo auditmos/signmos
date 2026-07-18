@@ -562,6 +562,50 @@ describe("signing flow API", () => {
 		fetchMock.mockRestore();
 	});
 
+	it("allows the explicit manual-smoke email fallback only outside production", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(JSON.stringify({ message: "provider rejected test recipient" }), {
+				status: 403,
+			}),
+		);
+		state.envelopes[0] = {
+			...state.envelopes[0],
+			createdBy: "sender@example.com",
+			sentBy: "sender@example.com",
+		};
+
+		const response = await apiHono.request(
+			"/api/signing/valid-token/complete",
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-email-delivery-test-bypass": "true",
+					"x-now": "2026-05-21T23:45:00.000Z",
+				},
+				body: JSON.stringify({
+					signature: {
+						kind: "typed",
+						typedText: "Ada Lovelace",
+						typedFont: "cursive",
+					},
+					rememberSignature: false,
+				}),
+			},
+			{
+				APP_BASE_URL: "https://signmos.example",
+				CLOUDFLARE_ENV: "development",
+				RESEND_API_KEY: "re_test",
+				RESEND_FROM_EMAIL: "Signmos <sign@signmos.example>",
+				RESEND_REPLY_TO_EMAIL: "support@signmos.example",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(fetchMock).not.toHaveBeenCalled();
+		fetchMock.mockRestore();
+	});
+
 	it("completes signing with a drawn signature payload", async () => {
 		const response = await apiHono.request("/api/signing/valid-token/complete", {
 			method: "POST",

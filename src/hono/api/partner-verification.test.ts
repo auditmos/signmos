@@ -319,11 +319,22 @@ describe("partner verification delivery", () => {
 			createdAt: new Date("2026-05-20T07:03:00.000Z"),
 		});
 
-		const verification = await apiHono.request("/api/signing/verifications/expired-partner-token", {
-			headers: { "x-now": "2026-05-27T07:03:01.000Z" },
-		});
-		expect(verification.status).toBe(410);
-		await expect(verification.json()).resolves.toEqual({
+		const beforeBoundary = await apiHono.request(
+			"/api/signing/verifications/expired-partner-token",
+			{
+				headers: { "x-now": "2026-05-27T07:02:59.999Z" },
+			},
+		);
+		expect(beforeBoundary.status).toBe(200);
+
+		const exactBoundary = await apiHono.request(
+			"/api/signing/verifications/expired-partner-token",
+			{
+				headers: { "x-now": "2026-05-27T07:03:00.000Z" },
+			},
+		);
+		expect(exactBoundary.status).toBe(410);
+		await expect(exactBoundary.json()).resolves.toEqual({
 			error: {
 				code: "EXPIRED_PARTNER_VERIFICATION",
 				message: "Partner verification token has expired",

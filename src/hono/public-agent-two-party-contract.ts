@@ -11,6 +11,7 @@ import {
 	AgentV1AuthenticationErrorSchema,
 	agentTwoPartyOperations,
 } from "@/db/agentic-access/schema";
+import { agentRateLimitErrorResponse } from "./public-agent-rate-limit-contract";
 
 const documentIdParameter = pathParameter("documentId");
 const recipientIdParameter = pathParameter("recipientId");
@@ -137,6 +138,7 @@ function errorResponses() {
 		},
 		"404": error("Document or recipient is not visible to this identity"),
 		"409": error("Lifecycle or idempotency precondition failed"),
+		"429": agentRateLimitErrorResponse(),
 		"502": error("Configured delivery provider rejected the invitation"),
 	};
 }

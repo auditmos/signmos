@@ -9,6 +9,7 @@ import {
 	AgentDocumentErrorSchema,
 	AgentV1AuthenticationErrorSchema,
 } from "@/db/agentic-access/schema";
+import { agentRateLimitErrorResponse } from "./public-agent-rate-limit-contract";
 
 const documentIdParameter = {
 	name: "documentId",
@@ -93,6 +94,7 @@ function successAndErrors(responseSchema: z.ZodType) {
 		},
 		"404": error("Document is not creator-owned or was deleted"),
 		"409": error("Lifecycle or idempotency precondition failed"),
+		"429": agentRateLimitErrorResponse(),
 	};
 }
 

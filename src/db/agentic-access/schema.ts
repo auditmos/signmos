@@ -196,6 +196,7 @@ const agentDocumentErrorCodes = [
 	"INVALID_SIGNING_DECLINE",
 	"INVALID_CREATOR_CONTROL",
 	"ENVELOPE_ACTION_BLOCKED",
+	"AGENT_RATE_LIMITED",
 ] as const;
 
 export const AgentDocumentErrorCodeSchema = z.enum(agentDocumentErrorCodes);
@@ -212,6 +213,7 @@ export const AgentDocumentErrorSchema = z.object({
 		fields: z.array(z.string()).optional(),
 		limitBytes: z.number().int().positive().optional(),
 		limit: z.number().int().positive().optional(),
+		retryAfter: z.number().int().positive().optional(),
 	}),
 });
 

@@ -887,8 +887,11 @@ envelopesEndpoint.post("/:id/fields", async (c) => {
 export default envelopesEndpoint;
 
 function getEmailDeliveryOptions(c: Context<{ Bindings: Env }>) {
+	const env = c.env as EmailDeliveryEnv | undefined;
+	const testFallback =
+		c.req.header("x-email-delivery-test-bypass") === "true" && env?.CLOUDFLARE_ENV !== "production";
 	return {
-		env: c.env as EmailDeliveryEnv | undefined,
+		env: testFallback ? { ...env, EMAIL_DELIVERY_TEST_BYPASS: "true" } : env,
 		baseUrl: getDeliveryBaseUrl(c),
 	};
 }
