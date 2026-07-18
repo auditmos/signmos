@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/auditmos/signmos/compare/v1.4.0...v1.5.0) (2026-07-18)
+
+
+### Features
+
+* add Agentic partner signing decisions ([#49](https://github.com/auditmos/signmos/issues/49)) ([6343f1e](https://github.com/auditmos/signmos/commit/6343f1eb175ef688a0b5bcd8c5a4f48b9bc1e6e2))
+
 # [1.4.0](https://github.com/auditmos/signmos/compare/v1.3.0...v1.4.0) (2026-07-18)
 
 
