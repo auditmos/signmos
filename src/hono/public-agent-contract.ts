@@ -25,6 +25,10 @@ import {
 } from "@/db/agentic-access/schema";
 import { EnvelopeStatusSchema } from "@/db/envelope/schema";
 import { createHono } from "./factory";
+import {
+	agentCreatorControlGuidance,
+	buildAgentCreatorControlPaths,
+} from "./public-agent-creator-control-contract";
 import { agentPartnerGuidance, buildAgentPartnerPaths } from "./public-agent-partner-contract";
 import { buildAgentTwoPartyPaths } from "./public-agent-two-party-contract";
 
@@ -137,7 +141,7 @@ function buildAgentOpenApiDocument() {
 			[agentSelfSignOperations.sourceUpload.publicPath]: {
 				put: commandOperation({
 					operationId: agentSelfSignOperations.sourceUpload.operationId,
-					summary: "Upload the one source PDF for a self-sign draft",
+					summary: "Upload an initial or revised creator-owned source PDF",
 					requestContent: {
 						"application/pdf": { schema: { type: "string", format: "binary" } },
 					},
@@ -245,6 +249,7 @@ function buildAgentOpenApiDocument() {
 			},
 			...buildAgentTwoPartyPaths(),
 			...buildAgentPartnerPaths(),
+			...buildAgentCreatorControlPaths(),
 		},
 		components: {
 			securitySchemes: {
@@ -479,6 +484,7 @@ Poll document status and history for recipient states and allowed actions. Do no
 
 EMAIL_DELIVERY_FAILED is retryable and leaves the document unsent. Retry the exact request with the same Idempotency-Key to recover the original result; use a fresh key only for a new intended attempt.
 ${agentPartnerGuidance}
+${agentCreatorControlGuidance}
 
 ## Use a fresh Idempotency-Key
 

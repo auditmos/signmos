@@ -141,6 +141,11 @@ export async function recordAgentDocumentRead(input: {
 		| "agentic.partner.completed"
 		| "agentic.partner.change_requested"
 		| "agentic.partner.declined"
+		| "agentic.source_pdf.revised"
+		| "agentic.document.canceled"
+		| "agentic.document.expired"
+		| "agentic.document.deleted"
+		| "agentic.retention.read"
 		| "agentic.final_pdf.downloaded";
 	requestIp?: string;
 }): Promise<void> {

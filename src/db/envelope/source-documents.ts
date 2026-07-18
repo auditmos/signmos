@@ -4,8 +4,11 @@ import { EnvelopeSchema, type SourceDocument, SourceDocumentSchema } from "./sch
 import {
 	auditEvents,
 	envelopeFields,
+	envelopeRecipients,
 	envelopes,
+	fieldValues,
 	idempotencyRecords,
+	signerTokens,
 	sourceDocuments,
 } from "./table";
 
@@ -95,6 +98,15 @@ export async function uploadSourcePdfDocument(
 
 	if (revision) {
 		await db.delete(envelopeFields).where(eq(envelopeFields.envelopeId, input.envelopeId));
+		await db.delete(fieldValues).where(eq(fieldValues.envelopeId, input.envelopeId));
+		await db
+			.update(envelopeRecipients)
+			.set({ status: "pending" })
+			.where(eq(envelopeRecipients.envelopeId, input.envelopeId));
+		await db
+			.update(signerTokens)
+			.set({ status: "revoked" })
+			.where(eq(signerTokens.envelopeId, input.envelopeId));
 		await db.update(envelopes).set({ status: "draft" }).where(eq(envelopes.id, input.envelopeId));
 	}
 

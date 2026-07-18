@@ -29,6 +29,7 @@ export const agentSelfSignTestState = {
 	rows: new Map<unknown, AgentSelfSignStoredRow[]>(),
 	r2Objects: new Map<string, Uint8Array>(),
 	r2PutCounts: new Map<string, number>(),
+	r2DeleteCounts: new Map<string, number>(),
 	now: new Date("2026-07-17T10:00:00.000Z"),
 };
 
@@ -167,6 +168,13 @@ export function agentSelfSignBucket(): R2Bucket {
 		get: async (key: string) => {
 			const bytes = agentSelfSignTestState.r2Objects.get(key);
 			return bytes ? ({ arrayBuffer: async () => bytes.buffer } as R2ObjectBody) : null;
+		},
+		delete: async (key: string) => {
+			agentSelfSignTestState.r2Objects.delete(key);
+			agentSelfSignTestState.r2DeleteCounts.set(
+				key,
+				(agentSelfSignTestState.r2DeleteCounts.get(key) ?? 0) + 1,
+			);
 		},
 	} as R2Bucket;
 }

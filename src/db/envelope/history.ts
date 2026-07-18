@@ -277,7 +277,10 @@ function latestUsableSignerTokenForRecipients(
 	const recipientIds = new Set(recipients.map((recipient) => recipient.id));
 	return (
 		tokens
-			.filter((token) => recipientIds.has(token.recipientId) && token.expiresAt > now)
+			.filter(
+				(token) =>
+					token.status === "active" && recipientIds.has(token.recipientId) && token.expiresAt > now,
+			)
 			.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
 	);
 }

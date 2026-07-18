@@ -308,7 +308,7 @@ function latestSignerToken(
 	recipientId: string,
 ) {
 	return [...tokens]
-		.filter((token) => token.recipientId === recipientId)
+		.filter((token) => token.status === "active" && token.recipientId === recipientId)
 		.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
 }
 

@@ -271,7 +271,7 @@ export const SignerTokenSchema = z.object({
 	envelopeId: z.string().uuid(),
 	recipientId: z.string().uuid(),
 	token: z.string().min(1),
-	status: z.literal("active"),
+	status: z.enum(["active", "revoked"]),
 	expiresAt: z.date(),
 	verifiedAt: z.date().nullable().optional(),
 	createdAt: z.date(),

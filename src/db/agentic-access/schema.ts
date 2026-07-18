@@ -194,6 +194,8 @@ const agentDocumentErrorCodes = [
 	"AGENT_SIGNING_DELETED",
 	"INVALID_CHANGE_REQUEST",
 	"INVALID_SIGNING_DECLINE",
+	"INVALID_CREATOR_CONTROL",
+	"ENVELOPE_ACTION_BLOCKED",
 ] as const;
 
 export const AgentDocumentErrorCodeSchema = z.enum(agentDocumentErrorCodes);

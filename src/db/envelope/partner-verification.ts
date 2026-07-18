@@ -36,7 +36,7 @@ export async function verifyPartnerToken(
 		.from(signerTokens)
 		.where(eq(signerTokens.token, tokenValue))
 		.limit(1);
-	const row = tokens[0];
+	const row = tokens.find((candidate) => candidate.token === tokenValue);
 	if (!row) {
 		return {
 			ok: false,
@@ -49,6 +49,16 @@ export async function verifyPartnerToken(
 	}
 
 	const token = SignerTokenSchema.parse(row);
+	if (token.status !== "active") {
+		return {
+			ok: false,
+			error: {
+				status: 404,
+				code: "PARTNER_VERIFICATION_NOT_FOUND",
+				message: "Partner verification token was not found",
+			},
+		};
+	}
 	if (token.expiresAt <= now) {
 		await recordPartnerLinkExpired(token);
 		return {

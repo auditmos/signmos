@@ -74,8 +74,10 @@ const signingPdfPage = { width: 612, height: 792 } as const;
 export async function resolveSignerToken(token: string): Promise<SignerToken | null> {
 	const db = getDb();
 	const tokens = await db.select().from(signerTokens).where(eq(signerTokens.token, token)).limit(1);
-	const found = tokens[0];
-	return found ? SignerTokenSchema.parse(found) : null;
+	const found = tokens.find((candidate) => candidate.token === token);
+	if (!found) return null;
+	const parsed = SignerTokenSchema.parse(found);
+	return parsed.status === "active" ? parsed : null;
 }
 
 export async function getSignerSession(

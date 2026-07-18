@@ -34,6 +34,7 @@ export async function resetAgentPartnerFixture(): Promise<void> {
 	state.rows = new Map(agentSelfSignTables.map((table) => [table, []]));
 	state.r2Objects.clear();
 	state.r2PutCounts.clear();
+	state.r2DeleteCounts.clear();
 	state.now = new Date("2026-07-17T12:34:56.000Z");
 	rows(agenticApiTokens).push(
 		await tokenRow({

@@ -146,7 +146,7 @@ agentSelfSignSourceEndpoint.put(agentSelfSignOperations.sourceUpload.relativePat
 		await recordAgentDocumentRead({
 			principal,
 			documentId,
-			eventType: "agentic.source_pdf.uploaded",
+			eventType: result.revision ? "agentic.source_pdf.revised" : "agentic.source_pdf.uploaded",
 			requestIp: requestIp(c),
 		});
 		await completeAgentCommand({

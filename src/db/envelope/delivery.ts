@@ -185,7 +185,9 @@ async function getExistingSendResult(
 	).map((recipient) => RecipientSchema.parse(recipient));
 	const tokens = (
 		await db.select().from(signerTokens).where(eq(signerTokens.envelopeId, envelopeId)).limit(100)
-	).map((token) => SignerTokenSchema.parse(token));
+	)
+		.map((token) => SignerTokenSchema.parse(token))
+		.filter((token) => token.status === "active");
 	const sends = await db
 		.select()
 		.from(emailSendRecords)
