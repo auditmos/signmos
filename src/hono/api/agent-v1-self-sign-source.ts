@@ -5,7 +5,7 @@ import {
 	createAgentSelfSignDraft,
 	fingerprintAgentBinaryCommand,
 	fingerprintAgentCommand,
-	getAuthorizedAgentSelfSignEnvelope,
+	getAuthorizedAgentCreatorEnvelope,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
 import {
@@ -56,6 +56,7 @@ agentSelfSignSourceEndpoint.post(agentSelfSignOperations.create.relativePath, as
 	const draft = await createAgentSelfSignDraft({
 		principal,
 		name: parsed.data.name,
+		signingMode: parsed.data.signingMode,
 		requestIp: requestIp(c),
 	});
 	const body = AgentSelfSignCreateResponseSchema.parse({ data: draft });
@@ -83,7 +84,7 @@ agentSelfSignSourceEndpoint.put(agentSelfSignOperations.sourceUpload.relativePat
 		requestFingerprint: await fingerprintAgentBinaryCommand({ bytes, contentType, filename }),
 	});
 	if (claim.state !== "execute") return commandClaimResponse(claim);
-	const envelope = await getAuthorizedAgentSelfSignEnvelope(principal, documentId);
+	const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
 	if (!envelope) {
 		const body = documentNotFoundError();
 		await completeAgentCommand({ recordId: claim.recordId, status: 404, body, documentId });
@@ -171,7 +172,7 @@ agentSelfSignSourceEndpoint.get(agentSelfSignOperations.sourceMetadata.relativeP
 	const documentId = parsedDocumentId(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	if (!(await getAuthorizedAgentSelfSignEnvelope(principal, documentId))) {
+	if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
 		return c.json(documentNotFoundError(), 404);
 	}
 	const document = await getLatestSourcePdfDocument(documentId);
@@ -189,7 +190,7 @@ agentSelfSignSourceEndpoint.get(agentSelfSignOperations.sourceContent.relativePa
 	const documentId = parsedDocumentId(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	if (!(await getAuthorizedAgentSelfSignEnvelope(principal, documentId))) {
+	if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
 		return c.json(documentNotFoundError(), 404);
 	}
 	const document = await getLatestSourcePdfDocument(documentId);

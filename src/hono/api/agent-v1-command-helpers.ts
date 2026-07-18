@@ -70,6 +70,7 @@ export function agentError(error: {
 	validValues?: string[];
 	fields?: string[];
 	limitBytes?: number;
+	limit?: number;
 }) {
 	return AgentDocumentErrorSchema.parse({ error });
 }

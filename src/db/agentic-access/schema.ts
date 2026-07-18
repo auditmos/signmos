@@ -5,9 +5,12 @@ import {
 	EnvelopeFieldResponseSchema,
 	EnvelopeStatusSchema,
 	FieldTypeSchema,
+	RecipientResponseSchema,
+	RecipientStatusSchema,
 	SignatureProfileCreateRequestSchema,
 	SignatureProfileResponseSchema,
 	SignerSessionSchema,
+	SigningModeSchema,
 } from "@/db/envelope/schema";
 import { historyCatalogGroups, historyCatalogRoles } from "@/db/history-access/catalog";
 
@@ -129,6 +132,14 @@ export const AgentDocumentStatusResponseSchema = z.object({
 		role: AgentDocumentRoleSchema,
 		allowedActions: z.array(AgentDocumentActionSchema),
 		finalPdfAvailable: z.boolean(),
+		participants: z.array(
+			z.object({
+				name: z.string(),
+				email: z.string().email(),
+				role: z.enum(["creator", "signer"]),
+				status: RecipientStatusSchema,
+			}),
+		),
 		retention: AgentDocumentRetentionSchema,
 	}),
 });
@@ -163,6 +174,17 @@ const agentDocumentErrorCodes = [
 	"INVALID_FIELD_PLACEMENT",
 	"FIELD_NOT_FOUND",
 	"INVALID_SIGNING_COMPLETION",
+	"INVALID_RECIPIENTS",
+	"DUPLICATE_RECIPIENT",
+	"RECIPIENT_LIMIT_REACHED",
+	"RECIPIENT_NOT_FOUND",
+	"CREATOR_RECIPIENT_LOCKED",
+	"SOURCE_PDF_REQUIRED",
+	"PARTNER_RECIPIENT_REQUIRED",
+	"RECIPIENT_FIELDS_REQUIRED",
+	"CREATOR_SIGNING_REQUIRED",
+	"RESEND_NOT_ALLOWED",
+	"EMAIL_DELIVERY_FAILED",
 ] as const;
 
 export const AgentDocumentErrorCodeSchema = z.enum(agentDocumentErrorCodes);
@@ -178,18 +200,20 @@ export const AgentDocumentErrorSchema = z.object({
 		validValues: z.array(z.string()).optional(),
 		fields: z.array(z.string()).optional(),
 		limitBytes: z.number().int().positive().optional(),
+		limit: z.number().int().positive().optional(),
 	}),
 });
 
 export const AgentSelfSignCreateRequestSchema = z.object({
 	name: z.string().trim().min(1).max(120),
+	signingMode: SigningModeSchema.default("only_me"),
 });
 
 export const AgentSelfSignCreateResponseSchema = z.object({
 	data: z.object({
 		documentId: z.string().uuid(),
 		status: z.literal("draft"),
-		signingMode: z.literal("only_me"),
+		signingMode: SigningModeSchema,
 		sender: z.object({ name: z.string(), email: z.string().email() }),
 		allowedActions: z.array(z.string()),
 	}),
@@ -218,6 +242,7 @@ export const AgentSignatureProfileResponseSchema = z.object({
 });
 
 const AgentSelfSignFieldCreateSchema = z.object({
+	recipientId: z.string().uuid().optional(),
 	type: FieldTypeSchema,
 	page: z.number().int().min(1),
 	x: z.number().int().min(0),
@@ -231,16 +256,18 @@ export const AgentSelfSignFieldsRequestSchema = z.object({
 });
 
 export const AgentSelfSignDefaultFieldsRequestSchema = z.object({
+	recipientIds: z.array(z.string().uuid()).min(1).max(10).optional(),
 	page: z.number().int().min(1).default(1),
 });
 
 export const AgentSelfSignFieldsResponseSchema = z.object({
 	data: z.object({
 		documentId: z.string().uuid(),
-		status: z.literal("sent"),
+		status: z.enum(["draft", "sent"]),
 		fields: z.array(EnvelopeFieldResponseSchema),
 	}),
 });
+export const AgentFieldsResponseSchema = z.object({ data: z.array(EnvelopeFieldResponseSchema) });
 
 export const AgentSelfSignTaskResponseSchema = z.object({ data: SignerSessionSchema });
 
@@ -256,6 +283,37 @@ export const AgentSelfSignFieldPlacementResponseSchema = z.object({
 
 export const AgentSelfSignCompleteRequestSchema = CompleteSigningRequestSchema;
 export const AgentSelfSignCompleteResponseSchema = z.object({ data: CompleteSigningResultSchema });
+
+export const AgentRecipientCreateSchema = z.object({
+	name: z.string().trim().min(1).max(120),
+	email: z.string().trim().toLowerCase().email(),
+});
+
+export const AgentRecipientsAddRequestSchema = z.object({
+	recipients: z.array(AgentRecipientCreateSchema).min(1).max(10),
+});
+
+export const AgentRecipientsResponseSchema = z.object({ data: z.array(RecipientResponseSchema) });
+export const AgentRecipientResponseSchema = z.object({ data: RecipientResponseSchema });
+export const AgentEmptyCommandRequestSchema = z.object({}).strict();
+export const AgentTwoPartySendResponseSchema = z.object({
+	data: z.object({
+		documentId: z.string().uuid(),
+		status: z.literal("sent"),
+		sentBy: z.string().email(),
+		invitedRecipients: z.array(z.object({ id: z.string().uuid(), email: z.string().email() })),
+		emailSendCount: z.number().int().nonnegative(),
+		allowedActions: z.array(z.string()),
+	}),
+});
+export const AgentTwoPartyResendResponseSchema = z.object({
+	data: z.object({
+		documentId: z.string().uuid(),
+		recipientId: z.string().uuid(),
+		email: z.string().email(),
+		emailSendCount: z.number().int().positive(),
+	}),
+});
 
 export const agentV1IdentityOperation = {
 	method: "get",
@@ -367,8 +425,53 @@ export const agentSelfSignOperations = {
 	),
 } as const;
 
+export const agentTwoPartyOperations = {
+	fieldsList: operation(
+		"get",
+		"/documents/:documentId/fields",
+		"/api/v1/documents/{documentId}/fields",
+		"listAgentFields",
+	),
+	recipientsList: operation(
+		"get",
+		"/documents/:documentId/recipients",
+		"/api/v1/documents/{documentId}/recipients",
+		"listAgentRecipients",
+	),
+	recipientsAdd: operation(
+		"post",
+		"/documents/:documentId/recipients",
+		"/api/v1/documents/{documentId}/recipients",
+		"addAgentRecipients",
+	),
+	recipientUpdate: operation(
+		"patch",
+		"/documents/:documentId/recipients/:recipientId",
+		"/api/v1/documents/{documentId}/recipients/{recipientId}",
+		"updateAgentRecipient",
+	),
+	recipientDelete: operation(
+		"delete",
+		"/documents/:documentId/recipients/:recipientId",
+		"/api/v1/documents/{documentId}/recipients/{recipientId}",
+		"deleteAgentRecipient",
+	),
+	send: operation(
+		"post",
+		"/documents/:documentId/send",
+		"/api/v1/documents/{documentId}/send",
+		"sendAgentDocument",
+	),
+	resend: operation(
+		"post",
+		"/documents/:documentId/recipients/:recipientId/resend",
+		"/api/v1/documents/{documentId}/recipients/{recipientId}/resend",
+		"resendAgentInvitation",
+	),
+} as const;
+
 function operation(
-	method: "get" | "post" | "put" | "patch",
+	method: "get" | "post" | "put" | "patch" | "delete",
 	relativePath: string,
 	publicPath: string,
 	operationId: string,

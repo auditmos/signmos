@@ -4,6 +4,12 @@ import {
 	AgentDocumentDetailResponseSchema,
 	AgentDocumentHistoryResponseSchema,
 	AgentDocumentStatusResponseSchema,
+	AgentEmptyCommandRequestSchema,
+	AgentFieldsResponseSchema,
+	AgentRecipientCreateSchema,
+	AgentRecipientResponseSchema,
+	AgentRecipientsAddRequestSchema,
+	AgentRecipientsResponseSchema,
 	AgentSelfSignCompleteRequestSchema,
 	AgentSelfSignCompleteResponseSchema,
 	AgentSelfSignCreateRequestSchema,
@@ -17,6 +23,8 @@ import {
 	AgentSignatureProfileCreateRequestSchema,
 	AgentSignatureProfileResponseSchema,
 	AgentSourcePdfResponseSchema,
+	AgentTwoPartyResendResponseSchema,
+	AgentTwoPartySendResponseSchema,
 	AgentV1MeResponseSchema,
 } from "@/db/agentic-access/schema";
 import { publicAgentContractHono } from "@/hono/public-agent-contract";
@@ -299,5 +307,132 @@ describe("agentic onboarding public contract", () => {
 		]) {
 			expect(markdown).toContain(phrase);
 		}
+	});
+
+	it("agent API contract publishes two-party preparation, delivery, resend, and recovery", async () => {
+		const response = await publicAgentContractHono.request("/openapi.json");
+		const document = (await response.json()) as {
+			paths: Record<string, Record<string, unknown>>;
+		};
+		const operations = [
+			["get", "/api/v1/documents/{documentId}/recipients", "listAgentRecipients", false],
+			["post", "/api/v1/documents/{documentId}/recipients", "addAgentRecipients", true],
+			[
+				"patch",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}",
+				"updateAgentRecipient",
+				true,
+			],
+			[
+				"delete",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}",
+				"deleteAgentRecipient",
+				true,
+			],
+			["get", "/api/v1/documents/{documentId}/fields", "listAgentFields", false],
+			["post", "/api/v1/documents/{documentId}/send", "sendAgentDocument", true],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}/resend",
+				"resendAgentInvitation",
+				true,
+			],
+		] as const;
+		for (const [method, path, operationId, mutates] of operations) {
+			const operation = document.paths[path]?.[method] as
+				| { operationId?: string; security?: unknown; parameters?: Array<{ name?: string }> }
+				| undefined;
+			expect(operation).toEqual(
+				expect.objectContaining({ operationId, security: [{ bearerAuth: [] }] }),
+			);
+			if (mutates) {
+				expect(operation?.parameters?.map((parameter) => parameter.name)).toContain(
+					"Idempotency-Key",
+				);
+			}
+		}
+		const contracts = [
+			[
+				"post",
+				"/api/v1/documents/{documentId}/recipients",
+				"201",
+				AgentRecipientsAddRequestSchema,
+				AgentRecipientsResponseSchema,
+			],
+			[
+				"patch",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}",
+				"200",
+				AgentRecipientCreateSchema,
+				AgentRecipientResponseSchema,
+			],
+			[
+				"delete",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}",
+				"200",
+				AgentEmptyCommandRequestSchema,
+				AgentRecipientResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/send",
+				"200",
+				AgentEmptyCommandRequestSchema,
+				AgentTwoPartySendResponseSchema,
+			],
+			[
+				"post",
+				"/api/v1/documents/{documentId}/recipients/{recipientId}/resend",
+				"201",
+				AgentEmptyCommandRequestSchema,
+				AgentTwoPartyResendResponseSchema,
+			],
+		] as const;
+		for (const [method, path, status, requestSchema, responseSchema] of contracts) {
+			const operation = document.paths[path]?.[method] as {
+				requestBody?: { content?: Record<string, { schema?: unknown }> };
+				responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+			};
+			expect(operation.requestBody?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(requestSchema),
+			);
+			expect(operation.responses?.[status]?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(responseSchema),
+			);
+		}
+		for (const [path, schema] of [
+			["/api/v1/documents/{documentId}/recipients", AgentRecipientsResponseSchema],
+			["/api/v1/documents/{documentId}/fields", AgentFieldsResponseSchema],
+		] as const) {
+			const operation = document.paths[path]?.get as {
+				responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+			};
+			expect(operation.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
+				z.toJSONSchema(schema),
+			);
+		}
+		expect(JSON.stringify(document)).toContain("EMAIL_DELIVERY_FAILED");
+		expect(
+			(
+				document.paths["/api/v1/documents/{documentId}/send"]?.post as {
+					responses?: Record<string, unknown>;
+				}
+			).responses,
+		).toHaveProperty("502");
+
+		const guidance = await publicAgentContractHono.request("/agent.md");
+		const markdown = await guidance.text();
+		for (const phrase of [
+			"Create a two-party draft",
+			"Manage draft recipients",
+			"Complete creator signing",
+			"Send the partner invitation",
+			"Resend an eligible invitation",
+			"Delivery-provider failure",
+			"Poll partner progress",
+		]) {
+			expect(markdown).toContain(phrase);
+		}
+		expect(markdown).not.toMatch(/signerToken|senderSessionToken|x-internal-user-id/);
 	});
 });

@@ -13,6 +13,7 @@ export {
 } from "./credential-authority";
 export {
 	getAgentDocumentDetail,
+	getAgentDocumentParticipantProgress,
 	getAgentFinalDocumentAccess,
 	listAgentDocuments,
 	recordAgentDocumentRead,
@@ -22,6 +23,7 @@ export {
 	AgentSelfSignPreparationError,
 	createAgentSelfSignDraft,
 	getAgentSelfSignToken,
+	getAuthorizedAgentCreatorEnvelope,
 	getAuthorizedAgentSelfSignEnvelope,
 	getAuthorizedAgentSelfSignRecipient,
 	prepareAgentSelfSignFields,
@@ -41,3 +43,16 @@ export {
 	listAgenticTokens,
 	revokeAgenticToken,
 } from "./token-lifecycle";
+export {
+	AgentRecipientMutationError,
+	AgentTwoPartyDeliveryError,
+	AgentTwoPartyPreparationError,
+	addAgentCreatorRecipients,
+	deleteAgentCreatorRecipient,
+	listAgentCreatorFields,
+	listAgentCreatorRecipients,
+	prepareAgentTwoPartyFields,
+	resendAgentTwoPartyInvitation,
+	sendAgentTwoPartyDocument,
+	updateAgentCreatorRecipient,
+} from "./two-party";

@@ -1,11 +1,9 @@
 import {
-	AgentSelfSignPreparationError,
 	claimAgentCommand,
 	completeAgentCommand,
 	fingerprintAgentCommand,
 	getAgentSelfSignToken,
-	getAuthorizedAgentSelfSignEnvelope,
-	prepareAgentSelfSignFields,
+	getAuthorizedAgentCreatorEnvelope,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
 import type { AgenticPrincipal } from "@/db/agentic-access/bearer-principal";
@@ -16,23 +14,22 @@ import {
 	AgentSelfSignFieldPlacementRequestSchema,
 	AgentSelfSignFieldPlacementResponseSchema,
 	AgentSelfSignFieldsRequestSchema,
-	AgentSelfSignFieldsResponseSchema,
 	AgentSelfSignTaskResponseSchema,
 	AgentSignatureProfileCreateRequestSchema,
 	AgentSignatureProfileResponseSchema,
 	agentSelfSignOperations,
 } from "@/db/agentic-access/schema";
 import {
+	CreatorSigningBlockedError,
+	completeDraftCreatorSigning,
 	completeSigning,
 	createSignatureProfile,
 	getLatestSelectedSignatureProfile,
 	getSignerSession,
-	SignaturePlaceholderLimitError,
 	SigningCompletionBlockedError,
 	SigningFieldPlacementBlockedError,
 	SigningFieldPlacementNotFoundError,
 	SigningNoAssignedFieldsError,
-	toEnvelopeFieldResponse,
 	toSignatureProfileResponse,
 	updateSignerFieldPlacement,
 } from "@/db/envelope";
@@ -46,6 +43,7 @@ import {
 	requestNow,
 	requiredIdempotencyKey,
 } from "./agent-v1-command-helpers";
+import { invalidAgentFieldsError, placeAgentFieldsCommand } from "./agent-v1-field-placement";
 
 const agentSelfSignSigningEndpoint = createAgentHono();
 
@@ -89,7 +87,7 @@ agentSelfSignSigningEndpoint.post(agentSelfSignOperations.profileCreate.relative
 		parsed.data,
 	);
 	if (claim.state !== "execute") return commandClaimResponse(claim);
-	const envelope = await getAuthorizedAgentSelfSignEnvelope(principal, documentId);
+	const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
 	if (!envelope) return completeNotFound(claim.recordId, documentId);
 	if (envelope.status !== "draft") {
 		return completeBlocked(
@@ -123,7 +121,7 @@ agentSelfSignSigningEndpoint.get(
 		const documentId = parsedUuid(c.req.param("documentId"));
 		if (!documentId) return c.json(documentNotFoundError(), 404);
 		const principal = c.get("agenticPrincipal");
-		if (!(await getAuthorizedAgentSelfSignEnvelope(principal, documentId))) {
+		if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
 			return c.json(documentNotFoundError(), 404);
 		}
 		const profile = await getLatestSelectedSignatureProfile(principal.email);
@@ -139,8 +137,8 @@ agentSelfSignSigningEndpoint.post(
 	agentSelfSignOperations.fieldsExplicit.relativePath,
 	async (c) => {
 		const parsed = AgentSelfSignFieldsRequestSchema.safeParse(await c.req.json().catch(() => null));
-		if (!parsed.success) return c.json(invalidFieldsError(), 400);
-		return placeFieldsCommand({
+		if (!parsed.success) return c.json(invalidAgentFieldsError(), 400);
+		return placeAgentFieldsCommand({
 			principal: c.get("agenticPrincipal"),
 			documentId: c.req.param("documentId"),
 			idempotencyKey: requiredIdempotencyKey(c),
@@ -157,14 +155,18 @@ agentSelfSignSigningEndpoint.post(agentSelfSignOperations.fieldsDefault.relative
 	const parsed = AgentSelfSignDefaultFieldsRequestSchema.safeParse(
 		await c.req.json().catch(() => null),
 	);
-	if (!parsed.success) return c.json(invalidFieldsError(), 400);
-	return placeFieldsCommand({
+	if (!parsed.success) return c.json(invalidAgentFieldsError(), 400);
+	return placeAgentFieldsCommand({
 		principal: c.get("agenticPrincipal"),
 		documentId: c.req.param("documentId"),
 		idempotencyKey: requiredIdempotencyKey(c),
 		operation: agentSelfSignOperations.fieldsDefault.operationId,
 		request: parsed.data,
-		placement: { kind: "default", page: parsed.data.page },
+		placement: {
+			kind: "default",
+			page: parsed.data.page,
+			recipientIds: parsed.data.recipientIds,
+		},
 		now: requestNow(c),
 		requestIp: requestIp(c),
 	});
@@ -254,28 +256,51 @@ agentSelfSignSigningEndpoint.post(agentSelfSignOperations.complete.relativePath,
 		...parsed.data,
 	});
 	if (claim.state !== "execute") return commandClaimResponse(claim);
-	const token = await getAgentSelfSignToken(principal, documentId);
-	if (!token) return completeSigningTaskMissing(claim.recordId, documentId);
 	try {
-		const result = await completeSigning(token, parsed.data, {
-			documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
-				?.DOCUMENTS_BUCKET,
-			now: requestNow(c),
-		});
+		const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
+		if (!envelope) return completeSigningTaskMissing(claim.recordId, documentId);
+		const token =
+			envelope.signingMode === "only_me"
+				? await getAgentSelfSignToken(principal, documentId)
+				: null;
+		if (envelope.signingMode === "only_me" && !token) {
+			return completeSigningTaskMissing(claim.recordId, documentId);
+		}
+		const now = requestNow(c);
+		const result = token
+			? await completeSigning(token, parsed.data, {
+					documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
+						?.DOCUMENTS_BUCKET,
+					now,
+				})
+			: await completeDraftCreatorSigning({
+					envelopeId: documentId,
+					creatorEmail: principal.email,
+					completion: parsed.data,
+					now,
+				});
 		const body = AgentSelfSignCompleteResponseSchema.parse({ data: result });
-		await recordMutation(principal, documentId, "agentic.self_sign.completed", c);
+		await recordMutation(
+			principal,
+			documentId,
+			envelope.signingMode === "only_me"
+				? "agentic.self_sign.completed"
+				: "agentic.creator_signing.completed",
+			c,
+		);
 		await completeAgentCommand({
 			recordId: claim.recordId,
 			status: 200,
 			body,
 			documentId,
-			now: requestNow(c),
+			now,
 		});
 		return c.json(body);
 	} catch (error) {
 		if (
 			error instanceof SigningCompletionBlockedError ||
-			error instanceof SigningNoAssignedFieldsError
+			error instanceof SigningNoAssignedFieldsError ||
+			error instanceof CreatorSigningBlockedError
 		) {
 			return completeKnownError(
 				claim.recordId,
@@ -300,83 +325,6 @@ async function claimJsonCommand(
 		operation,
 		requestFingerprint: await fingerprintAgentCommand(request),
 	});
-}
-
-async function placeFieldsCommand(input: {
-	principal: AgenticPrincipal;
-	documentId?: string;
-	idempotencyKey: string;
-	operation: string;
-	request: unknown;
-	placement: Parameters<typeof prepareAgentSelfSignFields>[0]["placement"];
-	now: Date;
-	requestIp?: string;
-}): Promise<Response> {
-	const documentId = parsedUuid(input.documentId);
-	if (!documentId) return Response.json(documentNotFoundError(), { status: 404 });
-	const claim = await claimAgentCommand({
-		principal: input.principal,
-		idempotencyKey: input.idempotencyKey,
-		operation: input.operation,
-		requestFingerprint: await fingerprintAgentCommand({
-			documentId,
-			...objectValue(input.request),
-		}),
-	});
-	if (claim.state !== "execute") return commandClaimResponse(claim);
-	try {
-		const fields = await prepareAgentSelfSignFields({
-			principal: input.principal,
-			documentId,
-			placement: input.placement,
-			now: input.now,
-		});
-		const body = AgentSelfSignFieldsResponseSchema.parse({
-			data: { documentId, status: "sent", fields: fields.map(toEnvelopeFieldResponse) },
-		});
-		await recordAgentDocumentRead({
-			principal: input.principal,
-			documentId,
-			eventType: "agentic.fields.prepared",
-			requestIp: input.requestIp,
-		});
-		await completeAgentCommand({
-			recordId: claim.recordId,
-			status: 201,
-			body,
-			documentId,
-			now: input.now,
-		});
-		return Response.json(body, { status: 201 });
-	} catch (error) {
-		if (error instanceof SignaturePlaceholderLimitError) {
-			return completeKnownError(
-				claim.recordId,
-				documentId,
-				409,
-				agentError({
-					code: "SIGNATURE_PLACEHOLDER_LIMIT",
-					message: error.message,
-					retryable: false,
-					allowedActions: ["get_signing_task"],
-					recoveryUrl: `/api/v1/documents/${documentId}/signing-task`,
-				}),
-			);
-		}
-		if (error instanceof AgentSelfSignPreparationError) {
-			const body =
-				error.code === "DOCUMENT_NOT_FOUND"
-					? documentNotFoundError()
-					: blockedError(documentId, error.message);
-			return completeKnownError(
-				claim.recordId,
-				documentId,
-				error.code === "DOCUMENT_NOT_FOUND" ? 404 : 409,
-				body,
-			);
-		}
-		throw error;
-	}
 }
 
 async function recordMutation(
@@ -430,18 +378,6 @@ function signingTaskNotFoundError(documentId: string) {
 	});
 }
 
-function invalidFieldsError() {
-	return agentError({
-		code: "INVALID_FIELDS",
-		message: "Use valid signature/date fields and PDF geometry",
-		retryable: false,
-		allowedActions: ["place_fields"],
-		recoveryUrl: "/agent.md",
-		validValues: ["signature", "date"],
-		fields: ["fields"],
-	});
-}
-
 function invalidFieldPlacementError() {
 	return agentError({
 		code: "INVALID_FIELD_PLACEMENT",
@@ -472,10 +408,6 @@ function hasReuseConsent(value: unknown): boolean {
 			"rememberSignature" in value &&
 			value.rememberSignature === true,
 	);
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 export default agentSelfSignSigningEndpoint;

@@ -86,7 +86,9 @@ export async function sendEnvelope(
 
 	const issuedAt = new Date();
 	const expiresAt = new Date(issuedAt.getTime() + partnerVerificationTtlMs);
-	const senderRecipients = recipients.filter((recipient) => isSenderRecipient(recipient, sentBy));
+	const senderRecipients = recipients.filter(
+		(recipient) => isSenderRecipient(recipient, sentBy) && recipient.status !== "completed",
+	);
 	const partnerRecipients = recipients.filter((recipient) => !isSenderRecipient(recipient, sentBy));
 	await completeSenderRecipients({
 		envelopeId,

@@ -3,6 +3,7 @@ import {
 	type FinalDocument,
 	getEnvelopeRetentionStatus,
 	getPublicEnvelopeHistory,
+	listRecipients,
 } from "@/db/envelope";
 import {
 	authorizeHistoryDocument,
@@ -68,6 +69,25 @@ export async function getAgentDocumentDetail(
 	};
 }
 
+export async function getAgentDocumentParticipantProgress(
+	principal: AgenticPrincipal,
+	documentId: string,
+) {
+	const item = await authorizeHistoryDocument(principal.email, documentId);
+	if (!item) return null;
+	const recipients = await listRecipients(documentId);
+	return recipients.map((recipient) => ({
+		name: recipient.name,
+		email: recipient.email,
+		role:
+			item.participants.find(
+				(participant) =>
+					participant.email.trim().toLowerCase() === recipient.email.trim().toLowerCase(),
+			)?.role ?? "signer",
+		status: recipient.status,
+	}));
+}
+
 export type AgentFinalDocumentAccess =
 	| { state: "not_found" }
 	| { state: "not_ready"; item: ReturnType<typeof projectAgentDocument> }
@@ -105,10 +125,18 @@ export async function recordAgentDocumentRead(input: {
 		| "agentic.source_pdf.uploaded"
 		| "agentic.source_pdf.metadata_read"
 		| "agentic.source_pdf.downloaded"
+		| "agentic.recipients.read"
+		| "agentic.recipients.added"
+		| "agentic.recipient.updated"
+		| "agentic.recipient.deleted"
+		| "agentic.fields.read"
 		| "agentic.signature_profile.created"
 		| "agentic.fields.prepared"
 		| "agentic.signing_task.read"
 		| "agentic.field.repositioned"
+		| "agentic.creator_signing.completed"
+		| "agentic.document.sent"
+		| "agentic.invitation.resent"
 		| "agentic.self_sign.completed"
 		| "agentic.final_pdf.downloaded";
 	requestIp?: string;

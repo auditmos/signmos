@@ -24,7 +24,7 @@ import { appendAgenticSecurityEvent } from "./security-audit";
 export interface AgentSelfSignDraft {
 	documentId: string;
 	status: "draft";
-	signingMode: "only_me";
+	signingMode: "only_me" | "me_and_another_signer";
 	sender: { name: string; email: string };
 	allowedActions: string[];
 }
@@ -41,6 +41,7 @@ export class AgentSelfSignPreparationError extends Error {
 export async function createAgentSelfSignDraft(input: {
 	principal: AgenticPrincipal;
 	name: string;
+	signingMode?: "only_me" | "me_and_another_signer";
 	requestIp?: string | null;
 }): Promise<AgentSelfSignDraft> {
 	const db = getDb();
@@ -49,7 +50,7 @@ export async function createAgentSelfSignDraft(input: {
 		.insert(envelopes)
 		.values({
 			status: "draft",
-			signingMode: "only_me",
+			signingMode: input.signingMode ?? "only_me",
 			createdBy: email,
 			createdByName: input.name,
 		})
@@ -93,7 +94,7 @@ export async function createAgentSelfSignDraft(input: {
 	return {
 		documentId: envelope.id,
 		status: "draft",
-		signingMode: "only_me",
+		signingMode: input.signingMode ?? "only_me",
 		sender: { name: input.name, email },
 		allowedActions: getEnvelopeAllowedActions("draft"),
 	};
@@ -103,12 +104,19 @@ export async function getAuthorizedAgentSelfSignEnvelope(
 	principal: AgenticPrincipal,
 	documentId: string,
 ): Promise<Envelope | null> {
+	const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
+	return envelope?.signingMode === "only_me" ? envelope : null;
+}
+
+export async function getAuthorizedAgentCreatorEnvelope(
+	principal: AgenticPrincipal,
+	documentId: string,
+): Promise<Envelope | null> {
 	const rows = await getDb().select().from(envelopes).where(eq(envelopes.id, documentId)).limit(1);
 	const row = rows.find((candidate) => candidate.id === documentId);
 	if (!row) return null;
 	const envelope = EnvelopeSchema.parse(row);
 	if (
-		envelope.signingMode !== "only_me" ||
 		envelope.status === "deleted" ||
 		envelope.createdBy.trim().toLowerCase() !== principal.email.trim().toLowerCase()
 	) {

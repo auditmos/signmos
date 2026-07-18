@@ -76,6 +76,31 @@ describe("agent command idempotency", () => {
 				"application/json",
 				JSON.stringify({ signatureName: "Ada" }),
 			],
+			[
+				"POST",
+				`/api/v1/documents/${documentId}/recipients`,
+				"application/json",
+				JSON.stringify({ recipients: [{ name: "Partner", email: "partner@example.com" }] }),
+			],
+			[
+				"PATCH",
+				`/api/v1/documents/${documentId}/recipients/${fieldId}`,
+				"application/json",
+				JSON.stringify({ name: "Partner", email: "partner@example.com" }),
+			],
+			[
+				"DELETE",
+				`/api/v1/documents/${documentId}/recipients/${fieldId}`,
+				"application/json",
+				JSON.stringify({}),
+			],
+			["POST", `/api/v1/documents/${documentId}/send`, "application/json", JSON.stringify({})],
+			[
+				"POST",
+				`/api/v1/documents/${documentId}/recipients/${fieldId}/resend`,
+				"application/json",
+				JSON.stringify({}),
+			],
 		] as const;
 
 		for (const [method, path, contentType, body] of mutations) {

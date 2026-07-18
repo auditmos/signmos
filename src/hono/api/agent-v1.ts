@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
 	authenticateAgenticBearer,
 	getAgentDocumentDetail,
+	getAgentDocumentParticipantProgress,
 	getAgentFinalDocumentAccess,
 	listAgentDocuments,
 	recordAgentDocumentRead,
@@ -21,6 +22,8 @@ import {
 import { createAgentHono } from "@/hono/factory";
 import agentSelfSignSourceEndpoint from "./agent-v1-self-sign-source";
 import agentSelfSignSigningEndpoint from "./agent-v1-self-signing";
+import agentTwoPartyEndpoint from "./agent-v1-two-party";
+import agentTwoPartyDeliveryEndpoint from "./agent-v1-two-party-delivery";
 import { getRequestIp } from "./envelope-route-helpers";
 
 const agentV1Endpoint = createAgentHono();
@@ -65,6 +68,8 @@ agentV1Endpoint.use("*", async (c, next) => {
 
 agentV1Endpoint.route("/", agentSelfSignSourceEndpoint);
 agentV1Endpoint.route("/", agentSelfSignSigningEndpoint);
+agentV1Endpoint.route("/", agentTwoPartyEndpoint);
+agentV1Endpoint.route("/", agentTwoPartyDeliveryEndpoint);
 
 agentV1Endpoint.get(agentV1IdentityOperation.relativePath, (c) => {
 	const principal = c.get("agenticPrincipal");
@@ -119,6 +124,8 @@ agentV1Endpoint.get(agentDocumentOperations.status.relativePath, async (c) => {
 	const principal = c.get("agenticPrincipal");
 	const detail = await getAgentDocumentDetail(principal, documentId, requestNow(c));
 	if (!detail) return c.json(documentNotFoundError(), 404);
+	const participants = await getAgentDocumentParticipantProgress(principal, documentId);
+	if (!participants) return c.json(documentNotFoundError(), 404);
 	await recordAgentDocumentRead({
 		principal,
 		documentId,
@@ -134,6 +141,7 @@ agentV1Endpoint.get(agentDocumentOperations.status.relativePath, async (c) => {
 				role: detail.document.role,
 				allowedActions: detail.document.allowedActions,
 				finalPdfAvailable: Boolean(detail.finalPdf),
+				participants,
 				retention: detail.retention,
 			},
 		}),

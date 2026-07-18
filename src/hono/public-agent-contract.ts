@@ -3,6 +3,7 @@ import {
 	AgentDocumentErrorSchema,
 	AgentDocumentGroupSchema,
 	AgentDocumentRoleSchema,
+	AgentFieldsResponseSchema,
 	AgentSelfSignCompleteRequestSchema,
 	AgentSelfSignCompleteResponseSchema,
 	AgentSelfSignCreateRequestSchema,
@@ -19,10 +20,12 @@ import {
 	AgentV1AuthenticationErrorSchema,
 	agentDocumentOperations,
 	agentSelfSignOperations,
+	agentTwoPartyOperations,
 	agentV1IdentityOperation,
 } from "@/db/agentic-access/schema";
 import { EnvelopeStatusSchema } from "@/db/envelope/schema";
 import { createHono } from "./factory";
+import { buildAgentTwoPartyPaths } from "./public-agent-two-party-contract";
 
 export const publicAgentContractHono = createHono();
 
@@ -180,6 +183,15 @@ function buildAgentOpenApiDocument() {
 				},
 			},
 			[agentSelfSignOperations.fieldsExplicit.publicPath]: {
+				get: {
+					...jsonOperation({
+						operationId: agentTwoPartyOperations.fieldsList.operationId,
+						summary: "List creator-managed document fields",
+						responseDescription: "Current safe field assignments and geometry",
+						responseSchema: AgentFieldsResponseSchema,
+					}),
+					parameters: [documentIdParameter],
+				},
 				post: commandOperation({
 					operationId: agentSelfSignOperations.fieldsExplicit.operationId,
 					summary: "Place explicit self-sign signature/date fields",
@@ -230,6 +242,7 @@ function buildAgentOpenApiDocument() {
 					parameters: [documentIdParameter],
 				}),
 			},
+			...buildAgentTwoPartyPaths(),
 		},
 		components: {
 			securitySchemes: {
@@ -328,6 +341,7 @@ function agentErrorResponses() {
 		"404": agentErrorResponse("Document is not visible to this identity"),
 		"409": agentErrorResponse("Final PDF is not ready"),
 		"503": agentErrorResponse("Final PDF object is temporarily unavailable"),
+		"502": agentErrorResponse("Configured delivery provider rejected the request"),
 	};
 }
 
@@ -430,6 +444,38 @@ GET the signing task and PATCH only assigned fields where the self-sign workflow
 ## Complete self-signing
 
 POST a typed or drawn signature to the completion command. The server controls the signing date. Poll status until the completed detail, history, and final PDF are available.
+
+## Create a two-party draft
+
+POST /api/v1/documents with signingMode me_and_another_signer. The normalized Bearer email is the creator and receives no extra verification credential.
+
+## Manage draft recipients
+
+List, add, update, or delete partner recipients while draft. Use normalized valid emails, keep the total between 1 and 10, and follow duplicate, limit, and recovery errors.
+
+## Prepare both parties
+
+Place explicit fields with recipientId or default fields with recipientIds for the creator and every partner. Each recipient needs its own valid signature/date assignments.
+
+## Complete creator signing
+
+Use the same completion command with a typed or drawn creator signature before delivery. The server fixes the signing date and the response remains draft until send succeeds.
+
+## Send the partner invitation
+
+POST the send command only after source, partner recipients, all fields, and creator signing are ready. Signmos delivers only eligible partner invitations and never returns invitation or process credentials.
+
+## Resend an eligible invitation
+
+POST the recipient resend command only when server-derived actions permit it. A successful resend creates one fresh partner invitation without duplicating recipients.
+
+## Poll partner progress
+
+Poll document status and history for recipient states and allowed actions. Do not infer delivery or signing progress from a prior response.
+
+## Delivery-provider failure
+
+EMAIL_DELIVERY_FAILED is retryable and leaves the document unsent. Retry the exact request with the same Idempotency-Key to recover the original result; use a fresh key only for a new intended attempt.
 
 ## Use a fresh Idempotency-Key
 
