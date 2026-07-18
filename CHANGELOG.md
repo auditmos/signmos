@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/auditmos/signmos/compare/v1.5.0...v1.6.0) (2026-07-18)
+
+
+### Features
+
+* add Agentic revision and creator controls ([#50](https://github.com/auditmos/signmos/issues/50)) ([bd75576](https://github.com/auditmos/signmos/commit/bd75576d2ed61c3d4e65ce3fea27804a7174ea0e))
+
 # [1.5.0](https://github.com/auditmos/signmos/compare/v1.4.0...v1.5.0) (2026-07-18)
 
 
