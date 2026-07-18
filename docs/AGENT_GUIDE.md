@@ -64,12 +64,23 @@ A deep module has a small public interface hiding a larger implementation.
 ## Hono And Worker Rules
 
 - `src/server.ts` is the custom Cloudflare Worker entry.
-- It initializes Neon/Drizzle from env bindings, routes `/api/*` to Hono, and routes everything else to TanStack Start.
+- It initializes Neon/Drizzle from env bindings, routes `/api/*` to Hono, serves `/agent.md` and `/openapi.json` through the public Agent contract publisher, and routes everything else to TanStack Start.
 - Access bindings through `env` or `c.env`, never `process.env`.
 - Workers are stateless. Do not rely on mutable global request state.
 - Use `waitUntil()` for non-blocking work after a response when needed.
 - Hono handlers should be thin: validate request input, call a domain function, map response/error shape.
 - Prefer named Zod schemas from the relevant DB domain. Do not inline large `z.object()` schemas in route handlers.
+
+## Agentic API Rules
+
+- `/api/agentic/*` is browser-management-session authority; `/api/v1/*` is personal Bearer document authority. Neither credential class may substitute for the other.
+- Resolve the normalized-email Bearer principal and current creator/signer role on every request. Never authorize a document from token possession alone.
+- Every `/api/v1` `POST`, `PUT`, `PATCH`, and `DELETE` requires `Idempotency-Key`, exact replay for an identical request, and `IDEMPOTENCY_CONFLICT` for changed reuse. Route enumeration must leave no mutation exempt.
+- Runtime Zod schemas and operation metadata are the source for `/openapi.json`. Update the public contract and drift test with every route/schema change.
+- Keep `/agent.md` complete for workflows, structured-error recovery, polling/backoff, goal-directed execution, and secret safety; do not duplicate its full operation catalog in static docs.
+- Raw Agentic links, management sessions, Bearer secrets, and hashes must stay out of URLs, redirects, later responses, logs, errors, audits, analytics, email content outside intended one-time link delivery, screenshots, and retained evidence.
+- Rate-limit policy changes require representative calibration evidence plus below/exact/above tests for both token and IP bounds. Do not infer throughput or SLA claims from latency samples.
+- Agentic release changes must preserve the capability matrix, live `pnpm agentic:smoke`, credential-canary scan, and existing browser compatibility evidence.
 
 ## Drizzle, Neon, And Zod Rules
 

@@ -18,9 +18,11 @@ Use this file as the always-loaded map. Load deeper docs only when the task touc
 ## Current Product Surface
 
 - Draft envelope creation, one source PDF upload under 10 MB, recipients, signature/date fields, send, signer links, signer completion/decline, final PDF status/download.
-- `/` is an unselected chooser for self-signing, signing with another person, or requesting passwordless My Documents access.
+- `/` is an unselected four-choice chooser for self-signing, signing with another person, passwordless My Documents access, or Agentic mode.
 - `/my-documents` is the verified-email worklist for retained creator/signer documents, including search, filters, paging, resume/sign/review, final PDF download, and creator controls.
 - An active My Documents session can start a new self-sign or two-party draft without repeating email verification.
+- `/agentic-console` uses a separate short email-verified management session to create/list/revoke up to five named personal tokens; raw secrets are displayed once and never persisted.
+- `/api/v1` is the stable role-authorized Bearer document API. `/agent.md` is its public operating guide and `/openapi.json` is its runtime-parity machine contract; every mutation requires `Idempotency-Key`.
 - `/manual-signing-smoke` is the local browser smoke path for create -> prepare -> send -> sign -> final PDF.
 - `/envelope-fields` is a field placement/review screen, not a full envelope dashboard.
 - Resend delivers transactional email when configured; development/test flows may expose restricted fallback links.
@@ -39,6 +41,10 @@ Open issue state changes, so do not hardcode issue status from memory.
 - API routes: `src/hono/api/*`
 - Envelope persistence and lifecycle behavior: `src/db/envelope/*`
 - Passwordless history identity, catalog, and authorization: `src/db/history-access/*`
+- Agentic credential authority and document adapters: `src/db/agentic-access/*`
+- Agentic browser/token routes and Bearer API: `src/hono/api/agentic.ts`, `src/hono/api/agent-v1*.ts`
+- Public Agent guidance/OpenAPI: `src/hono/public-agent-*.ts`
+- Agentic UI: `src/routes/agentic-*.tsx`, `src/components/agentic/*`
 - Worker entry and API/app routing: `src/server.ts`
 - Field placement UI: `src/routes/envelope-fields.tsx`, `src/components/envelopes/*`
 - Signer UI and manual smoke path: `src/routes/signing.$token.tsx`, `src/routes/manual-signing-smoke.tsx`, `src/components/signing/*`
@@ -65,9 +71,13 @@ pnpm types
 pnpm test
 pnpm lint
 pnpm build
+pnpm agentic:smoke
+pnpm agentic:calibrate
 pnpm db:generate:dev
 pnpm db:migrate:dev
 ```
+
+`agentic:smoke` and `agentic:calibrate` require a running configured environment and a temporary personal token. Calibration creates and deletes real fixture documents; run it only when new measurement evidence is required, retain its heartbeat/report, and revoke the token afterward.
 
 ## Verification
 

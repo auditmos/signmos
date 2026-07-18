@@ -2,13 +2,13 @@
 
 *AI agent index: [llms.txt](./llms.txt)*
 
-Signmos is a lightweight e-signature workflow built on TanStack Start, Hono, Cloudflare Workers, Neon Postgres, Drizzle, and R2. It supports self-sign and two-party envelopes, source PDF upload and field preparation, passwordless signing, completed PDF artifacts with audit summaries, and verified-email recovery through My Documents.
+Signmos is a lightweight e-signature workflow built on TanStack Start, Hono, Cloudflare Workers, Neon Postgres, Drizzle, and R2. It supports self-sign and two-party envelopes, source PDF upload and field preparation, passwordless signing, completed PDF artifacts with audit summaries, verified-email recovery through My Documents, and personal automation through the Bearer-authenticated Agent API.
 
 The legal posture is basic e-signature intent. Signmos records signer intent, timestamps, document hashes, field values, and immutable audit events, but it is not a certified trust-service platform.
 
 ## Current Capabilities
 
-- Choose self-signing, signing with another person, or My Documents from the unselected task chooser at `/`.
+- Choose self-signing, signing with another person, My Documents, or Agentic mode from the four-choice unselected task chooser at `/`.
 - Start a no-account envelope with sender email verification and restricted fallback links in dev/test.
 - Create draft envelopes through the lifecycle API.
 - Upload one source PDF per draft envelope to R2 from `/source-pdf-upload`.
@@ -27,12 +27,15 @@ The legal posture is basic e-signature intent. Signmos records signer intent, ti
 - Browse all matching retained creator/signer documents with server-side search, role/state filters, action-first ordering, and numbered pagination.
 - Resume creator preparation, review status, cancel/delete where permitted, recover active signer work, and download completed PDFs through the history session without exposing process bearer tokens.
 - Start a new self-sign or two-party draft from an active My Documents session without repeating email verification.
+- Request Agentic access through email verification, then create and independently revoke up to five named personal tokens from `/agentic-console`; secrets are displayed only once and remain valid until revoked.
+- Use the stable Bearer-authenticated `/api/v1` contract for role-authorized catalog, preparation, signing decisions, revision, controls, retention, and completed-PDF recovery without browser process credentials.
+- Read public operating guidance at `/agent.md` and the runtime-parity OpenAPI 3.1 contract at `/openapi.json`; every `/api/v1` mutation requires `Idempotency-Key` and authenticated responses publish rate-limit metadata.
 - Use `/manual-signing-smoke` to run the full browser-driven local smoke flow.
 
 Known product gaps:
 
 - No account/team administration dashboard; My Documents is a temporary, email-scoped personal worklist rather than permanent storage.
-- No public API keys, standalone agent CLI, webhooks, billing, templates, or multi-document envelopes yet.
+- No organization/team token administration, scoped or read-only tokens, standalone agent CLI/SDK/MCP, webhooks, billing, templates, or multi-document envelopes yet. Current Agentic tokens are personal and carry the verified email's full role-equivalent authority.
 - Final PDF generation is deterministic and testable, but still pilot-scope rather than a full production PDF layout engine.
 
 ## Quick Start
@@ -49,7 +52,7 @@ pnpm db:migrate:dev
 pnpm dev
 ```
 
-The app runs on http://localhost:3000. API endpoints are served under `/api/*`.
+The app runs on http://localhost:3000. JSON API endpoints are served under `/api/*`; the public Agent contracts are served at `/agent.md` and `/openapi.json`.
 
 ## Manual End-to-End Smoke Test
 
@@ -193,13 +196,48 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `PATCH /api/history/documents/{id}/signing/fields/{fieldId}` | Reposition an allowed self-sign field. |
 | `POST /api/history/documents/{id}/signing/{complete,change-request,decline}` | Perform an allowed recovered-signer action. |
 
-See [plans/pilot-readiness-contract.md](./plans/pilot-readiness-contract.md) for the core agent-ready endpoint contract and smoke map. Product requirements start with [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) and are amended by the feature PRDs, including [plans/my-documents-prd.md](./plans/my-documents-prd.md) for passwordless history and recovery.
+## Agentic API
+
+Agentic mode is a separate identity surface from process links and My Documents. A 30-minute single-use email link creates a 15-minute HTTP-only management session. That browser session can create, list, or revoke named personal tokens; a Bearer token cannot manage credentials. Previously generated secrets are never redisplayed.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/agentic/access-requests` | Request enumeration-safe Agentic access; requires Turnstile and `Idempotency-Key`. |
+| `POST /api/agentic/access-links/inspect` | Inspect the fragment-delivered email credential without consuming it. |
+| `POST /api/agentic/access-links/redeem` | Consume the email credential and create the short management-session cookie. |
+| `GET /api/agentic/tokens` | List safe token metadata through the management session. |
+| `POST /api/agentic/tokens` | Generate one named full-authority token and display its secret once. |
+| `DELETE /api/agentic/tokens/{tokenId}` | Revoke one token immediately without affecting the others. |
+| `GET /agent.md` | Read public workflows, error recovery, polling, rate limits, and secret-safety guidance. |
+| `GET /openapi.json` | Read the authoritative OpenAPI 3.1 contract generated from runtime schemas. |
+| `/api/v1/*` | Perform the documented role-authorized document operations with `Authorization: Bearer $SIGNMOS_TOKEN`. |
+
+Do not put a token in a URL, prompt, log, issue, or source file. Export it through the environment and confirm its identity before acting:
+
+```bash
+BASE=http://localhost:3000
+export SIGNMOS_TOKEN='<one-time value copied from /agentic-console>'
+
+curl -fsS "$BASE/api/v1/me" \
+  -H "Authorization: Bearer $SIGNMOS_TOKEN" | jq
+
+curl -fsS "$BASE/api/v1/documents?page=1" \
+  -H "Authorization: Bearer $SIGNMOS_TOKEN" | jq
+```
+
+Every `POST`, `PUT`, `PATCH`, or `DELETE` under `/api/v1` requires a fresh `Idempotency-Key` for one intended mutation. Exact retries replay the original result; changed reuse returns `IDEMPOTENCY_CONFLICT`. Follow `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` rather than hard-coding request cadence. Use `/openapi.json` for the full operation list instead of relying on a duplicated static endpoint table.
+
+Product requirements start with [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) and are amended by [plans/my-documents-prd.md](./plans/my-documents-prd.md) and [plans/agentic-mode-prd.md](./plans/agentic-mode-prd.md). The signed Agentic parity, measurement, security, and browser evidence lives in [plans/evidence/agentic-mode-release/](./plans/evidence/agentic-mode-release/). [plans/pilot-readiness-contract.md](./plans/pilot-readiness-contract.md) remains the legacy/internal lifecycle smoke map.
 
 ## Routes
 
 | Route | Purpose |
 |---|---|
-| `/` | Unselected task chooser for self-sign, two-party signing, or My Documents access. |
+| `/` | Four-choice unselected task chooser for self-sign, two-party signing, My Documents, or Agentic mode. |
+| `/agentic-access` | Scanner-safe inspection and redemption of the fragment-delivered Agentic email credential. |
+| `/agentic-console` | Short-session token creation, safe metadata listing, prompt setup, and revocation. |
+| `/agent.md` | Public platform-neutral Agent API operating guide. |
+| `/openapi.json` | Public runtime-parity OpenAPI 3.1 document. |
 | `/clients` | Starter client CRUD demo. |
 | `/sender-verifications/{token}` | Sender email confirmation and continuation. |
 | `/signing-verifications/{token}` | Partner email confirmation and signing continuation. |
@@ -224,6 +262,8 @@ src/
 │   ├── source-pdf-upload.tsx
 │   ├── completed-documents.$token.tsx
 │   ├── history-access.$credential.tsx
+│   ├── agentic-access.tsx
+│   ├── agentic-console.tsx
 │   ├── my-documents*.tsx
 │   ├── manual-signing-smoke.tsx
 │   └── signing.$token.tsx
@@ -236,6 +276,7 @@ src/
 │   │   ├── envelope-preparation-page.tsx
 │   │   └── field-editor.tsx
 │   ├── history/                       # Access request, catalog, recovery, controls
+│   ├── agentic/                       # Agentic request, console, prompt, token lifecycle
 │   ├── completed-documents/           # Completed artifact detail
 │   └── signing/
 │       ├── manual-smoke-page.tsx
@@ -243,12 +284,16 @@ src/
 ├── db/
 │   ├── envelope/                     # Envelope tables, schemas, queries, finalization
 │   ├── history-access/                # Credential/session, catalog, authorization, audit
+│   ├── agentic-access/                # Agent credentials, Bearer principal, document commands
 │   ├── client/                       # Starter client demo domain
 │   ├── health/
 │   └── migrations/dev/               # Dev Drizzle migrations
 └── hono/
     ├── api.ts                        # Mounts the Hono API domains
+    ├── public-agent-contract.ts      # Serves /agent.md and /openapi.json
     └── api/
+        ├── agentic.ts                # Browser-only credential management
+        ├── agent-v1*.ts              # Bearer document API, idempotency, and rate limits
         ├── envelopes.ts
         ├── history-*.ts
         ├── final-documents.ts
@@ -282,6 +327,13 @@ Core persistence tables include:
 - `history_email_records`
 - `history_sessions`
 - `history_security_events`
+- `agentic_access_links`
+- `agentic_access_requests`
+- `agentic_email_records`
+- `agentic_management_sessions`
+- `agentic_api_tokens`
+- `agentic_command_records`
+- `agentic_security_events`
 
 Migration workflow:
 
@@ -303,6 +355,8 @@ Generate staging/production migrations with the corresponding `db:generate:*` sc
 | `pnpm deploy` | Build and deploy to Cloudflare Workers. |
 | `pnpm cf-typegen` | Generate Cloudflare `Env` types. |
 | `pnpm test` / `pnpm test:watch` / `pnpm test:coverage` | Vitest. |
+| `pnpm agentic:smoke` | Preflight public docs/identity, run a live Bearer self-sign lifecycle, then execute the retained Agentic lifecycle branches. Requires `SIGNMOS_TOKEN`; optional `SIGNMOS_BASE_URL`. |
+| `pnpm agentic:calibrate` | Measure representative Agent API operation classes and emit a report with heartbeats. Requires a temporary development token and configured development infrastructure. |
 | `pnpm types` | `tsc --noEmit`. |
 | `pnpm lint` / `pnpm lint:fix` / `pnpm lint:ci` | Biome checks. |
 | `pnpm knip` | Detect unused files, dependencies, and exports. |
@@ -325,7 +379,7 @@ pnpm lint
 pnpm build
 ```
 
-The test suite includes lifecycle API smoke coverage, PDF finalization assertions, field editor and signer UI tests, My Documents credential/catalog/recovery/security coverage, and release/docs contract checks.
+The test suite includes lifecycle API smoke coverage, PDF finalization assertions, field editor and signer UI tests, My Documents credential/catalog/recovery/security coverage, Agentic authorization/idempotency/rate-limit/redaction/OpenAPI coverage, and release/docs contract checks.
 
 ## Development Notes
 
@@ -336,7 +390,7 @@ The test suite includes lifecycle API smoke coverage, PDF finalization assertion
 - Keep source files under 500 lines.
 - Do not edit `src/components/ui/*` manually; use Shadcn tooling.
 - Do not edit `src/routeTree.gen.ts` manually; it is generated by TanStack Router during dev/build.
-- `plans/simple-esignature-prd.md` defines the core lifecycle contract; feature PRDs such as `plans/my-documents-prd.md` amend it for their surfaces.
+- `plans/simple-esignature-prd.md` defines the core lifecycle contract; `plans/my-documents-prd.md` and `plans/agentic-mode-prd.md` amend it for their surfaces.
 
 ## Learn More
 

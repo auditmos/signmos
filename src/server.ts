@@ -1,5 +1,5 @@
 // DO NOT DELETE THIS FILE!!!
-// Custom CF Workers entry: routes /api/* to Hono, rest to TanStack Start
+// Custom CF Workers entry: routes JSON/public Agent contracts to Hono, rest to TanStack Start
 import handler from "@tanstack/react-start/server-entry";
 import { initDatabase } from "@/db";
 import { apiHono } from "@/hono/api";

@@ -15,12 +15,15 @@
 - [plans/my-documents-prd.md](plans/my-documents-prd.md): Passwordless history, recovery, catalog, authorization, and security requirements.
 - [plans/my-documents.md](plans/my-documents.md): Six-slice My Documents implementation plan.
 - [plans/evidence/my-documents-release/](plans/evidence/my-documents-release/): Browser, keyboard, and scope evidence for the compatibility release.
-- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Current agent-ready endpoint contract, smoke checklist, UI-state evidence, and PRD validation map.
+- [plans/agentic-mode-prd.md](plans/agentic-mode-prd.md): Personal token authority, full `/api/v1` document parity, public contract, security, and compatibility requirements.
+- [plans/agentic-mode.md](plans/agentic-mode.md): Eight-slice Agentic Mode implementation plan.
+- [plans/evidence/agentic-mode-release/](plans/evidence/agentic-mode-release/): Signed 44-story parity, calibration, redaction, browser, keyboard, and smoke evidence.
+- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Legacy/internal lifecycle endpoint contract and smoke map.
 
 ## Implemented Workflow
 
 - Draft envelope creation.
-- Unselected landing chooser for self-sign, two-party signing, or My Documents.
+- Four-choice unselected landing chooser for self-sign, two-party signing, My Documents, or Agentic mode.
 - No-account sender start with email verification and restricted fallback links.
 - Source PDF upload to R2 through `DOCUMENTS_BUCKET`.
 - Recipient creation with a 10-recipient limit.
@@ -39,6 +42,11 @@
 - Retained creator/signer catalog with search, filters, action-first ordering, and numbered pagination.
 - Session-authorized creator recovery/controls, recovered signing, completed detail/PDF access, and sign-out.
 - Session-native self-sign or two-party draft creation without another email verification.
+- Separate Agentic email verification and 15-minute management session for up to five independently revocable named personal tokens.
+- One-time 256-bit `signmos_` secrets persisted only as hashes and usable until revoked.
+- Stable `/api/v1` Bearer API with current creator/signer role authorization for catalog, preparation, signing decisions, revision, controls, retention, and completed PDF recovery.
+- Universal mutation idempotency, measured per-token/IP limits, safe agent attribution, and credential redaction.
+- Public `/agent.md` operating guidance and runtime-parity `/openapi.json`.
 - Browser-driven local full workflow at `/manual-signing-smoke`.
 
 ## Key Files
@@ -54,7 +62,13 @@
 - [src/hono/api/history-envelope-start.ts](src/hono/api/history-envelope-start.ts): Session-native envelope start.
 - [src/hono/api/history-creator.ts](src/hono/api/history-creator.ts): Creator recovery and control routes.
 - [src/hono/api/history-signing.ts](src/hono/api/history-signing.ts): Recovered signer routes.
-- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Agent-ready lifecycle contract and smoke evidence map.
+- [src/hono/api/agentic.ts](src/hono/api/agentic.ts): Agentic access requests, management sessions, token generation/list/revocation.
+- [src/hono/api/agent-v1.ts](src/hono/api/agent-v1.ts): Bearer gateway, role authorization, rate limits, and universal mutation guard.
+- [src/hono/api/agent-v1-two-party.ts](src/hono/api/agent-v1-two-party.ts): Recipient/field preparation and delivery routes.
+- [src/hono/api/agent-v1-partner-decisions.ts](src/hono/api/agent-v1-partner-decisions.ts): Partner completion, change request, and decline routes.
+- [src/hono/api/agent-v1-creator-controls.ts](src/hono/api/agent-v1-creator-controls.ts): Revision, controls, retention, and deletion routes.
+- [src/hono/public-agent-contract.ts](src/hono/public-agent-contract.ts): Public guide and runtime-parity OpenAPI publisher.
+- [plans/pilot-readiness-contract.md](plans/pilot-readiness-contract.md): Legacy/internal lifecycle contract and smoke evidence map.
 - [src/hono/factory.ts](src/hono/factory.ts): Typed Hono factory.
 - [src/server.ts](src/server.ts): Cloudflare Worker entry; routes `/api/*` to Hono.
 
@@ -65,6 +79,7 @@
 - [src/db/envelope/queries.ts](src/db/envelope/queries.ts): Envelope lifecycle operations.
 - [src/db/envelope/finalization.ts](src/db/envelope/finalization.ts): Completed PDF generation/storage/status helpers.
 - [src/db/history-access/](src/db/history-access/): Passwordless credential/session lifecycle, catalog, authorization gateways, session-native start, and security audit.
+- [src/db/agentic-access/](src/db/agentic-access/): Agent credentials, Bearer principal, command idempotency, lifecycle adapters, and security audit.
 - [src/db/schema.ts](src/db/schema.ts): Table re-exports for migrations.
 
 ### UI
@@ -77,6 +92,9 @@
 - [src/routes/my-documents.$envelopeId.manage.tsx](src/routes/my-documents.$envelopeId.manage.tsx): Creator recovery route.
 - [src/routes/my-documents.$envelopeId.sign.tsx](src/routes/my-documents.$envelopeId.sign.tsx): Recovered signer route.
 - [src/components/history/](src/components/history/): My Documents request, confirmation, catalog, new-document start, detail, and creator controls.
+- [src/routes/agentic-access.tsx](src/routes/agentic-access.tsx): Scanner-safe Agentic email-link confirmation.
+- [src/routes/agentic-console.tsx](src/routes/agentic-console.tsx): Short-session token-management route.
+- [src/components/agentic/](src/components/agentic/): Agentic request, token console, one-time secret, prompt, and revocation UI.
 - [src/components/sender/source-pdf-upload-panel.tsx](src/components/sender/source-pdf-upload-panel.tsx): PDF upload/revision UI.
 - [src/components/sender/signature-profile-panel.tsx](src/components/sender/signature-profile-panel.tsx): Drawn/typed signature profile UI.
 - [src/components/envelopes/envelope-preparation-page.tsx](src/components/envelopes/envelope-preparation-page.tsx): Review envelope setup and preparation shell.
@@ -103,6 +121,10 @@
 - [src/hono/api/history-creator-recovery.test.ts](src/hono/api/history-creator-recovery.test.ts): Creator recovery and controls.
 - [src/hono/api/history-signing-recovery.test.ts](src/hono/api/history-signing-recovery.test.ts): Recovered signing behavior.
 - [src/release/my-documents-release-contract.test.ts](src/release/my-documents-release-contract.test.ts): Credential, scope, routing, and evidence release guard.
+- [src/release/agentic-mode-release-contract.test.ts](src/release/agentic-mode-release-contract.test.ts): Runtime/OpenAPI/guidance parity and 44-story evidence guard.
+- [src/release/agent-credential-redaction.test.ts](src/release/agent-credential-redaction.test.ts): Dynamic and retained-artifact credential canary scan.
+- [scripts/agentic-smoke.ts](scripts/agentic-smoke.ts): Live Bearer self-sign plus retained lifecycle-branch smoke.
+- [scripts/agentic-calibrate.ts](scripts/agentic-calibrate.ts): Representative Agent API measurement runner with heartbeat and cleanup.
 
 ## Commands
 
@@ -111,12 +133,16 @@ pnpm install
 pnpm cf-typegen
 pnpm db:migrate:dev
 pnpm dev
+pnpm agentic:smoke
+pnpm agentic:calibrate
 
 pnpm types
 pnpm test
 pnpm lint
 pnpm build
 ```
+
+`agentic:smoke` and `agentic:calibrate` require a running configured environment plus a temporary personal token. Calibration creates/deletes real fixtures and is for measured policy evidence, not a routine local gate; revoke the token after either command.
 
 ## Manual Verification URL
 
@@ -134,4 +160,4 @@ Use this to exercise envelope creation, PDF upload, recipient/field creation, se
 - Do not manually edit `src/routeTree.gen.ts`; TanStack Router regenerates it.
 - Do not edit `src/components/ui/*` manually.
 - Use `AGENTS.md` as the compact context map; load `ARCHITECTURE.md` and `docs/AGENT_GUIDE.md` only when relevant.
-- `/plans/simple-esignature-prd.md` defines the core lifecycle contract; feature PRDs such as `/plans/my-documents-prd.md` amend their surfaces.
+- `/plans/simple-esignature-prd.md` defines the core lifecycle contract; `/plans/my-documents-prd.md` and `/plans/agentic-mode-prd.md` amend their surfaces.

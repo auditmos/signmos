@@ -4,7 +4,7 @@ This is the stable physical map for signmos. It names important files and module
 
 ## Problem
 
-Signmos implements a lightweight no-account e-signature pilot. A sender creates a self-sign or two-party envelope, uploads one PDF, prepares signature/date fields, and completes signing through verified email links. When all recipients complete, the system stores a final PDF artifact with flattened values and an audit summary. Returning participants can use a temporary verified-email My Documents session to recover retained work without exposing envelope process credentials.
+Signmos implements a lightweight no-account e-signature pilot. A sender creates a self-sign or two-party envelope, uploads one PDF, prepares signature/date fields, and completes signing through verified email links. When all recipients complete, the system stores a final PDF artifact with flattened values and an audit summary. Returning participants can use a temporary verified-email My Documents session to recover retained work without exposing envelope process credentials. Agentic mode adds email-verified personal Bearer tokens and a role-equivalent `/api/v1` document surface without turning those tokens into password accounts or credential-management authority.
 
 The production shape is Cloudflare Workers plus R2 for document artifacts, Neon Postgres plus Drizzle for relational state, Hono for JSON APIs, and TanStack Start for routes and SSR.
 
@@ -14,10 +14,11 @@ All requests enter `src/server.ts`.
 
 1. `src/server.ts` initializes the database with `initDatabase`.
 2. Paths under `/api/` are delegated to `apiHono`.
-3. Other paths are delegated to the TanStack Start server handler.
-4. Hono route modules validate HTTP input and delegate persistence/lifecycle work to DB domain modules.
-5. DB domain modules use Drizzle through `getDb`.
-6. PDF source and final artifacts use the `DOCUMENTS_BUCKET` R2 binding.
+3. `/agent.md` and `/openapi.json` are delegated to the public Agent contract publisher.
+4. Other paths are delegated to the TanStack Start server handler.
+5. Hono route modules validate HTTP input and delegate persistence/lifecycle work to DB domain modules.
+6. DB domain modules use Drizzle through `getDb`.
+7. PDF source and final artifacts use the `DOCUMENTS_BUCKET` R2 binding.
 
 ## Codemap
 
@@ -31,7 +32,7 @@ All requests enter `src/server.ts`.
 ### Hono API Layer
 
 - `src/hono/factory.ts` creates typed Hono instances with Cloudflare bindings.
-- `src/hono/api.ts` mounts health, clients, envelopes/preparation, signing, final-document, and history API domains.
+- `src/hono/api.ts` mounts health, clients, envelopes/preparation, signing, final-document, history, Agentic management, and Agent `/api/v1` domains.
 - `src/hono/api/envelopes.ts` owns envelope lifecycle HTTP routes: sender start/verification, create, source PDF upload/revision, recipients, fields, send/resend, controls, status, retention, and sender-authorized final PDF download.
 - `src/hono/api/envelope-preparation.ts` owns signature-profile and default-field preparation endpoints.
 - `src/hono/api/signing.ts` owns signer-token routes: partner verification, source PDF access, resolve session, complete signing, change request, decline, and final PDF download.
@@ -40,7 +41,8 @@ All requests enter `src/server.ts`.
 - `src/hono/api/history-envelope-start.ts` starts a verified draft from an active history session.
 - `src/hono/api/history-creator.ts` and `src/hono/api/history-signing.ts` adapt history-authorized creator and signer recovery actions.
 - `src/hono/api/agentic.ts` owns Agentic email verification, management-session, and browser token-generation routes.
-- `src/hono/api/agent-v1.ts` begins the stable Bearer-authenticated `/api/v1` contract; `src/hono/public-agent-contract.ts` publishes `/agent.md` and `/openapi.json` from its runtime schemas.
+- `src/hono/api/agent-v1.ts` owns the Bearer gateway, per-token/IP rate limiting, and universal mutation-idempotency guard for the stable `/api/v1` contract. Focused `agent-v1-*` route modules cover catalog/detail, source PDF, signatures/fields, two-party delivery, partner decisions, revision, and creator controls.
+- `src/hono/public-agent-contract.ts` publishes `/agent.md` and `/openapi.json` from the same runtime schemas and route operation metadata used by `/api/v1`.
 - `src/hono/api/clients.ts` and `src/hono/api/health.ts` are starter/demo and health surfaces, not core signing workflow.
 
 ### Envelope Domain
@@ -67,6 +69,9 @@ All requests enter `src/server.ts`.
 - `src/db/agentic-access/request.ts` and `credential-authority.ts` own enumeration-safe access requests, fragment-delivered link credentials, atomic redemption, and exact expiry boundaries.
 - `src/db/agentic-access/token-authority.ts` generates one-time `signmos_` secrets from 256 bits of CSPRNG material and persists only deterministic hashes plus safe hints.
 - `src/db/agentic-access/bearer-principal.ts` resolves the verified email/token principal and records agent-attributed sensitive reads.
+- `src/db/agentic-access/command-authority.ts` claims every mutation by token and idempotency key, stores the exact result, replays identical retries, and rejects changed reuse.
+- `src/db/agentic-access/documents.ts`, `self-signing.ts`, `two-party.ts`, and `partner-signing.ts` adapt normalized-email creator/signer authority to the existing envelope lifecycle.
+- `src/db/agentic-access/security-audit.ts` records safe agent attribution without raw link, session, token, or hash material.
 - `src/db/agentic-access/schema.ts` is the shared runtime/OpenAPI trust boundary, and `index.ts` is the domain's narrow public interface.
 
 ### Other DB Domains
@@ -79,7 +84,7 @@ All requests enter `src/server.ts`.
 
 ### Routes And Feature UI
 
-- `src/routes/index.tsx` renders the unselected self-sign/two-party/My Documents task chooser.
+- `src/routes/index.tsx` renders the four-choice unselected self-sign/two-party/My Documents/Agentic task chooser.
 - `src/components/sender/start-envelope-page.tsx` owns task selection plus sender initiation, Turnstile submission, and validation.
 - `src/components/history/history-request-form.tsx` owns the privacy-safe My Documents access request.
 - `src/routes/history-access.$credential.tsx` and `src/components/history/history-access-confirmation-page.tsx` provide scanner-safe history-link confirmation and redemption.
@@ -111,6 +116,8 @@ All requests enter `src/server.ts`.
 - API behavior is covered under `src/hono/api/*.test.ts`.
 - Envelope UI behavior is covered beside feature components under `src/components/envelopes`, `src/components/history`, `src/components/sender`, and `src/components/signing`.
 - `src/release/my-documents-release-contract.test.ts` guards credential hygiene, scope, nested route mounting, and retained release evidence.
+- `src/release/agentic-mode-release-contract.test.ts` guards runtime/OpenAPI parity, complete public guidance, capability mapping, measured evidence, and all 44 Agentic PRD stories.
+- `src/release/agent-credential-redaction.test.ts`, `agentic-calibrate.test.ts`, and `agentic-smoke.test.ts` guard credential hygiene plus the runnable measurement/smoke entry points.
 - Core error helpers are covered in `src/core/errors.test.ts`.
 - Route files under `src/routes` are excluded from test discovery; test the component or API boundary instead.
 
@@ -135,13 +142,19 @@ Known API failures should return machine-readable JSON with stable codes. The li
 
 ### Idempotency
 
-Envelope creation, source PDF upload, public history requests, and history-session envelope start use idempotency records or request claims. New mutating lifecycle endpoints should define the operation name, the idempotency scope, and the returned reused result before implementation.
+Envelope creation, source PDF upload, public history requests, and history-session envelope start use idempotency records or request claims. Every `/api/v1` `POST`, `PUT`, `PATCH`, and `DELETE` is guarded by `agenticCommandRecords`: identical token/key/operation/payload retries replay the original status and body, while changed reuse returns `IDEMPOTENCY_CONFLICT`. New mutating lifecycle endpoints must define the operation name, fingerprint, idempotency scope, and exact replay behavior before implementation.
 
 ### Identity And Authorization
 
 Signmos has no password account. Existing sender/signer/final-document credentials remain process-specific. My Documents adds a parallel normalized-email identity proven by a single-use link and held in a fixed, revocable HTTP-only session. History routes must authorize both the email's envelope role and current lifecycle state, must not reveal process bearer credentials, and must require same-origin protection for cookie-authenticated mutations.
 
-Agentic mode adds a separate 30-minute single-use email credential, a 15-minute HTTP-only management session, and long-lived hash-only personal Bearer tokens. Management cookies cannot authorize `/api/v1`, Bearer tokens cannot substitute for browser management, and every sensitive Bearer read records normalized email plus safe token identity with `actorType: "agent"`.
+Agentic mode adds a separate 30-minute single-use email credential, a 15-minute HTTP-only management session, and long-lived hash-only personal Bearer tokens. Management cookies cannot authorize `/api/v1`, Bearer tokens cannot substitute for browser management, and every sensitive Bearer operation records normalized email plus safe token identity with `actorType: "agent"`.
+
+### Agent API Rate Limits And Public Contract
+
+Authenticated `/api/v1` requests consume fixed-window per-token and defensive per-IP limits through `src/hono/api/agent-v1-rate-limit.ts` and the shared `rate_limit_records` table. Successful responses expose limit/remaining/reset metadata; limited responses add stable `429` JSON and `Retry-After`. Numeric policy lives in `agent-rate-limit-policy.ts` and must be changed only with retained representative calibration evidence.
+
+`/openapi.json` is the machine contract and must remain identical to runtime methods, paths, Bearer requirements, schemas, binary bodies, errors, and idempotency rules. `/agent.md` is the human/agent operating contract for workflows, recovery, polling/backoff, goal discipline, and secret handling. Do not maintain a second hand-written full `/api/v1` endpoint list in repository docs.
 
 ### Document Storage
 
@@ -157,4 +170,4 @@ Route files should stay thin. Feature components own UI state and fetch/mutation
 
 ### Issue-Driven Work
 
-For issues #14 through #21 and future pilot issues, start from the live issue acceptance criteria and load the local TDD skill for the implementation loop. The architecture map should help choose the right public boundary: HTTP API for lifecycle work, component boundary for signer/editor UX, or R2/PDF artifact boundary for finalization.
+For future pilot issues, start from the live issue acceptance criteria and load the local TDD skill for the implementation loop. The architecture map should help choose the right public boundary: HTTP API for lifecycle work, component boundary for signer/editor UX, or R2/PDF artifact boundary for finalization. Agentic changes must also preserve the runtime/OpenAPI drift contract, universal mutation-idempotency enumeration, credential redaction scan, capability matrix, and browser compatibility evidence.
