@@ -186,7 +186,7 @@ describe("agentic onboarding public contract", () => {
 				"repositionAgentSigningField",
 				true,
 			],
-			["post", "/api/v1/documents/{documentId}/complete", "completeAgentSelfSigning", true],
+			["post", "/api/v1/documents/{documentId}/complete", "completeAgentSigning", true],
 		] as const;
 
 		for (const [method, path, operationId, mutates] of operations) {

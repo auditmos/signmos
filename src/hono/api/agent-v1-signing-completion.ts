@@ -1,0 +1,168 @@
+import {
+	authorizeAgentPartnerSigning,
+	completeAgentCommand,
+	getAgentSelfSignToken,
+	getAuthorizedAgentCreatorEnvelope,
+	recordAgentDocumentRead,
+} from "@/db/agentic-access";
+import type { AgenticPrincipal } from "@/db/agentic-access/bearer-principal";
+import { AgentSelfSignCompleteResponseSchema } from "@/db/agentic-access/schema";
+import {
+	type CompleteSigningRequest,
+	CreatorSigningBlockedError,
+	completeDraftCreatorSigning,
+	completeSigning,
+	EmailDeliveryError,
+	type EmailDeliveryOptions,
+	type SignerToken,
+	SigningCompletionBlockedError,
+	SigningNoAssignedFieldsError,
+} from "@/db/envelope";
+import { agentPartnerAuthorizationError } from "./agent-partner-errors";
+import { agentError } from "./agent-v1-command-helpers";
+
+type AgentCompletionTarget =
+	| { kind: "self"; token: SignerToken }
+	| { kind: "partner"; token: SignerToken }
+	| { kind: "creator" };
+
+export async function executeAgentSigningCompletion(input: {
+	principal: AgenticPrincipal;
+	documentId: string;
+	request: CompleteSigningRequest;
+	recordId: string;
+	now: Date;
+	requestIp?: string;
+	documentsBucket?: R2Bucket;
+	emailDelivery: EmailDeliveryOptions;
+}): Promise<Response> {
+	try {
+		const target = await resolveAgentCompletionTarget(input);
+		if (target instanceof Response) return target;
+		const result = await completeTarget(input, target);
+		const body = AgentSelfSignCompleteResponseSchema.parse({ data: result });
+		await recordAgentDocumentRead({
+			principal: input.principal,
+			documentId: input.documentId,
+			eventType: completionEventType(target),
+			requestIp: input.requestIp,
+		});
+		await completeAgentCommand({
+			recordId: input.recordId,
+			status: 200,
+			body,
+			documentId: input.documentId,
+			now: input.now,
+		});
+		return Response.json(body);
+	} catch (error) {
+		return handleAgentCompletionError(input.recordId, input.documentId, error);
+	}
+}
+
+async function completeTarget(
+	input: Parameters<typeof executeAgentSigningCompletion>[0],
+	target: AgentCompletionTarget,
+) {
+	if (target.kind === "creator") {
+		return completeDraftCreatorSigning({
+			envelopeId: input.documentId,
+			creatorEmail: input.principal.email,
+			completion: input.request,
+			now: input.now,
+		});
+	}
+	return completeSigning(target.token, input.request, {
+		documentsBucket: input.documentsBucket,
+		now: input.now,
+		...(target.kind === "partner" ? { emailDelivery: input.emailDelivery } : {}),
+	});
+}
+
+async function resolveAgentCompletionTarget(input: {
+	principal: AgenticPrincipal;
+	documentId: string;
+	recordId: string;
+}): Promise<AgentCompletionTarget | Response> {
+	const envelope = await getAuthorizedAgentCreatorEnvelope(input.principal, input.documentId);
+	if (envelope?.signingMode === "only_me") {
+		const token = await getAgentSelfSignToken(input.principal, input.documentId);
+		return token
+			? { kind: "self", token }
+			: completeSigningTaskMissing(input.recordId, input.documentId);
+	}
+	if (envelope) return { kind: "creator" };
+	const authorization = await authorizeAgentPartnerSigning(input.principal, input.documentId);
+	if (authorization.state === "active") return { kind: "partner", token: authorization.token };
+	const error = agentPartnerAuthorizationError(authorization, input.documentId);
+	return completeKnownError(input.recordId, input.documentId, error.status, error.body);
+}
+
+function completionEventType(target: AgentCompletionTarget) {
+	if (target.kind === "partner") return "agentic.partner.completed" as const;
+	if (target.kind === "self") return "agentic.self_sign.completed" as const;
+	return "agentic.creator_signing.completed" as const;
+}
+
+function handleAgentCompletionError(
+	recordId: string,
+	documentId: string,
+	error: unknown,
+): Promise<Response> {
+	if (error instanceof EmailDeliveryError) {
+		return completeKnownError(recordId, documentId, 502, completionEmailError(documentId));
+	}
+	if (
+		error instanceof SigningCompletionBlockedError ||
+		error instanceof SigningNoAssignedFieldsError ||
+		error instanceof CreatorSigningBlockedError
+	) {
+		return completeKnownError(recordId, documentId, 409, blockedError(documentId, error.message));
+	}
+	throw error;
+}
+
+function completeSigningTaskMissing(recordId: string, documentId: string): Promise<Response> {
+	return completeKnownError(
+		recordId,
+		documentId,
+		404,
+		agentError({
+			code: "AGENT_SIGNING_TASK_NOT_FOUND",
+			message: "Self-signing task not found",
+			retryable: false,
+			allowedActions: ["get_document_status"],
+			recoveryUrl: `/api/v1/documents/${documentId}/status`,
+		}),
+	);
+}
+
+async function completeKnownError(
+	recordId: string,
+	documentId: string,
+	status: number,
+	body: unknown,
+): Promise<Response> {
+	await completeAgentCommand({ recordId, status, body, documentId });
+	return Response.json(body, { status });
+}
+
+function blockedError(documentId: string, message: string) {
+	return agentError({
+		code: "AGENT_SELF_SIGN_ACTION_BLOCKED",
+		message,
+		retryable: false,
+		allowedActions: ["get_document_status"],
+		recoveryUrl: `/api/v1/documents/${documentId}/status`,
+	});
+}
+
+function completionEmailError(documentId: string) {
+	return agentError({
+		code: "EMAIL_DELIVERY_FAILED",
+		message: "Email provider rejected the message",
+		retryable: true,
+		allowedActions: ["retry_completion"],
+		recoveryUrl: `/api/v1/documents/${documentId}/signing-task`,
+	});
+}

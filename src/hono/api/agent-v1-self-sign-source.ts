@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+	authorizeAgentPartnerSigning,
 	claimAgentCommand,
 	completeAgentCommand,
 	createAgentSelfSignDraft,
@@ -8,6 +9,7 @@ import {
 	getAuthorizedAgentCreatorEnvelope,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
+import type { AgenticPrincipal } from "@/db/agentic-access/bearer-principal";
 import {
 	type AgentDocumentErrorCode,
 	AgentDocumentErrorSchema,
@@ -24,6 +26,7 @@ import {
 	uploadSourcePdfDocument,
 } from "@/db/envelope";
 import { createAgentHono } from "@/hono/factory";
+import { agentPartnerAuthorizationError } from "./agent-partner-errors";
 import { getRequestIp, isPdf, parseSourceFilename, sha256Hex } from "./envelope-route-helpers";
 
 const agentSelfSignSourceEndpoint = createAgentHono();
@@ -172,9 +175,8 @@ agentSelfSignSourceEndpoint.get(agentSelfSignOperations.sourceMetadata.relativeP
 	const documentId = parsedDocumentId(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
-		return c.json(documentNotFoundError(), 404);
-	}
+	const accessError = await requireAgentSourceRead(principal, documentId);
+	if (accessError) return accessError;
 	const document = await getLatestSourcePdfDocument(documentId);
 	if (!document) return c.json(sourcePdfUnavailableError(documentId), 404);
 	await recordAgentDocumentRead({
@@ -190,9 +192,8 @@ agentSelfSignSourceEndpoint.get(agentSelfSignOperations.sourceContent.relativePa
 	const documentId = parsedDocumentId(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
-		return c.json(documentNotFoundError(), 404);
-	}
+	const accessError = await requireAgentSourceRead(principal, documentId);
+	if (accessError) return accessError;
 	const document = await getLatestSourcePdfDocument(documentId);
 	if (!document) return c.json(sourcePdfUnavailableError(documentId), 404);
 	const bucket = (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)?.DOCUMENTS_BUCKET;
@@ -208,6 +209,17 @@ agentSelfSignSourceEndpoint.get(agentSelfSignOperations.sourceContent.relativePa
 		headers: { "cache-control": "no-store", "content-type": "application/pdf" },
 	});
 });
+
+async function requireAgentSourceRead(
+	principal: AgenticPrincipal,
+	documentId: string,
+): Promise<Response | null> {
+	if (await getAuthorizedAgentCreatorEnvelope(principal, documentId)) return null;
+	const authorization = await authorizeAgentPartnerSigning(principal, documentId);
+	if (authorization.state === "active") return null;
+	const error = agentPartnerAuthorizationError(authorization, documentId);
+	return Response.json(error.body, { status: error.status });
+}
 
 function parsedDocumentId(value: string | undefined): string | null {
 	const parsed = DocumentIdSchema.safeParse(value);

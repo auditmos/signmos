@@ -1,12 +1,14 @@
 import {
 	AgentRecipientMutationError,
 	addAgentCreatorRecipients,
+	authorizeAgentPartnerSigning,
 	claimAgentCommand,
 	completeAgentCommand,
 	deleteAgentCreatorRecipient,
 	fingerprintAgentCommand,
 	listAgentCreatorFields,
 	listAgentCreatorRecipients,
+	listAgentPartnerFields,
 	recordAgentDocumentRead,
 	updateAgentCreatorRecipient,
 } from "@/db/agentic-access";
@@ -21,6 +23,7 @@ import {
 } from "@/db/agentic-access/schema";
 import { toEnvelopeFieldResponse, toRecipientResponse } from "@/db/envelope";
 import { createAgentHono } from "@/hono/factory";
+import { agentPartnerAuthorizationError } from "./agent-partner-errors";
 import {
 	agentError,
 	commandClaimResponse,
@@ -36,8 +39,22 @@ agentTwoPartyEndpoint.get(agentTwoPartyOperations.fieldsList.relativePath, async
 	const documentId = parsedUuid(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	const fields = await listAgentCreatorFields(principal, documentId);
-	if (!fields) return c.json(documentNotFoundError(), 404);
+	const creatorFields = await listAgentCreatorFields(principal, documentId);
+	const partnerAuthorization = creatorFields
+		? null
+		: await authorizeAgentPartnerSigning(principal, documentId);
+	if (!creatorFields && partnerAuthorization?.state !== "active") {
+		const error = agentPartnerAuthorizationError(
+			partnerAuthorization ?? { state: "not_found" },
+			documentId,
+		);
+		return Response.json(error.body, { status: error.status });
+	}
+	const fields =
+		creatorFields ??
+		(partnerAuthorization?.state === "active"
+			? await listAgentPartnerFields(partnerAuthorization.token)
+			: []);
 	await recordAgentDocumentRead({
 		principal,
 		documentId,

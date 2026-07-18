@@ -1,4 +1,5 @@
 import {
+	authorizeAgentPartnerSigning,
 	claimAgentCommand,
 	completeAgentCommand,
 	fingerprintAgentCommand,
@@ -9,7 +10,6 @@ import {
 import type { AgenticPrincipal } from "@/db/agentic-access/bearer-principal";
 import {
 	AgentSelfSignCompleteRequestSchema,
-	AgentSelfSignCompleteResponseSchema,
 	AgentSelfSignDefaultFieldsRequestSchema,
 	AgentSelfSignFieldPlacementRequestSchema,
 	AgentSelfSignFieldPlacementResponseSchema,
@@ -20,20 +20,17 @@ import {
 	agentSelfSignOperations,
 } from "@/db/agentic-access/schema";
 import {
-	CreatorSigningBlockedError,
-	completeDraftCreatorSigning,
-	completeSigning,
 	createSignatureProfile,
+	type EmailDeliveryEnv,
 	getLatestSelectedSignatureProfile,
 	getSignerSession,
-	SigningCompletionBlockedError,
 	SigningFieldPlacementBlockedError,
 	SigningFieldPlacementNotFoundError,
-	SigningNoAssignedFieldsError,
 	toSignatureProfileResponse,
 	updateSignerFieldPlacement,
 } from "@/db/envelope";
 import { createAgentHono } from "@/hono/factory";
+import { agentPartnerAuthorizationError } from "./agent-partner-errors";
 import {
 	agentError,
 	commandClaimResponse,
@@ -44,6 +41,7 @@ import {
 	requiredIdempotencyKey,
 } from "./agent-v1-command-helpers";
 import { invalidAgentFieldsError, placeAgentFieldsCommand } from "./agent-v1-field-placement";
+import { executeAgentSigningCompletion } from "./agent-v1-signing-completion";
 
 const agentSelfSignSigningEndpoint = createAgentHono();
 
@@ -176,13 +174,36 @@ agentSelfSignSigningEndpoint.get(agentSelfSignOperations.signingTask.relativePat
 	const documentId = parsedUuid(c.req.param("documentId"));
 	if (!documentId) return c.json(documentNotFoundError(), 404);
 	const principal = c.get("agenticPrincipal");
-	const token = await getAgentSelfSignToken(principal, documentId);
+	const selfToken = await getAgentSelfSignToken(principal, documentId);
+	const partnerAuthorization = selfToken
+		? null
+		: await authorizeAgentPartnerSigning(principal, documentId);
+	if (!selfToken && partnerAuthorization?.state !== "active") {
+		const error = agentPartnerAuthorizationError(
+			partnerAuthorization ?? { state: "not_found" },
+			documentId,
+		);
+		return Response.json(error.body, { status: error.status });
+	}
+	const token =
+		selfToken ?? (partnerAuthorization?.state === "active" ? partnerAuthorization.token : null);
 	if (!token) return c.json(signingTaskNotFoundError(documentId), 404);
 	const task = await getSignerSession(token, {
 		sourceDownloadUrl: `/api/v1/documents/${documentId}/source-pdf/content`,
 	});
 	await recordMutation(principal, documentId, "agentic.signing_task.read", c);
-	return c.json(AgentSelfSignTaskResponseSchema.parse({ data: task }));
+	return c.json(
+		AgentSelfSignTaskResponseSchema.parse({
+			data: selfToken
+				? task
+				: {
+						...task,
+						previewFields: task.previewFields.filter(
+							(field) => field.recipientId === token.recipientId,
+						),
+					},
+		}),
+	);
 });
 
 agentSelfSignSigningEndpoint.patch(
@@ -256,61 +277,17 @@ agentSelfSignSigningEndpoint.post(agentSelfSignOperations.complete.relativePath,
 		...parsed.data,
 	});
 	if (claim.state !== "execute") return commandClaimResponse(claim);
-	try {
-		const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
-		if (!envelope) return completeSigningTaskMissing(claim.recordId, documentId);
-		const token =
-			envelope.signingMode === "only_me"
-				? await getAgentSelfSignToken(principal, documentId)
-				: null;
-		if (envelope.signingMode === "only_me" && !token) {
-			return completeSigningTaskMissing(claim.recordId, documentId);
-		}
-		const now = requestNow(c);
-		const result = token
-			? await completeSigning(token, parsed.data, {
-					documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
-						?.DOCUMENTS_BUCKET,
-					now,
-				})
-			: await completeDraftCreatorSigning({
-					envelopeId: documentId,
-					creatorEmail: principal.email,
-					completion: parsed.data,
-					now,
-				});
-		const body = AgentSelfSignCompleteResponseSchema.parse({ data: result });
-		await recordMutation(
-			principal,
-			documentId,
-			envelope.signingMode === "only_me"
-				? "agentic.self_sign.completed"
-				: "agentic.creator_signing.completed",
-			c,
-		);
-		await completeAgentCommand({
-			recordId: claim.recordId,
-			status: 200,
-			body,
-			documentId,
-			now,
-		});
-		return c.json(body);
-	} catch (error) {
-		if (
-			error instanceof SigningCompletionBlockedError ||
-			error instanceof SigningNoAssignedFieldsError ||
-			error instanceof CreatorSigningBlockedError
-		) {
-			return completeKnownError(
-				claim.recordId,
-				documentId,
-				409,
-				blockedError(documentId, error.message),
-			);
-		}
-		throw error;
-	}
+	return executeAgentSigningCompletion({
+		principal,
+		documentId,
+		request: parsed.data,
+		recordId: claim.recordId,
+		now: requestNow(c),
+		requestIp: requestIp(c),
+		documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
+			?.DOCUMENTS_BUCKET,
+		emailDelivery: agentEmailDelivery(c),
+	});
 });
 
 async function claimJsonCommand(
@@ -352,6 +329,14 @@ function completeNotFound(recordId: string, documentId: string): Promise<Respons
 
 function completeSigningTaskMissing(recordId: string, documentId: string): Promise<Response> {
 	return completeKnownError(recordId, documentId, 404, signingTaskNotFoundError(documentId));
+}
+
+function agentEmailDelivery(c: { env?: Env; req: { url: string } }) {
+	return {
+		env: c.env as EmailDeliveryEnv | undefined,
+		baseUrl:
+			(c.env as EmailDeliveryEnv | undefined)?.APP_BASE_URL?.trim() || new URL(c.req.url).origin,
+	};
 }
 
 function completeBlocked(recordId: string, documentId: string, message: string): Promise<Response> {

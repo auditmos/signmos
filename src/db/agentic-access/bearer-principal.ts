@@ -34,6 +34,7 @@ export async function authenticateAgenticBearer(input: {
 		(candidate) => candidate.tokenHash === tokenHash && candidate.status === "active",
 	);
 	if (!token) return null;
+	const normalizedEmail = token.email.trim().toLowerCase();
 	const lastUsedAt = input.now ?? new Date();
 	const updated = await db
 		.update(agenticApiTokens)
@@ -44,13 +45,13 @@ export async function authenticateAgenticBearer(input: {
 	await appendAgenticSecurityEvent({
 		tokenId: token.id,
 		tokenName: token.name,
-		email: token.email,
+		email: normalizedEmail,
 		eventType: "agentic.identity.read",
 		actorType: "agent",
 		requestIp: input.requestIp,
 	});
 	return {
-		email: token.email,
+		email: normalizedEmail,
 		actorType: "agent",
 		token: {
 			id: token.id,

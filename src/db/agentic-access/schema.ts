@@ -185,6 +185,15 @@ const agentDocumentErrorCodes = [
 	"CREATOR_SIGNING_REQUIRED",
 	"RESEND_NOT_ALLOWED",
 	"EMAIL_DELIVERY_FAILED",
+	"AGENT_SIGNING_WRONG_IDENTITY",
+	"AGENT_SIGNING_INACTIVE",
+	"AGENT_SIGNING_COMPLETED",
+	"AGENT_SIGNING_CHANGES_REQUESTED",
+	"AGENT_SIGNING_DECLINED",
+	"AGENT_SIGNING_EXPIRED",
+	"AGENT_SIGNING_DELETED",
+	"INVALID_CHANGE_REQUEST",
+	"INVALID_SIGNING_DECLINE",
 ] as const;
 
 export const AgentDocumentErrorCodeSchema = z.enum(agentDocumentErrorCodes);
@@ -421,7 +430,7 @@ export const agentSelfSignOperations = {
 		"post",
 		"/documents/:documentId/complete",
 		"/api/v1/documents/{documentId}/complete",
-		"completeAgentSelfSigning",
+		"completeAgentSigning",
 	),
 } as const;
 

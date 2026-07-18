@@ -18,6 +18,11 @@ export {
 	listAgentDocuments,
 	recordAgentDocumentRead,
 } from "./documents";
+export {
+	type AgentPartnerSigningAuthorization,
+	authorizeAgentPartnerSigning,
+	listAgentPartnerFields,
+} from "./partner-signing";
 export { requestAgenticAccess } from "./request";
 export {
 	AgentSelfSignPreparationError,
