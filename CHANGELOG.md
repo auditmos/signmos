@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/auditmos/signmos/compare/v1.3.0...v1.4.0) (2026-07-18)
+
+
+### Features
+
+* add Agentic two-party creator delivery ([#48](https://github.com/auditmos/signmos/issues/48)) ([db3ed74](https://github.com/auditmos/signmos/commit/db3ed74fbf191723920f2573fec88d2219a50fa0))
+
 # [1.3.0](https://github.com/auditmos/signmos/compare/v1.2.0...v1.3.0) (2026-07-17)
 
 
