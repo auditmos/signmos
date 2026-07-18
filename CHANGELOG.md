@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/auditmos/signmos/compare/v1.6.0...v1.7.0) (2026-07-18)
+
+
+### Features
+
+* publish measured Agentic release evidence ([#51](https://github.com/auditmos/signmos/issues/51)) ([9183acc](https://github.com/auditmos/signmos/commit/9183acc2de655cbc9fd88c6bf81c753ab551fc43))
+
 # [1.6.0](https://github.com/auditmos/signmos/compare/v1.5.0...v1.6.0) (2026-07-18)
 
 
