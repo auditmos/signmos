@@ -414,3 +414,10 @@ The test suite includes lifecycle API smoke coverage, PDF finalization assertion
 - [Shadcn/UI](https://ui.shadcn.com/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Biome](https://biomejs.dev/)
+
+## License
+
+Signmos is available under the [MIT License](./LICENSE). Third-party packages,
+generated/copied UI components, data, and service integrations remain under
+their respective terms; see [Third-Party Notices](./THIRD_PARTY_NOTICES.md) and
+the retained [Build Week license review](./plans/evidence/openai-build-week-licenses.md).
