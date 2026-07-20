@@ -1,5 +1,14 @@
 import { useForm } from "@tanstack/react-form";
-import { Send } from "lucide-react";
+import {
+	ArrowLeft,
+	ArrowRight,
+	Bot,
+	FileSignature,
+	Files,
+	type LucideIcon,
+	Send,
+	UsersRound,
+} from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { AgenticAccessRequestForm } from "@/components/agentic/agentic-access-request-form";
 import { HistoryRequestForm } from "@/components/history/history-request-form";
@@ -8,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 interface StartEnvelopePageProps {
 	initialTask?: "my_documents" | "agentic";
@@ -17,6 +27,38 @@ interface StartEnvelopePageProps {
 
 type SigningMode = "only_me" | "me_and_another_signer";
 type LandingTask = SigningMode | "my_documents" | "agentic";
+
+const landingTaskChoices = [
+	{
+		task: "only_me",
+		label: "Sign by myself",
+		description: "Upload and sign your PDF",
+		icon: FileSignature,
+	},
+	{
+		task: "me_and_another_signer",
+		label: "Sign with someone else",
+		description: "Add one other signer",
+		icon: UsersRound,
+	},
+	{
+		task: "my_documents",
+		label: "My documents",
+		description: "View and manage your PDFs",
+		icon: Files,
+	},
+	{
+		task: "agentic",
+		label: "Agentic mode",
+		description: "Connect Signmos to an agent",
+		icon: Bot,
+	},
+] as const satisfies ReadonlyArray<{
+	task: LandingTask;
+	label: string;
+	description: string;
+	icon: LucideIcon;
+}>;
 
 type StartFormValues = {
 	signingMode: SigningMode;
@@ -129,22 +171,50 @@ export function StartEnvelopePage({
 		}
 	}
 
+	function returnToTaskChooser() {
+		setActiveTask(null);
+		setState({ status: "idle" });
+	}
+
+	const isTaskChooserVisible = activeTask === null;
+
 	return (
-		<main className="min-h-dvh bg-background px-6 py-10">
-			<section className="mx-auto grid max-w-5xl gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
-				<div className="pt-8 lg:pt-20">
+		<main
+			className={cn(
+				"min-h-dvh bg-background px-6 py-10",
+				isTaskChooserVisible && "flex items-center",
+			)}
+		>
+			<section
+				className={cn(
+					"mx-auto grid w-full max-w-5xl gap-8",
+					isTaskChooserVisible ? "max-w-3xl gap-10" : "lg:grid-cols-[1fr_420px] lg:items-start",
+				)}
+			>
+				<div
+					className={cn(isTaskChooserVisible ? "mx-auto max-w-2xl text-center" : "pt-8 lg:pt-20")}
+				>
 					<p className="text-sm font-medium text-primary">Signmos</p>
 					<h1 className="mt-4 max-w-2xl text-balance text-4xl font-semibold text-foreground sm:text-5xl">
-						Start a PDF signature envelope
+						{isTaskChooserVisible
+							? "Sign a PDF without an account"
+							: "Start a PDF signature envelope"}
 					</h1>
-					<p className="mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground">
-						Enter your sender details, verify your email, then upload and prepare the document.
+					<p
+						className={cn(
+							"mt-5 max-w-xl text-pretty text-base leading-7 text-muted-foreground",
+							isTaskChooserVisible && "mx-auto",
+						)}
+					>
+						{isTaskChooserVisible
+							? "Choose how you’d like to get started."
+							: "Enter your sender details, verify your email, then upload and prepare the document."}
 					</p>
 				</div>
 
 				<LandingTaskPanel
 					activeTask={activeTask}
-					onBack={() => setActiveTask(null)}
+					onBack={returnToTaskChooser}
 					onChoose={chooseTask}
 					turnstileSiteKey={activeTurnstileSiteKey}
 					testTurnstileToken={activeTestTurnstileToken}
@@ -154,6 +224,15 @@ export function StartEnvelopePage({
 						onSubmit={submitForm}
 						className="rounded-lg border bg-card p-5 shadow-sm"
 					>
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={returnToTaskChooser}
+							className="-ml-3 mb-4 cursor-pointer text-muted-foreground"
+						>
+							<ArrowLeft aria-hidden="true" className="size-4" />
+							Back to task choices
+						</Button>
 						<div className="space-y-5">
 							<form.Field name="name">
 								{(field) => (
@@ -271,20 +350,31 @@ function LandingTaskPanel({
 
 function LandingTaskChooser({ onChoose }: { onChoose: (task: LandingTask) => void }) {
 	return (
-		<fieldset className="grid gap-3">
+		<fieldset className="grid gap-3 sm:grid-cols-2">
 			<legend className="sr-only">Choose a task</legend>
-			<Button type="button" variant="outline" onClick={() => onChoose("only_me")}>
-				Sign by myself
-			</Button>
-			<Button type="button" variant="outline" onClick={() => onChoose("me_and_another_signer")}>
-				Sign with someone else
-			</Button>
-			<Button type="button" variant="outline" onClick={() => onChoose("my_documents")}>
-				My documents
-			</Button>
-			<Button type="button" variant="outline" onClick={() => onChoose("agentic")}>
-				Agentic mode
-			</Button>
+			{landingTaskChoices.map(({ task, label, description, icon: Icon }) => (
+				<Button
+					key={task}
+					type="button"
+					variant="outline"
+					aria-label={label}
+					onClick={() => onChoose(task)}
+					className="h-auto min-h-28 cursor-pointer justify-between whitespace-normal rounded-xl border-border/80 bg-card p-5 text-left shadow-sm hover:border-foreground/30 hover:bg-accent/60"
+				>
+					<span className="flex min-w-0 items-start gap-4">
+						<span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+							<Icon aria-hidden="true" className="size-5" />
+						</span>
+						<span className="min-w-0">
+							<span className="block text-base font-semibold text-foreground">{label}</span>
+							<span className="mt-1 block text-pretty text-sm font-normal text-muted-foreground">
+								{description}
+							</span>
+						</span>
+					</span>
+					<ArrowRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+				</Button>
+			))}
 		</fieldset>
 	);
 }

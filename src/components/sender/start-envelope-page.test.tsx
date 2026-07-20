@@ -47,6 +47,24 @@ describe("StartEnvelopePage", () => {
 		expect(screen.queryByRole("form", { name: "Request My documents access" })).toBeNull();
 	});
 
+	it.each([
+		"Sign by myself",
+		"Sign with someone else",
+	])("returns to all four task choices after selecting %s", (choiceLabel) => {
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: choiceLabel }));
+		expect(screen.getByRole("form", { name: "Start envelope" })).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: "Back to task choices" }));
+
+		expect(screen.queryByRole("form", { name: "Start envelope" })).toBeNull();
+		expect(screen.getByRole("button", { name: "Sign by myself" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Sign with someone else" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "My documents" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Agentic mode" })).toBeTruthy();
+	});
+
 	it("requests My documents access with email only", async () => {
 		const fetchMock = vi.fn(
 			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),
