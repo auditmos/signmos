@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/auditmos/signmos/compare/v1.8.0...v1.9.0) (2026-07-20)
+
+
+### Features
+
+* **agentic:** require human review for protected actions ([2ae9c55](https://github.com/auditmos/signmos/commit/2ae9c55b5827707df614f62368e98fc45669fe20)), closes [hi#impact](https://github.com/hi/issues/impact)
+
 # [1.8.0](https://github.com/auditmos/signmos/compare/v1.7.0...v1.8.0) (2026-07-20)
 
 
