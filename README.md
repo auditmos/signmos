@@ -6,13 +6,62 @@ Signmos is a lightweight e-signature workflow built on TanStack Start, Hono, Clo
 
 The legal posture is basic e-signature intent. Signmos records signer intent, timestamps, document hashes, field values, and immutable audit events, but it is not a certified trust-service platform.
 
-## OpenAI Build Week: Codex Workflow
+## OpenAI Build Week Submission
 
-Signmos predates OpenAI Build Week. During the event, the existing product was meaningfully extended with Agentic mode: verified personal API onboarding, revocable tokens, a role-authorized Bearer document lifecycle, public agent/OpenAPI contracts, and measured release evidence.
+### Scope and pre-window baseline
+
+Signmos predates the 2026-07-13 Submission Period; the whole application was not created during Build Week. The last repository commit before that window was [`a47990b`](https://github.com/auditmos/signmos/commit/a47990b462fc4ffa58def01f051f4215b07722d8) on 2026-07-11. The existing signing lifecycle, PDF handling, email verification, and Cloudflare/Neon architecture at that baseline are pre-existing work.
+
+Judges should evaluate these meaningful post-window additions:
+
+| Build Week slice | Qualifying work | Evidence |
+| --- | --- | --- |
+| My Documents | Passwordless retained-document recovery, search/filter/paging, creator controls, signer resume, completed-PDF access, and session-native document start from [`d5a7600`](https://github.com/auditmos/signmos/commit/d5a7600) through [`4e3644d`](https://github.com/auditmos/signmos/commit/4e3644d) | [My Documents PRD](./plans/my-documents-prd.md) and [release evidence](./plans/evidence/my-documents-release/) |
+| Agentic mode | Verified personal tokens and the role-authorized `/api/v1` document lifecycle, idempotency, redaction, public agent/OpenAPI contracts, calibration, and compatibility evidence from [`f396721`](https://github.com/auditmos/signmos/commit/f396721) through [`9183acc`](https://github.com/auditmos/signmos/commit/9183acc) | [Agentic PRD](./plans/agentic-mode-prd.md) and [44-story release evidence](./plans/evidence/agentic-mode-release/release-evidence.md) |
+| Matching-human review | Pending-review commands, safe reviewer notification, exact current-PDF review, approve/reject execution, and Agent polling in [`2ae9c55`](https://github.com/auditmos/signmos/commit/2ae9c55) | [Human-review PRD](./plans/human-review-prd.md) and [release evidence](./plans/evidence/human-review/release-evidence.md) |
+
+### Codex and GPT-5.6 workflow
 
 GPT-5.6 was used through Codex as a build-time engineering model for a structured interview covering 46 product/security decisions, followed by implementation of issues #43–#51 as TDD vertical slices. It is not a Signmos runtime dependency. The human participant selected and confirmed the product tradeoffs, approved the architecture and issue plan, set the completion gates, changed the protected-action posture to require matching-human review, steered continuation and documentation, and retained the release and submission decisions.
 
 The privacy-safe [GPT-5.6 evidence](./plans/evidence/openai-build-week-gpt56.md) preserves the private model-ledger fingerprint and maps material work to qualifying commits and files. The broader [Codex collaboration evidence](./plans/evidence/openai-build-week-codex.md) explains the primary build thread, specific contributions, and attribution while keeping the required `/feedback` Session ID private.
+
+### Pre-existing and third-party work
+
+- The core no-account signing lifecycle, PDF handling, email verification, and Cloudflare/Neon architecture are pre-existing Signmos work, as identified by the baseline above.
+- The project began from a TanStack Start scaffold and uses Shadcn component primitives. Generated material includes `src/routeTree.gen.ts`, `worker-configuration.d.ts`, and generated Drizzle migrations; those files are not presented as original hand-authored Build Week work.
+- Signmos depends on the open-source packages and hosted services named in [Third-Party Notices](./THIRD_PARTY_NOTICES.md). The Build Week [license review](./plans/evidence/openai-build-week-licenses.md) records the candidate dependency audit and applicable license posture.
+- Codex with GPT-5.6 made the material AI-assisted contribution described above. Based on the available local assistant histories and the qualifying-commit audit, no material Claude contribution was found in the Build Week slices; repository configuration that supports multiple coding tools is not treated as proof of authorship.
+- Cloudflare, Neon, Resend, and Turnstile are third-party services. Signmos does not claim ownership of their software or marks.
+
+### Pilot and human-review limits
+
+Signmos is a general-business pilot. Its audit events and completed artifacts support basic electronic-signature intent, but the service is not certified, qualified, or regulated as a trust service, and it makes no claim that every workflow is universally enforceable. Users remain responsible for choosing an appropriate signing method, obtaining consent, and satisfying the laws and policies that apply to their documents.
+
+In Agentic mode, protected `sign/complete, decline, cancel, expire, and delete` commands do not execute autonomously. They enter a pending review state, notify the matching signer or creator without exposing bearer credentials, and execute only after that matching signer or creator reviews the current action and document and explicitly approves it. A rejection leaves the protected side effect unapplied.
+
+### Judge quick path
+
+**Public demo status:** a stable HTTPS judge deployment is not yet verified. [Issue #61](https://github.com/auditmos/signmos/issues/61) owns that release gate; `auditmos.com` is the company site and must not be mistaken for the Signmos demo. This README will name the exact candidate URL only after that gate passes.
+
+The supported judging target is desktop Chromium with JavaScript, cookies, PDF viewing, and Cloudflare Turnstile enabled. The retained browser smokes use that platform; this candidate does not claim verified mobile or cross-browser support. Use the [one-page synthetic sample PDF](./public/signmos-build-week-sample.pdf), whose fictional participants are **Alex Example** and **Jordan Sample**. Enter only synthetic content and an inbox you control. No shared test account is required or available; passwordless links are sent by email, and the two-party path needs a second inbox or an address alias you also control.
+
+#### Human flow
+
+1. Open the verified judge URL and choose **Sign by myself**.
+2. Enter a synthetic name and an inbox you control, complete Turnstile, and open the emailed verification link.
+3. Upload the sample PDF, review or place the signature/date fields, use a typed or drawn signature, and complete signing.
+4. Download the completed PDF. Return to the chooser, select **My Documents**, verify the same email, and confirm that the retained document can be found and downloaded.
+5. Optionally repeat with **Sign with someone else**, using Alex Example and Jordan Sample plus two inboxes or aliases you control.
+
+#### Agentic flow
+
+1. Choose **Agentic mode**, verify an email address, create a named personal token, and copy its one-time secret without sharing it or committing it.
+2. Export the secret as `SIGNMOS_TOKEN`, read `/agent.md` and `/openapi.json` at the verified judge origin, then call `GET /api/v1/me` and follow the documented self-sign flow with the sample PDF. Every mutation needs a fresh `Idempotency-Key`.
+3. Request the protected completion command and confirm that the API returns `202 pending_human_review` with a `statusUrl`; it must not complete immediately.
+4. From the emailed link or **My Documents**, verify as the matching signer, review the exact current PDF and action, then choose **Approve and execute**.
+5. Poll the original `statusUrl` with the same token, confirm execution, and download the final PDF through the documented API.
+6. Return to Agentic mode, revoke the token, clear `SIGNMOS_TOKEN`, and close any page that displayed the raw secret.
 
 ## Current Capabilities
 
@@ -47,6 +96,22 @@ Known product gaps:
 - Final PDF generation is deterministic and testable, but still pilot-scope rather than a full production PDF layout engine.
 
 ## Quick Start
+
+### Local setup requirements
+
+Use the current Node.js LTS and pnpm 11.15.0 (the version pinned by `packageManager` in `package.json`). A full local end-to-end run uses these services and bindings:
+
+| Dependency | Local purpose |
+| --- | --- |
+| Neon Postgres | Required persistence for identities, envelopes, fields, audit events, and lifecycle state. Create a development database and apply only the dev migrations. |
+| Cloudflare Workers | Local Worker runtime provided by the Vite/Cloudflare integration. A Cloudflare account is required when creating a deployed candidate. |
+| Cloudflare R2 | Source and final PDF storage through the `DOCUMENTS_BUCKET` binding in `wrangler.jsonc`. Wrangler supplies the local binding; provision the named bucket for deployment. |
+| Resend | Real sender, signer, My Documents, Agentic-access, and human-review email delivery. Configure a verified sender for end-to-end inbox testing. |
+| Cloudflare Turnstile | Browser verification for public access-request forms. Use appropriate development keys locally and production keys only in the deployed environment. |
+
+Copy `.example.vars` to `.dev.vars`, then provide `CLOUDFLARE_ENV`, `DATABASE_HOST`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `APP_BASE_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_REPLY_TO_EMAIL`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, and `VITE_TURNSTILE_SITE_KEY`. `APP_BASE_URL` must be the origin that can receive the generated links; the two site-key values are public widget configuration, while database credentials, the Resend API key, and the Turnstile secret remain secrets. Never commit `.dev.vars`, deployed secret values, personal tokens, or emailed credentials.
+
+The complete setup sequence is `pnpm install`, `pnpm cf-typegen`, `pnpm db:migrate:dev`, and `pnpm dev`. The migration command changes the configured development database, so verify that `.dev.vars` points to a disposable development database before running it.
 
 ```bash
 pnpm install
@@ -393,6 +458,8 @@ pnpm build
 ```
 
 The test suite includes lifecycle API smoke coverage, PDF finalization assertions, field editor and signer UI tests, My Documents credential/catalog/recovery/security coverage, Agentic authorization/idempotency/rate-limit/redaction/OpenAPI coverage, and release/docs contract checks.
+
+The candidate-specific [`src/release/openai-build-week-readme-contract.test.ts`](./src/release/openai-build-week-readme-contract.test.ts) protects the pre-window baseline, qualifying evidence map, attribution and legal disclosures, judge fixture and walkthroughs, setup inventory, relative README links, and documented project scripts. It intentionally does not turn an unverified deployment into a passing URL claim; #61 remains the live deployment gate.
 
 ## Development Notes
 
