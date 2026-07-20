@@ -23,14 +23,15 @@ Reviewed lockfile:
 
 ```text
 pnpm-lock.yaml
-SHA-256 0cad6549767f281f4d48d361ca0322e936b98ec56b80156cf91cec9c5796c917
+SHA-256 a1ac704f8f2ab9c1de74ca73ab4daf3aad86c6f28e6b8ec32c99911c7f017b82
 27 direct dependencies; 24 direct development dependencies
 ```
 
-Commands executed against the lockfile-matched installation:
+The public commit's lockfile was read directly from Git rather than from the
+uncommitted working tree. Commands and checks included:
 
 ```bash
-pnpm install --frozen-lockfile
+git show HEAD:pnpm-lock.yaml | shasum -a 256
 pnpm licenses list --json
 pnpm licenses list --prod --json
 pnpm why lightningcss
@@ -38,24 +39,30 @@ pnpm why caniuse-lite
 pnpm why @img/sharp-libvips-darwin-arm64
 ```
 
-The frozen installation exited zero. The all-dependency scan returned 624
-package records across these 20 declared license expressions:
+The exact committed lockfile contains 935 package identities. The audit matched
+713 current-platform package manifests and grouped the other 222 identities as
+optional binaries for non-current operating systems and CPU architectures.
+Every missing identity belonged to a reviewed Biome, workerd, emnapi, esbuild,
+sharp/libvips, napi-rs, Oxc, Rollup, Tailwind Oxide, or Lightning CSS package
+family; no unmatched package family remained.
+
+The 713 current-platform identities declared these 20 license expressions:
 
 | License expression | Package records |
 | --- | ---: |
-| MIT | 534 |
-| ISC | 30 |
-| Apache-2.0 | 19 |
-| BSD-3-Clause | 14 |
+| MIT | 606 |
+| ISC | 37 |
+| Apache-2.0 | 23 |
+| BSD-3-Clause | 15 |
 | MIT OR Apache-2.0 | 5 |
-| BSD-2-Clause | 4 |
+| BSD-2-Clause | 5 |
+| `(MIT OR CC0-1.0)` | 4 |
 | CC0-1.0 | 3 |
+| 0BSD | 2 |
 | MIT-0 | 2 |
 | MPL-2.0 | 2 |
 | `(BSD-2-Clause OR MIT OR Apache-2.0)` | 1 |
 | `(MIT AND Zlib)` | 1 |
-| `(MIT OR CC0-1.0)` | 1 |
-| 0BSD | 1 |
 | Artistic-2.0 | 1 |
 | BlueOak-1.0.0 | 1 |
 | CC-BY-3.0 | 1 |
@@ -66,12 +73,7 @@ package records across these 20 declared license expressions:
 
 No scan entry was unknown, custom, unlicensed, GPL, or AGPL.
 
-The production-filtered scan returned 236 package records. Its review set was
-`caniuse-lite` under CC-BY-4.0 and `lightningcss` plus its current-platform
-binary under MPL-2.0. Dependency tracing showed both are build-toolchain data
-or transformers, not copied Signmos application source.
-
-The all-dependency review additionally found:
+The explicit review set was:
 
 - `@img/sharp-libvips-darwin-arm64@1.2.4`, declaring
   LGPL-3.0-or-later, reached through `sharp -> miniflare ->`
@@ -80,11 +82,10 @@ The all-dependency review additionally found:
   development/release license metadata;
 - no unknown/custom entries and no strong-copyleft GPL/AGPL entry.
 
-The lockfile also enumerates optional binaries for non-current operating
-systems and CPU architectures. They are platform variants of the reviewed
-Biome, workerd, emnapi, esbuild, sharp/libvips, napi-rs, Oxc, Rollup,
-Tailwind Oxide, and Lightning CSS package families and remain under those
-upstream families' own declared licenses.
+Dependency tracing also confirmed that `caniuse-lite` and Lightning CSS are
+build-toolchain data/transformers rather than copied Signmos application
+source. All optional platform variants remain under their upstream families'
+own declared licenses.
 
 ## Vendored, generated, template, font, icon, and media review
 
