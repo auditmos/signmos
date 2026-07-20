@@ -10,7 +10,9 @@ The legal posture is basic e-signature intent. Signmos records signer intent, ti
 
 Signmos predates OpenAI Build Week. During the event, the existing product was meaningfully extended with Agentic mode: verified personal API onboarding, revocable tokens, a role-authorized Bearer document lifecycle, public agent/OpenAPI contracts, and measured release evidence.
 
-The workflow used Codex with GPT-5.6 for a structured product/security decision interview followed by implementation of issues #43–#51 as TDD vertical slices. The human participant selected and confirmed the product tradeoffs, approved the architecture and issue plan, set the completion gates, steered continuation and documentation, and retained the release and submission decisions. The privacy-safe [Codex collaboration evidence](./plans/evidence/openai-build-week-codex.md) maps the primary build thread to the qualifying commits, explains specific contributions and attribution, and keeps the required `/feedback` Session ID private.
+GPT-5.6 was used through Codex as a build-time engineering model for a structured interview covering 46 product/security decisions, followed by implementation of issues #43–#51 as TDD vertical slices. It is not a Signmos runtime dependency. The human participant selected and confirmed the product tradeoffs, approved the architecture and issue plan, set the completion gates, changed the protected-action posture to require matching-human review, steered continuation and documentation, and retained the release and submission decisions.
+
+The privacy-safe [GPT-5.6 evidence](./plans/evidence/openai-build-week-gpt56.md) preserves the private model-ledger fingerprint and maps material work to qualifying commits and files. The broader [Codex collaboration evidence](./plans/evidence/openai-build-week-codex.md) explains the primary build thread, specific contributions, and attribution while keeping the required `/feedback` Session ID private.
 
 ## Current Capabilities
 
