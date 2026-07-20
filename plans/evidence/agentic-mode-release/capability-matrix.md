@@ -2,7 +2,7 @@
 
 Date: 2026-07-18
 
-Result: 32 UI document actions mapped; 28 of 28 runtime `/api/v1` operations represented; no unmapped row.
+Result: 33 UI/API document actions mapped; 29 of 29 runtime `/api/v1` operations represented; no unmapped row.
 
 All operations require `Authorization: Bearer $SIGNMOS_TOKEN`. “Required; exact replay/conflict” means a fresh `Idempotency-Key` is mandatory for the intended mutation, an identical retry returns the original result, and changed-request reuse returns `IDEMPOTENCY_CONFLICT`.
 
@@ -14,6 +14,7 @@ All operations require `Authorization: Bearer $SIGNMOS_TOKEN`. “Required; exac
 | Start a two-party draft | `POST /api/v1/documents` | Creator | Required; exact replay/conflict | `createAgentSelfSignDocument` | Create a two-party draft | `agent two-party creator`; `agent command idempotency` |
 | Resume preparation or review detail | `GET /api/v1/documents/{documentId}` | Creator or signer | Not applicable (read) | `getAgentDocument` | Inspect detail and history | `agent read-only documents`; `agent revision loop` |
 | Poll lifecycle and participant state | `GET /api/v1/documents/{documentId}/status` | Creator or signer | Not applicable (read) | `getAgentDocumentStatus` | Poll document status | `agent read-only documents`; `agent measured rate-limit boundaries` |
+| Poll protected-action human review | `GET /api/v1/commands/{commandId}` | Exact originating personal token | Not applicable (read) | `getAgentCommandStatus` | Wait for human review | `human review browser boundary`; `agent self-sign lifecycle` |
 | View lifecycle history/change comment | `GET /api/v1/documents/{documentId}/history` | Creator or signer | Not applicable (read) | `getAgentDocumentHistory` | Inspect detail and history | `agent revision loop` |
 | Download completed signed PDF | `GET /api/v1/documents/{documentId}/pdf` | Creator or signer | Not applicable (read) | `downloadAgentFinalPdf` | Download a completed PDF | `agent self-sign lifecycle`; `agent partner completion` |
 | Upload the initial source PDF | `PUT /api/v1/documents/{documentId}/source-pdf` | Creator | Required; exact replay/conflict | `uploadAgentSourcePdf` | Upload one source PDF | `agent self-sign lifecycle`; `agent command idempotency` |

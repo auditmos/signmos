@@ -19,6 +19,38 @@ export {
 	recordAgentDocumentRead,
 } from "./documents";
 export {
+	claimHumanReviewCommand,
+	getHumanReviewCommandStatus,
+	getHumanReviewDetail,
+	getHumanReviewSourceAccess,
+	type HumanReviewCommandClaim,
+	type HumanReviewDetail,
+	inspectHumanReviewCommand,
+	recordHumanReviewNotification,
+} from "./human-review-authority";
+export {
+	type BeginHumanReviewApproval,
+	beginHumanReviewApproval,
+	completeHumanReviewApproval,
+	failHumanReviewApproval,
+	invalidateHumanReviewApproval,
+	type RejectHumanReviewResult,
+	rejectHumanReview,
+} from "./human-review-decision-authority";
+export {
+	type HumanReviewQueueItem,
+	listPendingHumanReviews,
+} from "./human-review-queue";
+export {
+	agentHumanReviewOperations,
+	HumanReviewCommandStatusResponseSchema,
+	type HumanReviewNotificationStatus,
+	HumanReviewNotificationStatusSchema,
+	type PendingHumanReviewCommandResponse,
+	PendingHumanReviewCommandResponseSchema,
+	TerminalHumanReviewCommandResponseSchema,
+} from "./human-review-schema";
+export {
 	type AgentPartnerSigningAuthorization,
 	authorizeAgentPartnerSigning,
 	listAgentPartnerFields,

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 interface StartEnvelopePageProps {
 	initialTask?: "my_documents" | "agentic";
+	historyReturnTo?: string;
 	turnstileSiteKey?: string;
 	testTurnstileToken?: string;
 }
@@ -103,6 +104,7 @@ type SenderStartError = {
 
 export function StartEnvelopePage({
 	initialTask,
+	historyReturnTo,
 	turnstileSiteKey,
 	testTurnstileToken = "",
 }: StartEnvelopePageProps) {
@@ -214,6 +216,7 @@ export function StartEnvelopePage({
 
 				<LandingTaskPanel
 					activeTask={activeTask}
+					historyReturnTo={historyReturnTo}
 					onBack={returnToTaskChooser}
 					onChoose={chooseTask}
 					turnstileSiteKey={activeTurnstileSiteKey}
@@ -314,6 +317,7 @@ export function StartEnvelopePage({
 function LandingTaskPanel({
 	activeTask,
 	children,
+	historyReturnTo,
 	onBack,
 	onChoose,
 	turnstileSiteKey,
@@ -321,6 +325,7 @@ function LandingTaskPanel({
 }: {
 	activeTask: LandingTask | null;
 	children: ReactNode;
+	historyReturnTo?: string;
 	onBack: () => void;
 	onChoose: (task: LandingTask) => void;
 	turnstileSiteKey: string;
@@ -330,6 +335,7 @@ function LandingTaskPanel({
 	if (activeTask === "my_documents") {
 		return (
 			<HistoryRequestForm
+				returnTo={historyReturnTo}
 				onBack={onBack}
 				turnstileSiteKey={turnstileSiteKey}
 				testTurnstileToken={testTurnstileToken}

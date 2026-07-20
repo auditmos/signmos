@@ -50,6 +50,16 @@ interface SenderChangeRequestEmailInput {
 	comment: string;
 }
 
+interface HumanReviewEmailInput {
+	email: string;
+	documentName: string;
+	actionLabel: string;
+	agentName: string;
+	consequence: string;
+	expiresAt: string;
+	reviewUrl: string;
+}
+
 interface ResendConfig {
 	apiKey: string;
 	fromEmail: string;
@@ -73,9 +83,9 @@ export function isResendConfigured(env: EmailDeliveryEnv | undefined): boolean {
 export async function deliverTransactionalEmail(
 	email: TransactionalEmail,
 	options: EmailDeliveryOptions,
-): Promise<void> {
+): Promise<{ providerMessage: string | null }> {
 	const config = getResendConfig(options.env);
-	if (!config) return;
+	if (!config) return { providerMessage: null };
 
 	const response = await (options.fetcher ?? fetch)("https://api.resend.com/emails", {
 		method: "POST",
@@ -96,6 +106,13 @@ export async function deliverTransactionalEmail(
 	if (!response.ok) {
 		throw new EmailDeliveryError(response.status, await response.text());
 	}
+	const body: unknown = await response.json().catch(() => null);
+	return {
+		providerMessage:
+			body && typeof body === "object" && "id" in body && typeof body.id === "string"
+				? body.id
+				: null,
+	};
 }
 
 export function buildPartnerVerificationEmail(
@@ -152,6 +169,17 @@ export function buildSenderChangeRequestEmail(
 		subject: "Changes requested on your document",
 		text: `A signer requested changes before completing your document.\n\nComment:\n${input.comment}\n\nUpload a revised PDF here:\n${input.revisionUrl}`,
 		html: `<p>A signer requested changes before completing your document.</p><p><strong>Comment:</strong></p><p>${escapeHtml(input.comment)}</p><p><a href="${escapeHtml(input.revisionUrl)}">Upload revised PDF</a></p>`,
+	};
+}
+
+export function buildHumanReviewEmail(input: HumanReviewEmailInput): TransactionalEmail {
+	const documentName = input.documentName.trim() || "Untitled document";
+	const agentName = input.agentName.trim() || "An agent";
+	return {
+		to: input.email,
+		subject: `Review requested: ${documentName}`,
+		text: `${agentName} requested: ${input.actionLabel}\n\nDocument: ${documentName}\nConsequence: ${input.consequence}\nExpires: ${input.expiresAt}\n\nReview in Signmos:\n${input.reviewUrl}`,
+		html: `<p>${escapeHtml(agentName)} requested <strong>${escapeHtml(input.actionLabel)}</strong>.</p><p><strong>Document:</strong> ${escapeHtml(documentName)}</p><p><strong>Consequence:</strong> ${escapeHtml(input.consequence)}</p><p><strong>Expires:</strong> ${escapeHtml(input.expiresAt)}</p><p><a href="${escapeHtml(input.reviewUrl)}">Review in Signmos</a></p>`,
 	};
 }
 

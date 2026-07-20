@@ -18,6 +18,12 @@ export const historySecurityEventTypes = [
 	"history.signer.completed",
 	"history.signer.change_requested",
 	"history.signer.declined",
+	"human_review.opened",
+	"human_review.source_pdf_opened",
+	"human_review.approved",
+	"human_review.rejected",
+	"human_review.executed",
+	"human_review.execution_failed",
 ] as const;
 
 export type HistorySecurityEventType = (typeof historySecurityEventTypes)[number];

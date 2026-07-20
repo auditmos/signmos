@@ -201,6 +201,9 @@ Success responses use `{ "data": ... }`. Known errors use `{ "error": { "code": 
 | `GET /api/history/documents/{id}/signing/source-pdf` | Read the source PDF for recovered signing. |
 | `PATCH /api/history/documents/{id}/signing/fields/{fieldId}` | Reposition an allowed self-sign field. |
 | `POST /api/history/documents/{id}/signing/{complete,change-request,decline}` | Perform an allowed recovered-signer action. |
+| `GET /api/history/human-reviews` | List active agent-requested reviews for the verified session email. |
+| `GET /api/history/human-reviews/{reviewId}` | Inspect the current PDF, assigned fields, exact payload, consequence, and expiry. |
+| `POST /api/history/human-reviews/{reviewId}/decision` | Approve or reject as the server-derived matching reviewer. |
 
 ## Agentic API
 
@@ -217,6 +220,7 @@ Agentic mode is a separate identity surface from process links and My Documents.
 | `GET /agent.md` | Read public workflows, error recovery, polling, rate limits, and secret-safety guidance. |
 | `GET /openapi.json` | Read the authoritative OpenAPI 3.1 contract generated from runtime schemas. |
 | `/api/v1/*` | Perform the documented role-authorized document operations with `Authorization: Bearer $SIGNMOS_TOKEN`. |
+| `GET /api/v1/commands/{commandId}` | Poll a human-review command with the exact personal token that created it. |
 
 Do not put a token in a URL, prompt, log, issue, or source file. Export it through the environment and confirm its identity before acting:
 
@@ -231,9 +235,9 @@ curl -fsS "$BASE/api/v1/documents?page=1" \
   -H "Authorization: Bearer $SIGNMOS_TOKEN" | jq
 ```
 
-Every `POST`, `PUT`, `PATCH`, or `DELETE` under `/api/v1` requires a fresh `Idempotency-Key` for one intended mutation. Exact retries replay the original result; changed reuse returns `IDEMPOTENCY_CONFLICT`. Follow `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` rather than hard-coding request cadence. Use `/openapi.json` for the full operation list instead of relying on a duplicated static endpoint table.
+Every `POST`, `PUT`, `PATCH`, or `DELETE` under `/api/v1` requires a fresh `Idempotency-Key` for one intended mutation. Exact retries replay the original result; changed reuse returns `IDEMPOTENCY_CONFLICT`. Agentic sign/complete, decline, cancel, expire, and delete return `202 pending_human_review` and have no protected side effect until the matching signer or creator approves the exact current-PDF action in Signmos. Follow the returned `statusUrl`; do not treat the initial response as execution. Follow `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` rather than hard-coding request cadence. Use `/openapi.json` for the full operation list instead of relying on a duplicated static endpoint table.
 
-Product requirements start with [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) and are amended by [plans/my-documents-prd.md](./plans/my-documents-prd.md) and [plans/agentic-mode-prd.md](./plans/agentic-mode-prd.md). The signed Agentic parity, measurement, security, and browser evidence lives in [plans/evidence/agentic-mode-release/](./plans/evidence/agentic-mode-release/). [plans/pilot-readiness-contract.md](./plans/pilot-readiness-contract.md) remains the legacy/internal lifecycle smoke map.
+Product requirements start with [plans/simple-esignature-prd.md](./plans/simple-esignature-prd.md) and are amended by [plans/my-documents-prd.md](./plans/my-documents-prd.md), [plans/agentic-mode-prd.md](./plans/agentic-mode-prd.md), and [plans/human-review-prd.md](./plans/human-review-prd.md). Agentic release evidence lives under [plans/evidence/agentic-mode-release/](./plans/evidence/agentic-mode-release/) and [plans/evidence/human-review/](./plans/evidence/human-review/). [plans/pilot-readiness-contract.md](./plans/pilot-readiness-contract.md) remains the legacy/internal lifecycle smoke map.
 
 ## Routes
 
@@ -256,6 +260,7 @@ Product requirements start with [plans/simple-esignature-prd.md](./plans/simple-
 | `/my-documents/{envelopeId}` | Session-protected completed-document detail. |
 | `/my-documents/{envelopeId}/manage` | Session-protected creator recovery and controls. |
 | `/my-documents/{envelopeId}/sign` | Session-protected recovered signer flow. |
+| `/human-review/{reviewId}` | Matching-session review of an exact pending Agentic protected action. |
 | `/manual-signing-smoke` | Browser-driven local smoke test for the complete workflow. |
 
 ## Project Structure
@@ -361,8 +366,8 @@ Generate staging/production migrations with the corresponding `db:generate:*` sc
 | `pnpm deploy` | Build and deploy to Cloudflare Workers. |
 | `pnpm cf-typegen` | Generate Cloudflare `Env` types. |
 | `pnpm test` / `pnpm test:watch` / `pnpm test:coverage` | Vitest. |
-| `pnpm agentic:smoke` | Preflight public docs/identity, run a live Bearer self-sign lifecycle, then execute the retained Agentic lifecycle branches. Requires `SIGNMOS_TOKEN`; optional `SIGNMOS_BASE_URL`. |
-| `pnpm agentic:calibrate` | Measure representative Agent API operation classes and emit a report with heartbeats. Requires a temporary development token and configured development infrastructure. |
+| `pnpm agentic:smoke` | Preflight public docs/identity, queue a live protected self-sign command, pause for matching-human browser approval, poll its terminal result, then run retained lifecycle tests. Requires `SIGNMOS_TOKEN`; optional `SIGNMOS_BASE_URL`. The completed smoke document remains under normal retention controls. |
+| `pnpm agentic:calibrate` | Measure representative Agent API operation classes and emit a report with heartbeats. Requires configured development infrastructure, a temporary token, one matching-human browser approval per sample, and leaves fixtures under normal retention controls. |
 | `pnpm types` | `tsc --noEmit`. |
 | `pnpm lint` / `pnpm lint:fix` / `pnpm lint:ci` | Biome checks. |
 | `pnpm knip` | Detect unused files, dependencies, and exports. |

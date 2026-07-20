@@ -12,6 +12,7 @@ import {
 	sourceDocuments,
 } from "@/db/envelope";
 import { apiHono } from "@/hono/api";
+import { approveAgentReview } from "./agent-human-review-test-helper";
 import {
 	agentHeaders,
 	createSentTwoPartyFixture,
@@ -186,14 +187,17 @@ describe("agent revision loop", () => {
 		expect((await replaceFields()).status).toBe(201);
 		expect(rows(envelopeFields)).toHaveLength(4);
 
-		const creatorComplete = await apiHono.request(`/api/v1/documents/${documentId}/complete`, {
-			method: "POST",
-			headers: agentHeaders(creatorToken, "revision-creator-complete"),
-			body: JSON.stringify({
-				signature: { kind: "typed", typedText: "Grace Revised", typedFont: "cursive" },
-				rememberSignature: false,
+		const creatorComplete = await approveAgentReview(
+			await apiHono.request(`/api/v1/documents/${documentId}/complete`, {
+				method: "POST",
+				headers: agentHeaders(creatorToken, "revision-creator-complete"),
+				body: JSON.stringify({
+					signature: { kind: "typed", typedText: "Grace Revised", typedFont: "cursive" },
+					rememberSignature: false,
+				}),
 			}),
-		});
+			{ email: "creator@example.com", key: "revision-creator-approval" },
+		);
 		expect(creatorComplete.status).toBe(200);
 		const resend = () =>
 			apiHono.request(
@@ -234,17 +238,24 @@ describe("agent revision loop", () => {
 				]),
 			}),
 		});
-		const completed = await apiHono.request(
-			`/api/v1/documents/${documentId}/complete`,
+		const completed = await approveAgentReview(
+			await apiHono.request(
+				`/api/v1/documents/${documentId}/complete`,
+				{
+					method: "POST",
+					headers: agentHeaders(partnerToken, "revision-partner-complete"),
+					body: JSON.stringify({
+						signature: { kind: "typed", typedText: "Ada Revised", typedFont: "cursive" },
+						rememberSignature: false,
+					}),
+				},
+				{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
+			),
 			{
-				method: "POST",
-				headers: agentHeaders(partnerToken, "revision-partner-complete"),
-				body: JSON.stringify({
-					signature: { kind: "typed", typedText: "Ada Revised", typedFont: "cursive" },
-					rememberSignature: false,
-				}),
+				email: "partner@example.com",
+				key: "revision-partner-approval",
+				env: { ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket } as Env,
 			},
-			{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
 		);
 		expect(completed.status).toBe(200);
 		expect(rows(finalDocuments)).toHaveLength(1);

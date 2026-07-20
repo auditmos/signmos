@@ -37,11 +37,11 @@ All requests enter `src/server.ts`.
 - `src/hono/api/envelope-preparation.ts` owns signature-profile and default-field preparation endpoints.
 - `src/hono/api/signing.ts` owns signer-token routes: partner verification, source PDF access, resolve session, complete signing, change request, decline, and final PDF download.
 - `src/hono/api/final-documents.ts` owns completed-document bearer-link detail and PDF access.
-- `src/hono/api/history-access.ts` owns passwordless history requests, scanner-safe link redemption, history sessions, catalog/detail reads, and session-authorized final PDF access.
+- `src/hono/api/history-access.ts` owns passwordless history requests, scanner-safe link redemption, history sessions, catalog/detail reads, and session-authorized final PDF access. `history-human-review.ts` owns matching-session review reads, current-PDF access, and approve/reject decisions.
 - `src/hono/api/history-envelope-start.ts` starts a verified draft from an active history session.
 - `src/hono/api/history-creator.ts` and `src/hono/api/history-signing.ts` adapt history-authorized creator and signer recovery actions.
 - `src/hono/api/agentic.ts` owns Agentic email verification, management-session, and browser token-generation routes.
-- `src/hono/api/agent-v1.ts` owns the Bearer gateway, per-token/IP rate limiting, and universal mutation-idempotency guard for the stable `/api/v1` contract. Focused `agent-v1-*` route modules cover catalog/detail, source PDF, signatures/fields, two-party delivery, partner decisions, revision, and creator controls.
+- `src/hono/api/agent-v1.ts` owns the Bearer gateway, per-token/IP rate limiting, and universal mutation-idempotency guard for the stable `/api/v1` contract. Focused `agent-v1-*` route modules cover catalog/detail, source PDF, signatures/fields, two-party delivery, partner decisions, revision, creator controls, pending human-review creation/notification, and exact-token command polling.
 - `src/hono/public-agent-contract.ts` publishes `/agent.md` and `/openapi.json` from the same runtime schemas and route operation metadata used by `/api/v1`.
 - `src/hono/api/clients.ts` and `src/hono/api/health.ts` are starter/demo and health surfaces, not core signing workflow.
 
@@ -70,6 +70,7 @@ All requests enter `src/server.ts`.
 - `src/db/agentic-access/token-authority.ts` generates one-time `signmos_` secrets from 256 bits of CSPRNG material and persists only deterministic hashes plus safe hints.
 - `src/db/agentic-access/bearer-principal.ts` resolves the verified email/token principal and records agent-attributed sensitive reads.
 - `src/db/agentic-access/command-authority.ts` claims every mutation by token and idempotency key, stores the exact result, replays identical retries, and rejects changed reuse.
+- `src/db/agentic-access/human-review-authority.ts`, `human-review-decision-authority.ts`, and `human-review-queue.ts` bind protected actions to the exact token, payload, source PDF, reviewer role, 24-hour lifetime, matching-session decision, and terminal polling result.
 - `src/db/agentic-access/documents.ts`, `self-signing.ts`, `two-party.ts`, and `partner-signing.ts` adapt normalized-email creator/signer authority to the existing envelope lifecycle.
 - `src/db/agentic-access/security-audit.ts` records safe agent attribution without raw link, session, token, or hash material.
 - `src/db/agentic-access/schema.ts` is the shared runtime/OpenAPI trust boundary, and `index.ts` is the domain's narrow public interface.
@@ -89,6 +90,7 @@ All requests enter `src/server.ts`.
 - `src/components/history/history-request-form.tsx` owns the privacy-safe My Documents access request.
 - `src/routes/history-access.$credential.tsx` and `src/components/history/history-access-confirmation-page.tsx` provide scanner-safe history-link confirmation and redemption.
 - `src/routes/my-documents*.tsx` mount the catalog, completed detail, creator recovery, and recovered-signer routes through nested outlets.
+- `src/routes/human-review.$reviewId.tsx` and `src/components/history/human-review-page.tsx` render the exact protected-action review and return unauthenticated reviewers through passwordless My Documents verification.
 - `src/components/history/history-documents-page.tsx` owns catalog queries, recovery states, and sign-out; `history-envelope-start.tsx` starts a draft from the verified session.
 - `src/components/history/history-creator-page.tsx`, `history-creator-controls.tsx`, and `history-document-detail-page.tsx` own creator recovery/controls and completed detail.
 - `src/routes/source-pdf-upload.tsx` adapts sender session query params into the upload/revision screen.

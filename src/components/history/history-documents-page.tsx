@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { HistoryCreatorControls } from "./history-creator-controls";
 import { HistoryEnvelopeStart, type HistorySessionIdentity } from "./history-envelope-start";
+import { HistoryHumanReviewQueue } from "./history-human-review-queue";
 
 type CatalogRole = "creator" | "signer" | "creator_and_signer";
 type CatalogGroup = "drafts" | "needs_my_action" | "waiting_on_others" | "completed" | "closed";
@@ -60,9 +61,7 @@ type HistoryLoadResult =
 			pagination: CatalogPagination;
 	  }
 	| { state: "recovery"; recoveryUrl: string; expired: boolean };
-interface HistoryDocumentsPageProps {
-	onSignedOut?: (recoveryUrl: string) => void;
-}
+type HistoryDocumentsPageProps = { onSignedOut?: (recoveryUrl: string) => void };
 interface CatalogFilterValues {
 	search: string;
 	role: "" | CatalogRole;
@@ -147,6 +146,7 @@ export function HistoryDocumentsPage({
 					documents is not permanent storage.
 				</p>
 				{catalog?.identity ? <HistoryEnvelopeStart identity={catalog.identity} /> : null}
+				<HistoryHumanReviewQueue />
 				<CatalogFilters onApply={applyFilters} />
 
 				{documentsQuery.isPending ? (

@@ -57,7 +57,7 @@ describe("agent release smoke", () => {
 		}
 	});
 
-	it("drives a live Bearer self-sign lifecycle with idempotent mutations and cleanup", async () => {
+	it("pauses a live protected command for matching-human review before polling the result", async () => {
 		const token = `signmos_${"l".repeat(43)}`;
 		const documentId = "00000000-0000-4000-8000-000000000051";
 		const requests: Request[] = [];
@@ -65,13 +65,34 @@ describe("agent release smoke", () => {
 			Response.json({ data: { documentId } }, { status: 201 }),
 			Response.json({ data: {} }, { status: 201 }),
 			Response.json({ data: {} }, { status: 201 }),
-			Response.json({ data: {} }, { status: 200 }),
+			Response.json(
+				{
+					data: {
+						commandId: "c0000000-0000-4000-8000-000000000051",
+						status: "pending_human_review",
+						reviewUrl: "https://signmos.test/human-review/r0000000-0000-4000-8000-000000000051",
+						statusUrl: "https://signmos.test/api/v1/commands/c0000000-0000-4000-8000-000000000051",
+						expiresAt: "2026-07-21T10:00:00.000Z",
+						notificationStatus: "sent",
+					},
+				},
+				{ status: 202 },
+			),
+			Response.json({ data: { finalPdfAvailable: false } }, { status: 200 }),
+			Response.json(
+				{
+					data: {
+						commandId: "c0000000-0000-4000-8000-000000000051",
+						status: "completed",
+					},
+				},
+				{ status: 200 },
+			),
 			Response.json({ data: { finalPdfAvailable: true } }, { status: 200 }),
 			new Response("%PDF-1.7\n%%EOF", {
 				status: 200,
 				headers: { "content-type": "application/pdf" },
 			}),
-			Response.json({ data: {} }, { status: 200 }),
 		];
 		const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 			requests.push(new Request(input, init));
@@ -84,6 +105,15 @@ describe("agent release smoke", () => {
 			runLiveSelfSignSmoke({
 				baseUrl: "https://signmos.test/",
 				token,
+				onReviewRequired: async (review) => {
+					expect(review).toEqual(
+						expect.objectContaining({
+							status: "pending_human_review",
+							reviewUrl: expect.stringContaining("/human-review/"),
+						}),
+					);
+				},
+				pollIntervalMs: 0,
 				fetcher: fetcher as typeof fetch,
 			}),
 		).resolves.toEqual({ finalPdfBytes: 14 });
@@ -94,8 +124,9 @@ describe("agent release smoke", () => {
 			`POST https://signmos.test/api/v1/documents/${documentId}/fields/defaults`,
 			`POST https://signmos.test/api/v1/documents/${documentId}/complete`,
 			`GET https://signmos.test/api/v1/documents/${documentId}/status`,
+			"GET https://signmos.test/api/v1/commands/c0000000-0000-4000-8000-000000000051",
+			`GET https://signmos.test/api/v1/documents/${documentId}/status`,
 			`GET https://signmos.test/api/v1/documents/${documentId}/pdf`,
-			`POST https://signmos.test/api/v1/documents/${documentId}/actions`,
 		]);
 		for (const request of requests) {
 			expect(request.headers.get("authorization")).toBe(`Bearer ${token}`);

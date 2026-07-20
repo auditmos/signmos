@@ -7,6 +7,7 @@ import {
 	historySessions,
 } from "@/db/history-access";
 import { apiHono } from "@/hono/api";
+import { expectPasswordlessHumanReviewReturn } from "./history-human-review-return-test-assertions";
 
 const completedEnvelopeId = "00000000-0000-4000-8000-000000000001";
 const historyTestEnv = {
@@ -197,7 +198,6 @@ describe("history access tracer", () => {
 	});
 
 	it("issues one hashed completed-document access link and metadata-free email", async () => {
-		// Issue #37 RED: matching creates hashed pending-then-active access; raw stays in delivery/debug.
 		const response = await apiHono.request(
 			"/api/history/access-requests",
 			{
@@ -243,6 +243,10 @@ describe("history access tracer", () => {
 			}),
 		]);
 		expect(JSON.stringify(state.historyEmailRecords)).not.toContain(rawCredential);
+	});
+
+	it("returns to the same human review after passwordless redemption", async () => {
+		await expectPasswordlessHumanReviewReturn();
 	});
 
 	it("renders repeated link confirmation reads without consuming the credential", async () => {

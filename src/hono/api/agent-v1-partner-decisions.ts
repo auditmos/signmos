@@ -1,21 +1,23 @@
 import {
 	authorizeAgentPartnerSigning,
 	claimAgentCommand,
+	claimHumanReviewCommand,
 	completeAgentCommand,
 	fingerprintAgentCommand,
+	inspectHumanReviewCommand,
+	listAgentPartnerFields,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
 import {
 	AgentPartnerChangeRequestSchema,
 	AgentPartnerChangeResponseSchema,
 	AgentPartnerDeclineRequestSchema,
-	AgentPartnerDeclineResponseSchema,
 	agentPartnerOperations,
 } from "@/db/agentic-access/partner-signing-schema";
 import {
-	declineSigning,
 	type EmailDeliveryEnv,
 	EmailDeliveryError,
+	getLatestSourcePdfDocument,
 	requestSigningChanges,
 	SigningChangeRequestError,
 } from "@/db/envelope";
@@ -26,8 +28,10 @@ import {
 	commandClaimResponse,
 	parsedUuid,
 	requestIp,
+	requestNow,
 	requiredIdempotencyKey,
 } from "./agent-v1-command-helpers";
+import { deliverHumanReviewNotification } from "./agent-v1-human-review-notification";
 
 const agentPartnerDecisionEndpoint = createAgentHono();
 
@@ -74,22 +78,64 @@ agentPartnerDecisionEndpoint.post(agentPartnerOperations.decline.relativePath, a
 	const parsed = AgentPartnerDeclineRequestSchema.safeParse(await c.req.json().catch(() => null));
 	if (!documentId || !parsed.success) return c.json(invalidDeclineError(), 400);
 	const principal = c.get("agenticPrincipal");
-	const claim = await claimAgentCommand({
+	const requestFingerprint = await fingerprintAgentCommand({ documentId, ...parsed.data });
+	const priorReview = await inspectHumanReviewCommand({
 		principal,
 		idempotencyKey: requiredIdempotencyKey(c),
 		operation: agentPartnerOperations.decline.operationId,
-		requestFingerprint: await fingerprintAgentCommand({ documentId, ...parsed.data }),
+		requestFingerprint,
 	});
-	if (claim.state !== "execute") return commandClaimResponse(claim);
+	if (priorReview) return commandClaimResponse(priorReview);
 	const authorization = await authorizeAgentPartnerSigning(principal, documentId);
 	if (authorization.state !== "active") {
-		return completeAuthorizationError(claim.recordId, documentId, authorization);
+		const error = agentPartnerAuthorizationError(authorization, documentId);
+		return Response.json(error.body, { status: error.status });
 	}
-	const result = await declineSigning(authorization.token, parsed.data);
-	const body = AgentPartnerDeclineResponseSchema.parse({ data: result });
-	await recordPartnerAction(principal, documentId, "agentic.partner.declined", c);
-	await completeAgentCommand({ recordId: claim.recordId, status: 200, body, documentId });
-	return c.json(body);
+	const source = await getLatestSourcePdfDocument(documentId);
+	if (!source) {
+		return c.json(agentPartnerAuthorizationError({ state: "not_found" }, documentId).body, 404);
+	}
+	const reviewerFields = (await listAgentPartnerFields(authorization.token)).map(
+		({ id, type, page, x, y, width, height }) => ({ id, type, page, x, y, width, height }),
+	);
+	const reviewClaim = await claimHumanReviewCommand({
+		principal,
+		idempotencyKey: requiredIdempotencyKey(c),
+		operation: agentPartnerOperations.decline.operationId,
+		requestFingerprint,
+		documentId,
+		reviewer: {
+			email: principal.email,
+			role: "signer",
+			recipientId: authorization.token.recipientId,
+			fields: reviewerFields,
+		},
+		source: {
+			id: source.id,
+			version: source.version,
+			sha256: source.sha256,
+			originalFilename: source.originalFilename,
+		},
+		actionPayload: parsed.data,
+		actionPayloadDigest: await fingerprintAgentCommand(parsed.data),
+		baseUrl: emailDelivery(c).baseUrl,
+		now: requestNow(c),
+	});
+	if (reviewClaim.state !== "created") return commandClaimResponse(reviewClaim);
+	const response = await deliverHumanReviewNotification({
+		principal,
+		documentId,
+		intentAuditEvent: "agentic.human_review.decline_requested",
+		commandId: reviewClaim.commandId,
+		response: reviewClaim.response,
+		reviewerEmail: principal.email,
+		documentName: source.originalFilename,
+		actionLabel: "Decline signing",
+		agentName: principal.token.name,
+		consequence: "This will decline the document and stop signing.",
+		emailDelivery: emailDelivery(c),
+	});
+	return c.json(response, 202);
 });
 
 async function completeAuthorizationError(

@@ -1,5 +1,7 @@
 # Agentic Mode Parity And Compatibility Release Evidence
 
+> Historical release evidence captured before issue #62. Any statement below that protected sign/complete, decline, cancel, expire, or delete ran autonomously is superseded by `plans/human-review-prd.md` and `plans/evidence/human-review/release-evidence.md`.
+
 Date: 2026-07-17
 
 Release decision: **44 of 44 verified**. The story table and numeric/security-bound table contain no failing or unverified row.

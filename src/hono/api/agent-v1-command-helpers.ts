@@ -9,7 +9,11 @@ export function parsedUuid(value: string | undefined): string | null {
 	return parsed.success ? parsed.data : null;
 }
 
-export function requestNow(c: { req: { header: (name: string) => string | undefined } }): Date {
+export function requestNow(c: {
+	req: { header: (name: string) => string | undefined };
+	env?: { CLOUDFLARE_ENV?: string };
+}): Date {
+	if (c.env?.CLOUDFLARE_ENV === "production") return new Date();
 	return new Date(c.req.header("x-now") ?? Date.now());
 }
 

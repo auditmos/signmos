@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const agentPrompt =
-	"Read /agent.md and /openapi.json. Use $SIGNMOS_TOKEN only in the Authorization Bearer header. Confirm the verified identity before acting, remain within the user's stated goal, and never place the token in prompts, URLs, logs, issues, or source control.";
+	"Read /agent.md and /openapi.json. Use $SIGNMOS_TOKEN only in the Authorization Bearer header. Confirm the verified identity before acting, remain within the user's stated goal, and never place the token in prompts, URLs, logs, issues, or source control. Sign/complete, decline, cancel, expire, and delete return pending human review: tell the user, poll the returned command URL, and never claim execution before a completed terminal result.";
 const tokenQueryKey = ["agentic-tokens"] as const;
 
 interface AgenticTokenMetadata {
@@ -117,7 +117,8 @@ export function AgenticTokenConsole() {
 					<h1 className="text-3xl font-semibold text-foreground">Create an Agentic token</h1>
 					<p className="text-muted-foreground">
 						Anyone holding this token can send, sign, decline, cancel, and delete documents as your
-						verified email.
+						verified email. Sign, decline, cancel, expire, and delete requests still require the
+						matching human to approve the exact action in Signmos before it runs.
 					</p>
 				</div>
 

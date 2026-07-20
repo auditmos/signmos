@@ -1,5 +1,7 @@
 # Plan: Agentic Mode And Bearer API
 
+> **Amended 2026-07-20 by issue #62:** see `plans/human-review-prd.md`. Agentic sign/complete, decline, cancel, expire, and delete now persist pending review and require server-derived matching-human approval.
+
 > Source PRD: `plans/agentic-mode-prd.md` and GitHub issue #43
 
 ## Architectural decisions
@@ -12,7 +14,7 @@ Durable decisions that apply across all phases:
 - **Credential model**: Tokens are named, opaque `signmos_...` secrets with at least 256 bits of CSPRNG material. Only deterministic hashes and safe metadata are stored. Secrets are shown once, remain active until revoked, and are never recoverable.
 - **Credential limits**: A verified email may have at most five active tokens. Tokens have full role-equivalent document authority, no scopes, and cannot manage tokens.
 - **Management authorization**: Agentic access uses a dedicated single-use 30-minute email link and a separate 15-minute browser-only management session. Token management does not reuse My Documents and does not accept Bearer credentials.
-- **High-impact actions**: Authorized agents may immediately send, sign, decline, cancel, expire, or delete when the action follows the request and lifecycle rules. The server adds no second confirmation protocol.
+- **High-impact actions**: Send retains existing direct authorization. Sign/complete, decline, cancel, expire, and delete require exact matching-human review before execution.
 - **Idempotency**: Every `/api/v1` mutation requires an Idempotency-Key. Exact request replays return the original completed response; reuse with a changed request returns a stable conflict.
 - **Data model**: Persist dedicated Agentic access-link hashes, management-session hashes, API-token hashes/metadata, and operation idempotency records. Security audit evidence stores normalized email, stable token ID/name, and agent actor type, never raw credential material.
 - **Public contract**: Runtime trust-boundary schemas and `/openapi.json` share one source of truth. `/agent.md` adds workflow, authorization, allowed-action, idempotency, error-recovery, polling, and secret-handling guidance.
@@ -169,7 +171,7 @@ Deliver the first complete document mutation tracer: an authenticated user creat
 - [ ] Reusing a key with a different JSON or PDF request fingerprint returns `IDEMPOTENCY_CONFLICT` without executing the changed command — [automated test: request conflict]
 - [ ] Machine-readable precondition/state errors include valid values, allowed actions, field paths, and recovery guidance — [automated test: agent error recovery]
 - [ ] `/openapi.json` and `/agent.md` expand with the self-sign creation/upload/profile/field/sign/final workflows and remain drift-free/secret-free — [automated test: contract publication]
-- [ ] A curl-compatible self-sign smoke completes create → upload → default prepare → sign → poll → final download using only Bearer auth and Idempotency-Key — [automated test: end-to-end self-sign integration smoke]
+- [ ] A curl-compatible self-sign smoke completes create → upload → default prepare → pending review, pauses for matching-human browser approval, then uses the originating Bearer token to poll → final download — [automated test: end-to-end self-sign integration smoke]
 
 ---
 
@@ -206,7 +208,7 @@ Extend the creator path to two-party work. A Bearer principal creates a two-part
 - [ ] Delivery-provider failure returns a stable retryable error and does not falsely advance the envelope to sent — [automated test: external email boundary]
 - [ ] Agent audit events identify token ID/name and creator email for preparation and delivery without raw credential or partner-link leakage — [automated test: audit/redaction]
 - [ ] Public OpenAPI/guidance covers two-party preparation, send preconditions, resend, polling, and delivery errors — [automated test: contract publication]
-- [ ] A creator-only curl smoke creates, prepares, sender-signs, sends, resends, and observes the sent envelope using Bearer auth only — [automated test: end-to-end two-party creator integration smoke]
+- [ ] A creator curl smoke creates and prepares, pauses for matching-human browser approval of sender-signing, then sends, resends, and observes the envelope through Bearer polling — [automated test: end-to-end two-party creator integration smoke]
 
 ---
 
@@ -282,8 +284,8 @@ Complete the non-happy-path lifecycle. A creator token responds to a partner cha
 - [ ] Revision, re-placement, resend, cancel/expire, and delete satisfy exact replay and changed-request conflict behavior without duplicate storage, email, audit, or destructive effects — [automated test: creator command idempotency]
 - [ ] Errors enumerate current allowed actions for every blocked lifecycle transition and remain aligned with OpenAPI/guidance — [automated test: state/error contract]
 - [ ] Audit evidence attributes every revision/control action to normalized creator email plus token ID/name and excludes all credentials — [automated test: creator audit/redaction]
-- [ ] A multi-token curl smoke performs request changes → revise → replace fields → resend → partner complete → final download using only Bearer auth — [automated test: end-to-end revision-loop integration smoke]
-- [ ] Separate control smoke verifies cancel/expire and delete immediately revoke all expected access paths — [automated test: end-to-end creator-control integration smoke]
+- [ ] A multi-token curl smoke performs request changes → revise → replace fields → resend → pending partner completion → matching-signer browser approval → final download — [automated test: end-to-end revision-loop integration smoke]
+- [ ] Separate control smoke proves cancel/expire/delete pause for matching-creator review and revoke expected access paths only after explicit approval — [automated test: end-to-end creator-control integration smoke]
 
 ---
 
@@ -305,7 +307,7 @@ This phase does not add new product capability. It closes contract, measurement,
 
 ### Out of scope for this phase
 
-- New document actions, token scopes, security emails, approval protocols, webhooks, bulk APIs, CLI, MCP, SDKs, or platform-specific prompts.
+- New document actions, token scopes, configurable approval protocols beyond issue #62, webhooks, bulk APIs, CLI, MCP, SDKs, or platform-specific prompts.
 - Guessed throughput, latency, memory, or rate-limit claims without retained measurements.
 - Declaring readiness with any unverified user story or numeric/security bound.
 
@@ -320,7 +322,7 @@ This phase does not add new product capability. It closes contract, measurement,
 - [ ] Every limited response uses stable `429` JSON plus standard limit/remaining/reset and Retry-After metadata; `/agent.md` documents compliant polling/backoff — [automated test: rate-limit recovery contract]
 - [ ] A credential-canary scan covers URLs, redirects, response bodies after generation, logs, errors, audit/security events, analytics hooks, email payloads, public artifacts, screenshots, and release fixtures with zero raw Bearer/link/session/hash leaks — [automated test and observable artifact: redaction scan report]
 - [ ] Universal idempotency route enumeration proves every `/api/v1` POST/PUT/PATCH/DELETE requires a key and has exact-replay/conflict tests; no endpoint is classified as merely state-safe — [automated test: mutation/idempotency contract]
-- [ ] `pnpm agentic:smoke` starts from permitted Agentic email-link fixtures, uses only a base URL, `$SIGNMOS_TOKEN`, public docs, Bearer auth, and Idempotency-Key, and completes self-sign, two-party, change/revision, decline, cancel/expire/delete, polling, and final download scenarios — [runnable command: `pnpm agentic:smoke` exits 0]
+- [ ] `pnpm agentic:smoke` uses a base URL, `$SIGNMOS_TOKEN`, public docs, Bearer auth, and Idempotency-Key for Agent requests; protected commands pause for matching-human browser review, then the originating token polls terminal self-sign, partner, decline, cancel/expire/delete, and final-download results — [runnable command: `pnpm agentic:smoke` exits 0]
 - [ ] Browser smoke covers all four unselected landing choices, Agentic verification/console/token states, and unchanged sender, signer, completed-document, and My Documents workflows — [observable artifact: retained browser/keyboard evidence]
 - [ ] Existing API, domain, component, release, email, PDF, retention, accessibility, and compatibility regression suites pass without weakening prior assertions — [runnable command: `pnpm test` exits 0]
 - [ ] Existing process-link compatibility tests accept signing access before seven days and reject it at and after the exact seven-day boundary while `/api/v1` personal-token behavior remains non-expiring until revocation — [automated test: time-controlled process-link/token-lifetime boundary]

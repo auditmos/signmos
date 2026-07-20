@@ -9,6 +9,7 @@ import {
 	signerTokens,
 } from "@/db/envelope";
 import { apiHono } from "@/hono/api";
+import { approveAgentReview } from "./agent-human-review-test-helper";
 import {
 	agentSelfSignBucket,
 	agentSelfSignTables,
@@ -130,23 +131,29 @@ describe("agent two-party creator delivery", () => {
 		const partnerId = await addPartner(documentId, "delivery-partner");
 		await placeDefaultFields(documentId, "delivery-fields");
 
-		const completed = await apiHono.request(`/api/v1/documents/${documentId}/complete`, {
-			method: "POST",
-			headers: headers("delivery-creator-complete"),
-			body: JSON.stringify({
-				signature: {
-					kind: "typed",
-					typedText: "Grace Creator",
-					typedFont: "cursive",
-				},
-				rememberSignature: false,
-				date: "2099-12-31",
+		const completed = await approveAgentReview(
+			await apiHono.request(`/api/v1/documents/${documentId}/complete`, {
+				method: "POST",
+				headers: headers("delivery-creator-complete"),
+				body: JSON.stringify({
+					signature: {
+						kind: "typed",
+						typedText: "Grace Creator",
+						typedFont: "cursive",
+					},
+					rememberSignature: false,
+					date: "2099-12-31",
+				}),
 			}),
-		});
+			{ email: "creator@example.com", key: "delivery-creator-approval" },
+		);
 		expect(completed.status).toBe(200);
 		const completedBody = await completed.json();
 		expect(completedBody).toEqual({
-			data: expect.objectContaining({ envelopeStatus: "draft", recipientStatus: "completed" }),
+			data: expect.objectContaining({
+				status: "completed",
+				result: expect.objectContaining({ envelopeStatus: "draft", recipientStatus: "completed" }),
+			}),
 		});
 		expect(rows(fieldValues)).toEqual(
 			expect.arrayContaining([
@@ -343,7 +350,14 @@ describe("agent two-party creator delivery", () => {
 		await uploadSource(documentId, "provider-upload", bucket);
 		await addPartner(documentId, "provider-partner");
 		await placeDefaultFields(documentId, "provider-fields");
-		expect((await completeCreator(documentId, "provider-complete")).status).toBe(200);
+		expect(
+			(
+				await approveAgentReview(await completeCreator(documentId, "provider-complete"), {
+					email: "creator@example.com",
+					key: "provider-complete-approval",
+				})
+			).status,
+		).toBe(200);
 		const request = () =>
 			apiHono.request(
 				`/api/v1/documents/${documentId}/send`,

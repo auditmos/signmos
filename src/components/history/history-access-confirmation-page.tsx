@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 interface HistoryAccessConfirmationPageProps {
 	credential: string;
 	onAuthenticated?: (url: string) => void;
+	returnTo?: string;
 }
 
 interface LinkInspectionResponse {
@@ -42,6 +43,7 @@ const recoveryByState = {
 export function HistoryAccessConfirmationPage({
 	credential,
 	onAuthenticated = defaultOnAuthenticated,
+	returnTo,
 }: HistoryAccessConfirmationPageProps) {
 	const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
 	const encodedCredential = encodeURIComponent(credential);
@@ -65,6 +67,8 @@ export function HistoryAccessConfirmationPage({
 			const response = await fetch(`/api/history/access-links/${encodedCredential}/redeem`, {
 				method: "POST",
 				credentials: "same-origin",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ ...(returnTo ? { returnTo } : {}) }),
 			});
 			const body: unknown = await response.json().catch(() => null);
 			if (!response.ok || !isRedemptionResponse(body)) {

@@ -108,6 +108,29 @@ describe("history access request form", () => {
 		expect(accepted.textContent).not.toMatch(/found|matched|documents? exist/i);
 	});
 
+	it("preserves a human-review return path in the passwordless access request", async () => {
+		const fetchMock = vi.fn<typeof fetch>(
+			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderRequestPage({
+			initialTask: "my_documents",
+			historyReturnTo: "/human-review/c9000000-0000-4000-8000-000000000001",
+			testTurnstileToken: "test-pass",
+		});
+		fireEvent.change(screen.getByLabelText("Email"), {
+			target: { value: "reviewer@example.com" },
+		});
+		fireEvent.submit(screen.getByRole("form", { name: "Request My documents access" }));
+
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+			email: "reviewer@example.com",
+			turnstileToken: "test-pass",
+			returnTo: "/human-review/c9000000-0000-4000-8000-000000000001",
+		});
+	});
+
 	it("rotates the idempotency key only after an accepted request", async () => {
 		const randomUUID = vi
 			.fn()

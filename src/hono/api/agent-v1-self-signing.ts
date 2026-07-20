@@ -5,6 +5,7 @@ import {
 	fingerprintAgentCommand,
 	getAgentSelfSignToken,
 	getAuthorizedAgentCreatorEnvelope,
+	inspectHumanReviewCommand,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
 import type { AgenticPrincipal } from "@/db/agentic-access/bearer-principal";
@@ -41,7 +42,7 @@ import {
 	requiredIdempotencyKey,
 } from "./agent-v1-command-helpers";
 import { invalidAgentFieldsError, placeAgentFieldsCommand } from "./agent-v1-field-placement";
-import { executeAgentSigningCompletion } from "./agent-v1-signing-completion";
+import { queueSigningCompletionReview } from "./agent-v1-signing-human-review";
 
 const agentSelfSignSigningEndpoint = createAgentHono();
 
@@ -272,20 +273,23 @@ agentSelfSignSigningEndpoint.post(agentSelfSignOperations.complete.relativePath,
 	const parsed = AgentSelfSignCompleteRequestSchema.safeParse(await c.req.json().catch(() => null));
 	if (!documentId || !parsed.success) return c.json(invalidCompletionError(), 400);
 	const principal = c.get("agenticPrincipal");
-	const claim = await claimJsonCommand(c, principal, agentSelfSignOperations.complete.operationId, {
-		documentId,
-		...parsed.data,
+	const requestFingerprint = await fingerprintAgentCommand({ documentId, ...parsed.data });
+	const priorReview = await inspectHumanReviewCommand({
+		principal,
+		idempotencyKey: requiredIdempotencyKey(c),
+		operation: agentSelfSignOperations.complete.operationId,
+		requestFingerprint,
 	});
-	if (claim.state !== "execute") return commandClaimResponse(claim);
-	return executeAgentSigningCompletion({
+	if (priorReview) return commandClaimResponse(priorReview);
+	return queueSigningCompletionReview({
 		principal,
 		documentId,
 		request: parsed.data,
-		recordId: claim.recordId,
+		requestFingerprint,
+		idempotencyKey: requiredIdempotencyKey(c),
+		operation: agentSelfSignOperations.complete.operationId,
 		now: requestNow(c),
-		requestIp: requestIp(c),
-		documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
-			?.DOCUMENTS_BUCKET,
+		baseUrl: agentEmailDelivery(c).baseUrl,
 		emailDelivery: agentEmailDelivery(c),
 	});
 });

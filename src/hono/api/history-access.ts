@@ -23,6 +23,16 @@ const historyAccessEndpoint = createHono();
 const HistoryAccessRequestSchema = z.object({
 	email: z.string().trim().toLowerCase().email(),
 	turnstileToken: z.string().min(1),
+	returnTo: z
+		.string()
+		.regex(/^\/human-review\/[0-9a-f]{8}-[0-9a-f-]{27}$/i)
+		.optional(),
+});
+const HistoryAccessRedemptionSchema = z.object({
+	returnTo: z
+		.string()
+		.regex(/^\/human-review\/[0-9a-f]{8}-[0-9a-f-]{27}$/i)
+		.optional(),
 });
 const HistoryCatalogQuerySchema = z.object({
 	search: z.string().trim().max(200).optional(),
@@ -60,6 +70,13 @@ historyAccessEndpoint.post("/access-links/:credential/redeem", async (c) => {
 			403,
 		);
 	}
+	const parsed = HistoryAccessRedemptionSchema.safeParse(await c.req.json().catch(() => ({})));
+	if (!parsed.success) {
+		return c.json(
+			{ error: { code: "INVALID_RETURN_PATH", message: "Use a Signmos review path" } },
+			400,
+		);
+	}
 	const nowHeader = c.req.header("x-now");
 	const result = await redeemHistoryAccessLink(
 		c.req.param("credential"),
@@ -84,7 +101,10 @@ historyAccessEndpoint.post("/access-links/:credential/redeem", async (c) => {
 		expires: result.expiresAt,
 		maxAge: 8 * 60 * 60,
 	});
-	return c.json({ data: { status: result.status, redirectUrl: "/my-documents" } }, 201);
+	return c.json(
+		{ data: { status: result.status, redirectUrl: parsed.data.returnTo ?? "/my-documents" } },
+		201,
+	);
 });
 
 historyAccessEndpoint.post("/session/sign-out", async (c) => {
@@ -260,6 +280,7 @@ historyAccessEndpoint.post("/access-requests", async (c) => {
 			},
 			idempotencyKey,
 			requestIp,
+			returnTo: parsed.data.returnTo,
 			now: nowHeader ? new Date(nowHeader) : undefined,
 		});
 	} catch (error) {

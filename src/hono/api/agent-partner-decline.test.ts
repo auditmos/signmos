@@ -1,5 +1,7 @@
 import { agenticSecurityEvents } from "@/db/agentic-access";
 import { auditEvents, envelopeRecipients, envelopes, fieldValues } from "@/db/envelope";
+import { hashHistoryCredential } from "@/db/history-access/request";
+import { historySessions } from "@/db/history-access/table";
 import { apiHono } from "@/hono/api";
 import {
 	agentHeaders,
@@ -17,6 +19,43 @@ vi.mock("@/db/setup", async () => {
 describe("agent partner decline", () => {
 	beforeEach(resetAgentPartnerFixture);
 	afterEach(() => vi.restoreAllMocks());
+
+	it("queues decline for human review without declining the document", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { documentId, partnerId } = await createSentTwoPartyFixture({
+			keyPrefix: "partner-decline-review",
+			fetchMock,
+		});
+		const response = await apiHono.request(`/api/v1/documents/${documentId}/decline`, {
+			method: "POST",
+			headers: agentHeaders(partnerToken, "partner-decline-review-command"),
+			body: JSON.stringify({ reason: "Cannot accept", comment: "Liability is too broad" }),
+		});
+
+		expect(response.status).toBe(202);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				commandId: expect.any(String),
+				status: "pending_human_review",
+				notificationStatus: "fallback",
+			}),
+		});
+		expect(rows(envelopes)[0]?.status).toBe("sent");
+		expect(rows(envelopeRecipients).find((row) => row.id === partnerId)?.status).not.toBe(
+			"declined",
+		);
+		expect(rows(auditEvents).filter((row) => row.eventType === "recipient.declined")).toHaveLength(
+			0,
+		);
+		expect(
+			rows(agenticSecurityEvents).filter((row) => row.eventType === "agentic.partner.declined"),
+		).toHaveLength(0);
+		expect(
+			rows(agenticSecurityEvents).filter(
+				(row) => row.eventType === "agentic.human_review.decline_requested",
+			),
+		).toHaveLength(1);
+	});
 
 	it("requires a reason, preserves an optional comment, replays, and stays terminal", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -48,14 +87,44 @@ describe("agent partner decline", () => {
 				}),
 			});
 		const declined = await decline();
-		expect(declined.status).toBe(200);
-		const body = await declined.json();
+		expect(declined.status).toBe(202);
+		const queued = (await declined.json()) as { data: { reviewUrl: string } };
+		const rawSession = "partner-decline-review-session";
+		rows(historySessions).push({
+			id: "b8000000-0000-4000-8000-000000000001",
+			linkId: "b8000000-0000-4000-8000-000000000002",
+			email: "partner@example.com",
+			sessionHash: await hashHistoryCredential(rawSession),
+			status: "active",
+			expiresAt: new Date("2026-07-18T10:00:00.000Z"),
+			revokedAt: null,
+			createdAt: new Date("2026-07-17T10:00:00.000Z"),
+		});
+		const reviewPath = new URL(queued.data.reviewUrl).pathname.replace(
+			"/human-review/",
+			"/api/history/human-reviews/",
+		);
+		const approved = await apiHono.request(`${reviewPath}/decision`, {
+			method: "POST",
+			headers: {
+				cookie: `signmos_history_session=${rawSession}`,
+				"content-type": "application/json",
+				origin: "http://localhost",
+				"x-now": "2026-07-17T10:00:00.000Z",
+			},
+			body: JSON.stringify({ decision: "approve" }),
+		});
+		expect(approved.status).toBe(200);
+		const body = await approved.json();
 		expect(body).toEqual({
 			data: expect.objectContaining({
-				envelopeId: documentId,
-				recipientId: partnerId,
-				recipientStatus: "declined",
-				envelopeStatus: "declined",
+				status: "completed",
+				result: expect.objectContaining({
+					envelopeId: documentId,
+					recipientId: partnerId,
+					recipientStatus: "declined",
+					envelopeStatus: "declined",
+				}),
 			}),
 		});
 		expect(rows(envelopes)[0]?.status).toBe("declined");

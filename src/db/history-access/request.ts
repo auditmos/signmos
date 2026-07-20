@@ -22,6 +22,7 @@ interface HistoryAccessRequestOptions {
 	emailDelivery: EmailDeliveryOptions;
 	idempotencyKey: string;
 	requestIp: string;
+	returnTo?: string;
 	now?: Date;
 }
 
@@ -85,7 +86,9 @@ export async function requestHistoryAccess(
 	});
 
 	const accessUrl = toAbsoluteDeliveryUrl(
-		`/history-access/${rawCredential}`,
+		`/history-access/${rawCredential}${
+			options.returnTo ? `?returnTo=${encodeURIComponent(options.returnTo)}` : ""
+		}`,
 		options.emailDelivery,
 	);
 	try {

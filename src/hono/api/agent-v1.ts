@@ -21,6 +21,7 @@ import {
 } from "@/db/agentic-access/schema";
 import { createAgentHono } from "@/hono/factory";
 import agentCreatorControlsEndpoint from "./agent-v1-creator-controls";
+import agentHumanReviewEndpoint from "./agent-v1-human-review";
 import agentPartnerDecisionEndpoint from "./agent-v1-partner-decisions";
 import {
 	AgentApiRateLimitError,
@@ -111,6 +112,7 @@ agentV1Endpoint.route("/", agentTwoPartyEndpoint);
 agentV1Endpoint.route("/", agentTwoPartyDeliveryEndpoint);
 agentV1Endpoint.route("/", agentPartnerDecisionEndpoint);
 agentV1Endpoint.route("/", agentCreatorControlsEndpoint);
+agentV1Endpoint.route("/", agentHumanReviewEndpoint);
 
 agentV1Endpoint.get(agentV1IdentityOperation.relativePath, (c) => {
 	const principal = c.get("agenticPrincipal");

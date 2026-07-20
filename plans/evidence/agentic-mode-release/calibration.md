@@ -1,5 +1,7 @@
 # Agentic API Measured Calibration
 
+> Historical measurement captured before the issue #62 human-review amendment. The latency observations remain evidence for ordinary API operation classes, but the old autonomous completion/cleanup procedure is superseded. A new run requires matching-human approval for each protected sample and retains fixtures under normal document controls.
+
 Date: 2026-07-18
 
 Result: PASS — representative measurements retained before numeric Agent API limits were selected.

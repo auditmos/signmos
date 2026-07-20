@@ -10,6 +10,8 @@ import {
 	signatureProfiles,
 	signerTokens,
 } from "@/db/envelope";
+import { hashHistoryCredential } from "@/db/history-access/request";
+import { historySessions } from "@/db/history-access/table";
 import { apiHono } from "@/hono/api";
 import {
 	agentHeaders,
@@ -30,6 +32,45 @@ vi.mock("@/db/setup", async () => {
 describe("agent partner completion", () => {
 	beforeEach(resetAgentPartnerFixture);
 	afterEach(() => vi.restoreAllMocks());
+
+	it("queues partner completion for human review without signing the document", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		const { documentId, partnerId, bucket } = await createSentTwoPartyFixture({
+			keyPrefix: "partner-complete-review",
+			fetchMock,
+		});
+		const response = await apiHono.request(
+			`/api/v1/documents/${documentId}/complete`,
+			{
+				method: "POST",
+				headers: agentHeaders(partnerToken, "partner-complete-review-command"),
+				body: JSON.stringify({
+					signature: { kind: "typed", typedText: "Ada Partner", typedFont: "cursive" },
+					rememberSignature: false,
+				}),
+			},
+			{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
+		);
+
+		expect(response.status).toBe(202);
+		await expect(response.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				status: "pending_human_review",
+				notificationStatus: "sent",
+			}),
+		});
+		expect(rows(envelopes)[0]?.status).toBe("sent");
+		expect(rows(envelopeRecipients).find((row) => row.id === partnerId)?.status).toBe("sent");
+		expect(rows(fieldValues).filter((row) => row.recipientId === partnerId)).toHaveLength(0);
+		expect(rows(finalDocuments)).toHaveLength(0);
+		expect(
+			rows(agenticSecurityEvents).filter(
+				(row) =>
+					row.eventType === "agentic.human_review.signing_requested" &&
+					row.email === "partner@example.com",
+			),
+		).toHaveLength(1);
+	});
 
 	it("discovers only assigned current content and completes a multi-token flow idempotently", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -114,14 +155,48 @@ describe("agent partner completion", () => {
 				{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
 			);
 		const completed = await complete();
-		expect(completed.status).toBe(200);
-		const completedBody = await completed.json();
+		expect(completed.status).toBe(202);
+		const queued = (await completed.json()) as { data: { reviewUrl: string } };
+		const rawSession = "partner-completion-review-session";
+		rows(historySessions).push({
+			id: "b7000000-0000-4000-8000-000000000001",
+			linkId: "b7000000-0000-4000-8000-000000000002",
+			email: "partner@example.com",
+			sessionHash: await hashHistoryCredential(rawSession),
+			status: "active",
+			expiresAt: new Date("2026-07-18T12:34:56.000Z"),
+			revokedAt: null,
+			createdAt: new Date("2026-07-17T12:34:56.000Z"),
+		});
+		const reviewPath = new URL(queued.data.reviewUrl).pathname.replace(
+			"/human-review/",
+			"/api/history/human-reviews/",
+		);
+		const approved = await apiHono.request(
+			`${reviewPath}/decision`,
+			{
+				method: "POST",
+				headers: {
+					cookie: `signmos_history_session=${rawSession}`,
+					"content-type": "application/json",
+					origin: "http://localhost",
+					"x-now": "2026-07-17T12:34:56.000Z",
+				},
+				body: JSON.stringify({ decision: "approve" }),
+			},
+			{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
+		);
+		expect(approved.status).toBe(200);
+		const completedBody = await approved.json();
 		expect(completedBody).toEqual({
 			data: expect.objectContaining({
-				envelopeId: documentId,
-				recipientId: partnerId,
-				recipientStatus: "completed",
-				envelopeStatus: "completed",
+				status: "completed",
+				result: expect.objectContaining({
+					envelopeId: documentId,
+					recipientId: partnerId,
+					recipientStatus: "completed",
+					envelopeStatus: "completed",
+				}),
 			}),
 		});
 		expect(rows(envelopes)[0]?.status).toBe("completed");
@@ -168,7 +243,7 @@ describe("agent partner completion", () => {
 		expect(new Uint8Array(await partnerPdf.arrayBuffer())).toEqual(
 			new Uint8Array(await creatorPdf.arrayBuffer()),
 		);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 		expect(JSON.stringify(rows(agenticSecurityEvents))).not.toContain(partnerToken);
 		expect(JSON.stringify(rows(agenticSecurityEvents))).not.toContain(processToken);
 	});

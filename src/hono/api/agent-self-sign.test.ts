@@ -13,83 +13,48 @@ import {
 	signerTokens,
 	sourceDocuments,
 } from "@/db/envelope";
+import { hashHistoryCredential } from "@/db/history-access/request";
+import { historySessions } from "@/db/history-access/table";
 import { apiHono } from "@/hono/api";
 import {
+	expectQueuedSelfSignReview,
+	expectReplayAndExactTokenPolling,
+} from "./agent-self-sign-review-test-assertions";
+import {
 	agentSelfSignBucket,
-	agentSelfSignTables,
 	extractPdfVisibleText,
 	selfSignRows,
 	agentSelfSignTestState as state,
 } from "./agent-self-sign-test-db";
-
-const rawToken = "signmos_agent_self_sign_token";
-const tokenId = "a0000000-0000-4000-8000-000000000001";
+import {
+	createUploadedSelfSignDraft,
+	rawSelfSignToken,
+	resetSelfSignTestFixture,
+	selfSignCommandHeaders,
+	selfSignSecurityEventsOfType,
+	selfSignTokenId,
+} from "./agent-self-sign-test-support";
 
 vi.mock("@/db/setup", async () => {
 	const { getAgentSelfSignTestDb } = await import("./agent-self-sign-test-db");
 	return { getDb: getAgentSelfSignTestDb };
 });
 
-function commandHeaders(key: string, contentType = "application/json") {
-	return {
-		authorization: `Bearer ${rawToken}`,
-		"content-type": contentType,
-		"idempotency-key": key,
-		"x-now": state.now.toISOString(),
-	};
-}
-
-async function createUploadedDraft(key: string, bucket: R2Bucket): Promise<string> {
-	const created = await apiHono.request("/api/v1/documents", {
-		method: "POST",
-		headers: commandHeaders(`${key}-create`),
-		body: JSON.stringify({ name: "Ada Lovelace" }),
-	});
-	const documentId = ((await created.json()) as { data: { documentId: string } }).data.documentId;
-	const uploaded = await apiHono.request(
-		`/api/v1/documents/${documentId}/source-pdf`,
-		{
-			method: "PUT",
-			headers: commandHeaders(`${key}-upload`, "application/pdf"),
-			body: "%PDF-1.7\nself sign workflow\n%%EOF",
-		},
-		{ DOCUMENTS_BUCKET: bucket },
-	);
-	expect(uploaded.status).toBe(201);
-	return documentId;
-}
-
-function securityEventsOfType(eventType: string) {
-	return selfSignRows(agenticSecurityEvents).filter((event) => event.eventType === eventType);
-}
-
 describe("agent self-sign lifecycle", () => {
-	beforeEach(async () => {
-		state.rows = new Map(agentSelfSignTables.map((table) => [table, []]));
-		state.r2Objects.clear();
-		state.r2PutCounts.clear();
-		state.now = new Date("2026-07-17T10:00:00.000Z");
-		selfSignRows(agenticApiTokens).push({
-			id: tokenId,
-			email: "ada@example.com",
-			name: "Ada self-sign token",
-			tokenHash: await hashAgenticCredential(rawToken),
-			tokenHint: "signmos_...oken",
-			status: "active",
-			activeSlot: 1,
-			lastUsedAt: null,
-			revokedAt: null,
-			createdAt: new Date("2026-07-17T08:00:00.000Z"),
-		});
-	});
+	beforeEach(resetSelfSignTestFixture);
 
+	it("queues self-sign completion for human review without signing the document", async () => {
+		await expectQueuedSelfSignReview();
+	});
+	it("replays and polls the same bound pending self-sign command", async () => {
+		await expectReplayAndExactTokenPolling();
+	});
 	it("creates a verified normalized-email self-sign draft without another credential or email", async () => {
 		const response = await apiHono.request("/api/v1/documents", {
 			method: "POST",
-			headers: commandHeaders("create-self-sign-1"),
+			headers: selfSignCommandHeaders("create-self-sign-1"),
 			body: JSON.stringify({ name: "Ada Lovelace" }),
 		});
-
 		expect(response.status).toBe(201);
 		const body = (await response.json()) as {
 			data: { documentId: string; status: string; signingMode: string; sender: unknown };
@@ -127,7 +92,7 @@ describe("agent self-sign lifecycle", () => {
 		expect(selfSignRows(agenticSecurityEvents)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					tokenId,
+					tokenId: selfSignTokenId,
 					documentId: body.data.documentId,
 					email: "ada@example.com",
 					actorType: "agent",
@@ -136,23 +101,21 @@ describe("agent self-sign lifecycle", () => {
 			]),
 		);
 	});
-
 	it("stores one valid source PDF and rejects invalid and exactly over-limit inputs", async () => {
 		const created = await apiHono.request("/api/v1/documents", {
 			method: "POST",
-			headers: commandHeaders("create-for-source"),
+			headers: selfSignCommandHeaders("create-for-source"),
 			body: JSON.stringify({ name: "Ada Lovelace" }),
 		});
 		const documentId = ((await created.json()) as { data: { documentId: string } }).data.documentId;
 		const bucket = agentSelfSignBucket();
 		const pdf = new TextEncoder().encode("%PDF-1.7\nself sign source\n%%EOF");
-
 		const uploaded = await apiHono.request(
 			`/api/v1/documents/${documentId}/source-pdf`,
 			{
 				method: "PUT",
 				headers: {
-					...commandHeaders("upload-source-1", "application/pdf"),
+					...selfSignCommandHeaders("upload-source-1", "application/pdf"),
 					"x-source-filename": "agreement.pdf",
 				},
 				body: pdf,
@@ -188,7 +151,7 @@ describe("agent self-sign lifecycle", () => {
 			{
 				method: "PUT",
 				headers: {
-					...commandHeaders("upload-source-1", "application/pdf"),
+					...selfSignCommandHeaders("upload-source-1", "application/pdf"),
 					"x-source-filename": "agreement.pdf",
 				},
 				body: pdf,
@@ -202,7 +165,7 @@ describe("agent self-sign lifecycle", () => {
 			{
 				method: "PUT",
 				headers: {
-					...commandHeaders("upload-source-1", "application/pdf"),
+					...selfSignCommandHeaders("upload-source-1", "application/pdf"),
 					"x-source-filename": "agreement.pdf",
 				},
 				body: "%PDF-1.7\nchanged content\n%%EOF",
@@ -215,12 +178,11 @@ describe("agent self-sign lifecycle", () => {
 		});
 		expect(selfSignRows(sourceDocuments)).toHaveLength(1);
 		expect(state.r2PutCounts.get(`envelopes/${documentId}/source-v1.pdf`)).toBe(1);
-
 		const invalid = await apiHono.request(
 			`/api/v1/documents/${documentId}/source-pdf`,
 			{
 				method: "PUT",
-				headers: commandHeaders("upload-invalid", "text/plain"),
+				headers: selfSignCommandHeaders("upload-invalid", "text/plain"),
 				body: "not a pdf",
 			},
 			{ DOCUMENTS_BUCKET: bucket },
@@ -229,14 +191,13 @@ describe("agent self-sign lifecycle", () => {
 		await expect(invalid.json()).resolves.toEqual({
 			error: expect.objectContaining({ code: "INVALID_SOURCE_PDF", fields: ["body"] }),
 		});
-
 		const overLimit = new Uint8Array(10 * 1024 * 1024 + 1);
 		overLimit.set(new TextEncoder().encode("%PDF-1.7"));
 		const oversized = await apiHono.request(
 			`/api/v1/documents/${documentId}/source-pdf`,
 			{
 				method: "PUT",
-				headers: commandHeaders("upload-over-limit", "application/pdf"),
+				headers: selfSignCommandHeaders("upload-over-limit", "application/pdf"),
 				body: overLimit,
 			},
 			{ DOCUMENTS_BUCKET: bucket },
@@ -251,15 +212,14 @@ describe("agent self-sign lifecycle", () => {
 		});
 		expect(selfSignRows(sourceDocuments)).toHaveLength(1);
 	});
-
 	it("validates reusable typed/drawn profiles and isolates them to the verified email", async () => {
 		const bucket = agentSelfSignBucket();
-		const documentId = await createUploadedDraft("profile", bucket);
+		const documentId = await createUploadedSelfSignDraft("profile", bucket);
 		const withoutConsent = await apiHono.request(
 			`/api/v1/documents/${documentId}/signature-profiles`,
 			{
 				method: "POST",
-				headers: commandHeaders("profile-no-consent"),
+				headers: selfSignCommandHeaders("profile-no-consent"),
 				body: JSON.stringify({
 					profile: { kind: "typed", label: "Ada", typedText: "Ada", typedFont: "cursive" },
 					rememberSignature: false,
@@ -271,10 +231,9 @@ describe("agent self-sign lifecycle", () => {
 			error: expect.objectContaining({ code: "SIGNATURE_REUSE_CONSENT_REQUIRED" }),
 		});
 		expect(selfSignRows(signatureProfiles)).toHaveLength(0);
-
 		const typed = await apiHono.request(`/api/v1/documents/${documentId}/signature-profiles`, {
 			method: "POST",
-			headers: commandHeaders("profile-typed"),
+			headers: selfSignCommandHeaders("profile-typed"),
 			body: JSON.stringify({
 				profile: {
 					kind: "typed",
@@ -290,7 +249,7 @@ describe("agent self-sign lifecycle", () => {
 			`/api/v1/documents/${documentId}/signature-profiles`,
 			{
 				method: "POST",
-				headers: commandHeaders("profile-typed"),
+				headers: selfSignCommandHeaders("profile-typed"),
 				body: JSON.stringify({
 					profile: {
 						kind: "typed",
@@ -307,7 +266,7 @@ describe("agent self-sign lifecycle", () => {
 		state.now = new Date("2026-07-17T10:01:00.000Z");
 		const drawn = await apiHono.request(`/api/v1/documents/${documentId}/signature-profiles`, {
 			method: "POST",
-			headers: commandHeaders("profile-drawn"),
+			headers: selfSignCommandHeaders("profile-drawn"),
 			body: JSON.stringify({
 				profile: { kind: "drawn", label: "Ada drawn", svgPath: "M 1 1 L 40 20" },
 				rememberSignature: true,
@@ -320,7 +279,7 @@ describe("agent self-sign lifecycle", () => {
 		).toBe(true);
 		const selected = await apiHono.request(
 			`/api/v1/documents/${documentId}/signature-profiles/selected`,
-			{ headers: commandHeaders("unused-read-key") },
+			{ headers: selfSignCommandHeaders("unused-read-key") },
 		);
 		expect(selected.status).toBe(200);
 		await expect(selected.json()).resolves.toEqual({
@@ -351,10 +310,10 @@ describe("agent self-sign lifecycle", () => {
 
 	it("prepares, reviews, repositions, completes, polls, and downloads a self-signed artifact", async () => {
 		const bucket = agentSelfSignBucket();
-		const documentId = await createUploadedDraft("complete", bucket);
+		const documentId = await createUploadedSelfSignDraft("complete", bucket);
 		const prepared = await apiHono.request(`/api/v1/documents/${documentId}/fields/defaults`, {
 			method: "POST",
-			headers: commandHeaders("default-fields"),
+			headers: selfSignCommandHeaders("default-fields"),
 			body: JSON.stringify({ page: 1 }),
 		});
 		expect(prepared.status).toBe(201);
@@ -372,7 +331,7 @@ describe("agent self-sign lifecycle", () => {
 			`/api/v1/documents/${documentId}/fields/defaults`,
 			{
 				method: "POST",
-				headers: commandHeaders("default-fields"),
+				headers: selfSignCommandHeaders("default-fields"),
 				body: JSON.stringify({ page: 1 }),
 			},
 		);
@@ -381,10 +340,10 @@ describe("agent self-sign lifecycle", () => {
 		expect(selfSignRows(envelopeFields)).toHaveLength(2);
 		expect(selfSignRows(signerTokens)).toHaveLength(1);
 		expect(selfSignRows(emailSendRecords)).toHaveLength(1);
-		expect(securityEventsOfType("agentic.fields.prepared")).toHaveLength(1);
+		expect(selfSignSecurityEventsOfType("agentic.fields.prepared")).toHaveLength(1);
 
 		const task = await apiHono.request(`/api/v1/documents/${documentId}/signing-task`, {
-			headers: commandHeaders("unused-task-key"),
+			headers: selfSignCommandHeaders("unused-task-key"),
 		});
 		expect(task.status).toBe(200);
 		const taskBody = (await task.json()) as {
@@ -404,7 +363,7 @@ describe("agent self-sign lifecycle", () => {
 			`/api/v1/documents/${documentId}/fields/${signatureField?.id}`,
 			{
 				method: "PATCH",
-				headers: commandHeaders("reposition-field"),
+				headers: selfSignCommandHeaders("reposition-field"),
 				body: JSON.stringify({ page: 1, x: 96, y: 192 }),
 			},
 		);
@@ -416,18 +375,18 @@ describe("agent self-sign lifecycle", () => {
 			`/api/v1/documents/${documentId}/fields/${signatureField?.id}`,
 			{
 				method: "PATCH",
-				headers: commandHeaders("reposition-field"),
+				headers: selfSignCommandHeaders("reposition-field"),
 				body: JSON.stringify({ page: 1, x: 96, y: 192 }),
 			},
 		);
 		expect(repositionReplay.status).toBe(200);
-		expect(securityEventsOfType("agentic.field.repositioned")).toHaveLength(1);
+		expect(selfSignSecurityEventsOfType("agentic.field.repositioned")).toHaveLength(1);
 
 		const completed = await apiHono.request(
 			`/api/v1/documents/${documentId}/complete`,
 			{
 				method: "POST",
-				headers: commandHeaders("complete-self-sign"),
+				headers: selfSignCommandHeaders("complete-self-sign"),
 				body: JSON.stringify({
 					signature: { kind: "typed", typedText: "Ada Lovelace", typedFont: "cursive" },
 					rememberSignature: false,
@@ -436,15 +395,53 @@ describe("agent self-sign lifecycle", () => {
 			},
 			{ DOCUMENTS_BUCKET: bucket },
 		);
-		expect(completed.status).toBe(200);
-		await expect(completed.json()).resolves.toEqual({
-			data: expect.objectContaining({ envelopeId: documentId, envelopeStatus: "completed" }),
+		expect(completed.status).toBe(202);
+		const pending = (await completed.json()) as { data: { reviewUrl: string } };
+		const rawSession = "self-sign-lifecycle-review-session";
+		selfSignRows(historySessions).push({
+			id: "b6000000-0000-4000-8000-000000000001",
+			linkId: crypto.randomUUID(),
+			email: "ada@example.com",
+			sessionHash: await hashHistoryCredential(rawSession),
+			status: "active",
+			expiresAt: new Date(state.now.getTime() + 60 * 60 * 1000),
+			revokedAt: null,
+			createdAt: state.now,
+		});
+		const reviewPath = new URL(pending.data.reviewUrl).pathname.replace(
+			"/human-review/",
+			"/api/history/human-reviews/",
+		);
+		const approved = await apiHono.request(
+			`${reviewPath}/decision`,
+			{
+				method: "POST",
+				headers: {
+					cookie: `signmos_history_session=${rawSession}`,
+					"content-type": "application/json",
+					origin: "http://localhost",
+					"x-now": state.now.toISOString(),
+				},
+				body: JSON.stringify({ decision: "approve" }),
+			},
+			{ DOCUMENTS_BUCKET: bucket },
+		);
+		expect(approved.status).toBe(200);
+		const completedBody = await approved.json();
+		expect(completedBody).toEqual({
+			data: expect.objectContaining({
+				status: "completed",
+				result: expect.objectContaining({
+					envelopeId: documentId,
+					envelopeStatus: "completed",
+				}),
+			}),
 		});
 		const completedReplay = await apiHono.request(
 			`/api/v1/documents/${documentId}/complete`,
 			{
 				method: "POST",
-				headers: commandHeaders("complete-self-sign"),
+				headers: selfSignCommandHeaders("complete-self-sign"),
 				body: JSON.stringify({
 					signature: { kind: "typed", typedText: "Ada Lovelace", typedFont: "cursive" },
 					rememberSignature: false,
@@ -454,6 +451,7 @@ describe("agent self-sign lifecycle", () => {
 			{ DOCUMENTS_BUCKET: bucket },
 		);
 		expect(completedReplay.status).toBe(200);
+		await expect(completedReplay.json()).resolves.toEqual(completedBody);
 		expect(selfSignRows(fieldValues)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ value: "Ada Lovelace" }),
@@ -462,7 +460,7 @@ describe("agent self-sign lifecycle", () => {
 		);
 		expect(selfSignRows(fieldValues)).toHaveLength(2);
 		expect(selfSignRows(finalDocuments)).toHaveLength(1);
-		expect(securityEventsOfType("agentic.self_sign.completed")).toHaveLength(1);
+		expect(selfSignSecurityEventsOfType("agentic.self_sign.completed")).toHaveLength(1);
 		const finalKey = selfSignRows(finalDocuments)[0]?.r2Key;
 		expect(typeof finalKey).toBe("string");
 		expect(typeof finalKey === "string" ? state.r2PutCounts.get(finalKey) : undefined).toBe(1);
@@ -479,13 +477,15 @@ describe("agent self-sign lifecycle", () => {
 			`/api/v1/documents/${documentId}/status`,
 			`/api/v1/documents/${documentId}/history`,
 		]) {
-			const response = await apiHono.request(path, { headers: commandHeaders("unused-read") });
+			const response = await apiHono.request(path, {
+				headers: selfSignCommandHeaders("unused-read"),
+			});
 			expect(response.status, path).toBe(200);
 			expect(JSON.stringify(await response.json())).not.toMatch(/signmos_|signerToken|r2Key/);
 		}
 		const finalPdf = await apiHono.request(
 			`/api/v1/documents/${documentId}/pdf`,
-			{ headers: commandHeaders("unused-final-read") },
+			{ headers: selfSignCommandHeaders("unused-final-read") },
 			{ DOCUMENTS_BUCKET: bucket },
 		);
 		expect(finalPdf.status).toBe(200);
@@ -494,6 +494,6 @@ describe("agent self-sign lifecycle", () => {
 		expect(selfSignRows(envelopeFields)).toEqual(
 			expect.arrayContaining([expect.objectContaining({ id: signatureField?.id, x: 96, y: 192 })]),
 		);
-		expect(JSON.stringify([...state.rows.values()])).not.toContain(rawToken);
+		expect(JSON.stringify([...state.rows.values()])).not.toContain(rawSelfSignToken);
 	});
 });

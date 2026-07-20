@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
+import {
 	AgentDocumentCatalogResponseSchema,
 	AgentDocumentDetailResponseSchema,
 	AgentDocumentHistoryResponseSchema,
@@ -11,7 +15,6 @@ import {
 	AgentRecipientsAddRequestSchema,
 	AgentRecipientsResponseSchema,
 	AgentSelfSignCompleteRequestSchema,
-	AgentSelfSignCompleteResponseSchema,
 	AgentSelfSignCreateRequestSchema,
 	AgentSelfSignCreateResponseSchema,
 	AgentSelfSignDefaultFieldsRequestSchema,
@@ -238,13 +241,6 @@ describe("agentic onboarding public contract", () => {
 				AgentSelfSignFieldPlacementRequestSchema,
 				AgentSelfSignFieldPlacementResponseSchema,
 			],
-			[
-				"post",
-				"/api/v1/documents/{documentId}/complete",
-				"200",
-				AgentSelfSignCompleteRequestSchema,
-				AgentSelfSignCompleteResponseSchema,
-			],
 		] as const;
 		for (const [method, path, status, requestSchema, responseSchema] of jsonContracts) {
 			const operation = document.paths[path]?.[method] as {
@@ -258,6 +254,19 @@ describe("agentic onboarding public contract", () => {
 				z.toJSONSchema(responseSchema),
 			);
 		}
+		const completion = document.paths["/api/v1/documents/{documentId}/complete"]?.post as {
+			requestBody?: { content?: Record<string, { schema?: unknown }> };
+			responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+		};
+		expect(completion.requestBody?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(AgentSelfSignCompleteRequestSchema),
+		);
+		expect(completion.responses?.["202"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(PendingHumanReviewCommandResponseSchema),
+		);
+		expect(completion.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(HumanReviewCommandStatusResponseSchema),
+		);
 		for (const [path, schema] of [
 			["/api/v1/documents/{documentId}/source-pdf", AgentSourcePdfResponseSchema],
 			[

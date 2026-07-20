@@ -34,6 +34,9 @@ interface CalibrationOptions {
 	baseUrl: string;
 	token: string;
 	sampleSize: number;
+	onReviewRequired?: (review: CalibrationHumanReview, sample: number) => Promise<void>;
+	pollIntervalMs?: number;
+	maxReviewPolls?: number;
 	fetcher?: typeof fetch;
 	now?: () => number;
 	heartbeat?: (message: string) => void;
@@ -168,7 +171,7 @@ export async function runAgentCalibration(
 				body: { page: 1 },
 				expectedStatus: 201,
 			});
-			await jsonCommand(fetcher, {
+			const completion = await jsonCommand(fetcher, {
 				url: `${baseUrl}/api/v1/documents/${documentId}/complete`,
 				token: options.token,
 				idempotencyKey: key("complete", sample),
@@ -180,8 +183,15 @@ export async function runAgentCalibration(
 					},
 					rememberSignature: false,
 				},
-				expectedStatus: 200,
+				expectedStatus: 202,
 			});
+			const review = await parseCalibrationReview(completion);
+			heartbeat(`calibration ${sample}/${options.sampleSize}: matching-human review required`);
+			if (!options.onReviewRequired) {
+				throw new Error(`Calibration requires browser approval at ${review.reviewUrl}`);
+			}
+			await options.onReviewRequired(review, sample);
+			await waitForCalibrationReview(fetcher, options.token, review, options, heartbeat);
 
 			const status = await timedRequest(
 				fetcher,
@@ -220,16 +230,9 @@ export async function runAgentCalibration(
 			observations.pdfDownload.push(downloaded.durationMs);
 		}
 	} finally {
-		heartbeat(`calibration cleanup: ${documents.length} fixture documents`);
-		for (const [index, documentId] of documents.entries()) {
-			await jsonCommand(fetcher, {
-				url: `${baseUrl}/api/v1/documents/${documentId}/actions`,
-				token: options.token,
-				idempotencyKey: key("delete", index + 1),
-				body: { action: "delete" },
-				expectedStatus: 200,
-			}).catch(() => undefined);
-		}
+		heartbeat(
+			`calibration retention: ${documents.length} fixture documents remain under normal document controls`,
+		);
 	}
 
 	return {
@@ -253,7 +256,7 @@ export async function runAgentCalibration(
 		],
 		heartbeats,
 		cleanup:
-			"completed calibration documents deleted; supplied token retained for explicit owner revocation",
+			"calibration documents retained under normal Signmos controls; supplied token retained for explicit owner revocation",
 	};
 }
 
@@ -265,6 +268,11 @@ async function main() {
 		baseUrl: process.env.SIGNMOS_BASE_URL?.trim() || "http://localhost:3000",
 		token,
 		sampleSize,
+		onReviewRequired: async (review, sample) => {
+			process.stdout.write(
+				`Sample ${sample}: open ${review.reviewUrl} as the matching verified human, inspect it, and approve and execute.\n`,
+			);
+		},
 		heartbeat: (message) => process.stdout.write(`[heartbeat] ${message}\n`),
 	});
 	const report = buildCalibrationReport(result);
@@ -306,6 +314,55 @@ async function jsonCommand(
 	});
 	await assertStatus(response, input.expectedStatus, input.url);
 	return response;
+}
+
+interface CalibrationHumanReview {
+	commandId: string;
+	status: "pending_human_review";
+	reviewUrl: string;
+	statusUrl: string;
+}
+
+async function parseCalibrationReview(response: Response): Promise<CalibrationHumanReview> {
+	const body = (await response.json()) as { data?: CalibrationHumanReview };
+	if (
+		!body.data ||
+		body.data.status !== "pending_human_review" ||
+		!body.data.commandId ||
+		!body.data.reviewUrl ||
+		!body.data.statusUrl
+	) {
+		throw new Error("Calibration completion response omitted human-review command details");
+	}
+	return body.data;
+}
+
+async function waitForCalibrationReview(
+	fetcher: typeof fetch,
+	token: string,
+	review: CalibrationHumanReview,
+	options: Pick<CalibrationOptions, "maxReviewPolls" | "pollIntervalMs">,
+	heartbeat: (message: string) => void,
+) {
+	const maxPolls = options.maxReviewPolls ?? 300;
+	const interval = options.pollIntervalMs ?? 2_000;
+	for (let poll = 1; poll <= maxPolls; poll += 1) {
+		const response = await fetcher(review.statusUrl, { headers: bearerHeaders(token) });
+		await assertStatus(response, 200, "poll calibration human review");
+		const body = (await response.json()) as {
+			data?: { commandId?: string; status?: string };
+		};
+		if (body.data?.commandId !== review.commandId) {
+			throw new Error("Calibration polling returned a different command");
+		}
+		if (body.data.status === "completed") return;
+		if (body.data.status !== "pending_human_review") {
+			throw new Error(`Calibration review ended without execution: ${body.data.status}`);
+		}
+		if (poll % 15 === 0) heartbeat("calibration waiting for matching-human browser approval");
+		if (interval > 0) await new Promise((resolve) => setTimeout(resolve, interval));
+	}
+	throw new Error("Calibration human-review polling limit reached without approval");
 }
 
 function bearerHeaders(token: string) {

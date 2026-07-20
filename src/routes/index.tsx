@@ -19,14 +19,26 @@ export const Route = createFileRoute("/")({
 function IndexPage() {
 	const config = Route.useLoaderData();
 	const searchString = useLocation({ select: (location) => location.searchStr });
-	const requestedTask = new URLSearchParams(searchString).get("task");
+	const search = new URLSearchParams(searchString);
+	const requestedTask = search.get("task");
+	const requestedReturnTo = search.get("returnTo");
+	const historyReturnTo =
+		requestedReturnTo && /^\/human-review\/[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(requestedReturnTo)
+			? requestedReturnTo
+			: undefined;
 	const initialTask =
 		requestedTask === "my-documents"
 			? "my_documents"
 			: requestedTask === "agentic"
 				? "agentic"
 				: undefined;
-	return <StartEnvelopePage initialTask={initialTask} turnstileSiteKey={config.turnstileSiteKey} />;
+	return (
+		<StartEnvelopePage
+			initialTask={initialTask}
+			historyReturnTo={historyReturnTo}
+			turnstileSiteKey={config.turnstileSiteKey}
+		/>
+	);
 }
 
 function normalizeOptionalValue(value: string | undefined): string | undefined {

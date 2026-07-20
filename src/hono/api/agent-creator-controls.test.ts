@@ -11,6 +11,11 @@ import { hashHistoryCredential } from "@/db/history-access/request";
 import { historySessions } from "@/db/history-access/table";
 import { apiHono } from "@/hono/api";
 import {
+	expectQueuedCreatorCancel,
+	expectQueuedCreatorDeletion,
+	expectQueuedCreatorExpiration,
+} from "./agent-creator-review-test-assertions";
+import {
 	agentHeaders,
 	createSentTwoPartyFixture,
 	creatorToken,
@@ -26,9 +31,59 @@ vi.mock("@/db/setup", async () => {
 	return { getDb: getAgentSelfSignTestDb };
 });
 
+async function approveQueuedReview(
+	queuedResponse: Response,
+	input: { email: string; key: string; env?: Env; now?: Date },
+): Promise<Response> {
+	expect(queuedResponse.status).toBe(202);
+	const queued = (await queuedResponse.json()) as { data: { reviewUrl: string } };
+	const rawSession = `${input.key}-session`;
+	const now = input.now ?? state.now;
+	rows(historySessions).push({
+		id: crypto.randomUUID(),
+		linkId: crypto.randomUUID(),
+		email: input.email,
+		sessionHash: await hashHistoryCredential(rawSession),
+		status: "active",
+		expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+		revokedAt: null,
+		createdAt: now,
+	});
+	const reviewPath = new URL(queued.data.reviewUrl).pathname.replace(
+		"/human-review/",
+		"/api/history/human-reviews/",
+	);
+	return apiHono.request(
+		`${reviewPath}/decision`,
+		{
+			method: "POST",
+			headers: {
+				cookie: `signmos_history_session=${rawSession}`,
+				"content-type": "application/json",
+				origin: "http://localhost",
+				"x-now": now.toISOString(),
+			},
+			body: JSON.stringify({ decision: "approve" }),
+		},
+		input.env,
+	);
+}
+
 describe("agent creator controls", () => {
 	beforeEach(resetAgentPartnerFixture);
 	afterEach(() => vi.restoreAllMocks());
+
+	it("queues creator cancel for human review without canceling the document", async () => {
+		await expectQueuedCreatorCancel();
+	});
+
+	it("queues creator expiration for human review without expiring the document", async () => {
+		await expectQueuedCreatorExpiration();
+	});
+
+	it("queues eligible creator deletion for human review without deleting artifacts", async () => {
+		await expectQueuedCreatorDeletion();
+	});
 
 	it("agent command idempotency enforces creator-only cancel/expire and exact retention boundary", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -71,16 +126,22 @@ describe("agent creator controls", () => {
 			const denied = await action(token, `control-denied-${token}`, "cancel");
 			expect(denied.status).toBe(404);
 		}
-		const canceled = await action(creatorToken, "control-cancel-command", "cancel");
+		const canceled = await approveQueuedReview(
+			await action(creatorToken, "control-cancel-command", "cancel"),
+			{ email: "creator@example.com", key: "control-cancel-approval" },
+		);
 		expect(canceled.status).toBe(200);
 		const canceledBody = await canceled.json();
 		expect(canceledBody).toEqual({
-			data: {
-				envelopeId: documentId,
-				action: "cancel",
-				status: "expired",
-				allowedActions: ["delete"],
-			},
+			data: expect.objectContaining({
+				status: "completed",
+				result: {
+					envelopeId: documentId,
+					action: "cancel",
+					status: "expired",
+					allowedActions: ["delete"],
+				},
+			}),
 		});
 		expect((await action(creatorToken, "control-cancel-command", "cancel")).status).toBe(200);
 		expect(
@@ -151,17 +212,19 @@ describe("agent creator controls", () => {
 			partnerDeliveryEnv,
 		);
 		expect(changeRequested.status).toBe(200);
-		const expired = await apiHono.request(`/api/v1/documents/${second.documentId}/actions`, {
-			method: "POST",
-			headers: agentHeaders(creatorToken, "control-expire-command"),
-			body: JSON.stringify({ action: "expire" }),
-		});
+		const expired = await approveQueuedReview(
+			await apiHono.request(`/api/v1/documents/${second.documentId}/actions`, {
+				method: "POST",
+				headers: agentHeaders(creatorToken, "control-expire-command"),
+				body: JSON.stringify({ action: "expire" }),
+			}),
+			{ email: "creator@example.com", key: "control-expire-approval" },
+		);
 		expect(expired.status).toBe(200);
 		await expect(expired.json()).resolves.toEqual({
 			data: expect.objectContaining({
-				action: "expire",
-				status: "expired",
-				allowedActions: ["delete"],
+				status: "completed",
+				result: expect.objectContaining({ action: "expire", status: "expired" }),
 			}),
 		});
 
@@ -192,17 +255,24 @@ describe("agent creator controls", () => {
 			fetchMock,
 		});
 		const processToken = String(rows(signerTokens)[0]?.token);
-		const completed = await apiHono.request(
-			`/api/v1/documents/${documentId}/complete`,
+		const completed = await approveQueuedReview(
+			await apiHono.request(
+				`/api/v1/documents/${documentId}/complete`,
+				{
+					method: "POST",
+					headers: agentHeaders(partnerToken, "control-delete-complete"),
+					body: JSON.stringify({
+						signature: { kind: "typed", typedText: "Ada Partner", typedFont: "cursive" },
+						rememberSignature: false,
+					}),
+				},
+				{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
+			),
 			{
-				method: "POST",
-				headers: agentHeaders(partnerToken, "control-delete-complete"),
-				body: JSON.stringify({
-					signature: { kind: "typed", typedText: "Ada Partner", typedFont: "cursive" },
-					rememberSignature: false,
-				}),
+				email: "partner@example.com",
+				key: "control-delete-complete-approval",
+				env: { ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket } as Env,
 			},
-			{ ...partnerDeliveryEnv, DOCUMENTS_BUCKET: bucket },
 		);
 		expect(completed.status).toBe(200);
 		const completedBoundary = new Date(state.now.getTime() + 90 * 24 * 60 * 60 * 1000);
@@ -246,16 +316,31 @@ describe("agent creator controls", () => {
 				`/api/v1/documents/${documentId}/actions`,
 				{
 					method: "POST",
-					headers: agentHeaders(creatorToken, "control-delete-command"),
+					headers: {
+						...agentHeaders(creatorToken, "control-delete-command"),
+						"x-now": completedBoundary.toISOString(),
+					},
 					body: JSON.stringify({ action: "delete" }),
 				},
 				{ DOCUMENTS_BUCKET: bucket },
 			);
-		const deleted = await remove();
+		const queuedDelete = await remove();
+		const queuedDeleteBody = (await queuedDelete.clone().json()) as {
+			data: { reviewUrl: string };
+		};
+		const deleted = await approveQueuedReview(queuedDelete, {
+			email: "creator@example.com",
+			key: "control-delete-approval",
+			env: { DOCUMENTS_BUCKET: bucket } as Env,
+			now: completedBoundary,
+		});
 		expect(deleted.status).toBe(200);
 		const deletedBody = await deleted.json();
 		expect(deletedBody).toEqual({
-			data: { envelopeId: documentId, action: "delete", status: "deleted", allowedActions: [] },
+			data: expect.objectContaining({
+				status: "completed",
+				result: { envelopeId: documentId, action: "delete", status: "deleted", allowedActions: [] },
+			}),
 		});
 		expect((await remove()).status).toBe(200);
 		expect(state.r2DeleteCounts.get(sourceKey)).toBe(1);
@@ -273,6 +358,27 @@ describe("agent creator controls", () => {
 				(record) => record.idempotencyKey === "control-delete-command",
 			),
 		).toHaveLength(1);
+		const reviewPath = new URL(queuedDeleteBody.data.reviewUrl).pathname.replace(
+			"/human-review/",
+			"/api/history/human-reviews/",
+		);
+		const revisitedReview = await apiHono.request(reviewPath, {
+			headers: {
+				cookie: "signmos_history_session=control-delete-approval-session",
+				"x-now": completedBoundary.toISOString(),
+			},
+		});
+		expect(revisitedReview.status).toBe(200);
+		await expect(revisitedReview.json()).resolves.toEqual({
+			data: expect.objectContaining({
+				status: "completed",
+				document: expect.objectContaining({
+					documentId,
+					title: "document.pdf",
+					sourcePdfUrl: null,
+				}),
+			}),
+		});
 
 		for (const token of [creatorToken, partnerToken]) {
 			const catalog = await apiHono.request("/api/v1/documents", {

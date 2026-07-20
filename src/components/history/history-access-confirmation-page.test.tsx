@@ -13,7 +13,12 @@ describe("HistoryAccessConfirmationPage", () => {
 		const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === "POST") {
 				return new Response(
-					JSON.stringify({ data: { status: "authenticated", redirectUrl: "/my-documents" } }),
+					JSON.stringify({
+						data: {
+							status: "authenticated",
+							redirectUrl: "/human-review/c9000000-0000-4000-8000-000000000001",
+						},
+					}),
 					{ status: 201 },
 				);
 			}
@@ -33,6 +38,7 @@ describe("HistoryAccessConfirmationPage", () => {
 				<HistoryAccessConfirmationPage
 					credential="raw-link-credential"
 					onAuthenticated={onAuthenticated}
+					returnTo="/human-review/c9000000-0000-4000-8000-000000000001"
 				/>
 			</QueryClientProvider>,
 		);
@@ -51,9 +57,16 @@ describe("HistoryAccessConfirmationPage", () => {
 		await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 		expect(fetchMock).toHaveBeenLastCalledWith(
 			"/api/history/access-links/raw-link-credential/redeem",
-			expect.objectContaining({ method: "POST" }),
+			expect.objectContaining({
+				method: "POST",
+				body: JSON.stringify({
+					returnTo: "/human-review/c9000000-0000-4000-8000-000000000001",
+				}),
+			}),
 		);
-		expect(onAuthenticated).toHaveBeenCalledWith("/my-documents");
+		expect(onAuthenticated).toHaveBeenCalledWith(
+			"/human-review/c9000000-0000-4000-8000-000000000001",
+		);
 	});
 
 	it.each([

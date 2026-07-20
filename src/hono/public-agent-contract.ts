@@ -1,11 +1,15 @@
 import { z } from "zod";
 import {
+	agentHumanReviewOperations,
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
+import {
 	AgentDocumentErrorSchema,
 	AgentDocumentGroupSchema,
 	AgentDocumentRoleSchema,
 	AgentFieldsResponseSchema,
 	AgentSelfSignCompleteRequestSchema,
-	AgentSelfSignCompleteResponseSchema,
 	AgentSelfSignCreateRequestSchema,
 	AgentSelfSignCreateResponseSchema,
 	AgentSelfSignDefaultFieldsRequestSchema,
@@ -52,6 +56,12 @@ function buildAgentOpenApiDocument() {
 		required: true,
 		schema: { type: "string", format: "uuid" },
 	};
+	const commandIdParameter = {
+		name: "commandId",
+		in: "path",
+		required: true,
+		schema: { type: "string", format: "uuid" },
+	};
 	return {
 		openapi: "3.1.0",
 		info: {
@@ -60,6 +70,18 @@ function buildAgentOpenApiDocument() {
 			description: "Bearer-authenticated personal document automation for Signmos.",
 		},
 		paths: {
+			[agentHumanReviewOperations.commandStatus.publicPath]: {
+				get: {
+					...jsonOperation({
+						operationId: agentHumanReviewOperations.commandStatus.operationId,
+						summary: "Poll a human-review command created by this exact personal token",
+						responseDescription: "Pending or terminal human-review command status",
+						responseSchema: HumanReviewCommandStatusResponseSchema,
+						documentErrors: false,
+					}),
+					parameters: [commandIdParameter],
+				},
+			},
 			[agentV1IdentityOperation.publicPath]: {
 				get: jsonOperation({
 					operationId: agentV1IdentityOperation.operationId,
@@ -237,12 +259,10 @@ function buildAgentOpenApiDocument() {
 				}),
 			},
 			[agentSelfSignOperations.complete.publicPath]: {
-				post: commandOperation({
+				post: humanReviewCommandOperation({
 					operationId: agentSelfSignOperations.complete.operationId,
-					summary: "Complete typed or drawn Bearer-authorized signing using the server date",
+					summary: "Request human-reviewed typed or drawn signing using the server date",
 					requestSchema: AgentSelfSignCompleteRequestSchema,
-					responseSchema: AgentSelfSignCompleteResponseSchema,
-					responseStatus: "200",
 					parameters: [documentIdParameter],
 				}),
 			},
@@ -284,6 +304,43 @@ function commandOperation(input: {
 			[input.responseStatus]: {
 				description: "Command completed or exact result replayed",
 				content: { "application/json": { schema: z.toJSONSchema(input.responseSchema) } },
+			},
+			...agentErrorResponses(),
+		},
+	};
+}
+
+function humanReviewCommandOperation(input: {
+	operationId: string;
+	summary: string;
+	requestSchema: z.ZodType;
+	parameters: Array<Record<string, unknown>>;
+}) {
+	return {
+		operationId: input.operationId,
+		summary: input.summary,
+		security: [{ bearerAuth: [] }],
+		parameters: [...input.parameters, idempotencyKeyParameter()],
+		requestBody: {
+			required: true,
+			content: { "application/json": { schema: z.toJSONSchema(input.requestSchema) } },
+		},
+		responses: {
+			"202": {
+				description: "Protected action persisted pending matching-human review",
+				content: {
+					"application/json": {
+						schema: z.toJSONSchema(PendingHumanReviewCommandResponseSchema),
+					},
+				},
+			},
+			"200": {
+				description: "Exact replay of a terminal human-review command",
+				content: {
+					"application/json": {
+						schema: z.toJSONSchema(HumanReviewCommandStatusResponseSchema),
+					},
+				},
 			},
 			...agentErrorResponses(),
 		},

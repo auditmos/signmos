@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
+import {
 	AgentPartnerChangeRequestSchema,
 	AgentPartnerChangeResponseSchema,
 	AgentPartnerDeclineRequestSchema,
-	AgentPartnerDeclineResponseSchema,
 	agentPartnerOperations,
 } from "@/db/agentic-access/partner-signing-schema";
 import {
@@ -34,7 +37,8 @@ export function buildAgentPartnerPaths() {
 				operationId: agentPartnerOperations.decline.operationId,
 				summary: "Decline partner signing with a required reason",
 				requestSchema: AgentPartnerDeclineRequestSchema,
-				responseSchema: AgentPartnerDeclineResponseSchema,
+				responseSchema: HumanReviewCommandStatusResponseSchema,
+				humanReview: true,
 			}),
 		},
 	};
@@ -51,7 +55,7 @@ GET the signing task, source PDF, and fields through the documented Agent API ro
 
 ## Complete partner signing
 
-POST a typed or drawn signature to the completion command. The server fixes the date, and reusable signature content is stored only when rememberSignature is true.
+POST a typed or drawn signature to the completion command. The server fixes the date, and reusable signature content is stored only when rememberSignature is true. The request remains pending without signing until the matching signer approves it in Signmos.
 
 ## Request creator changes
 
@@ -59,11 +63,11 @@ POST a non-empty comment to the change-request command. This notifies the creato
 
 ## Decline partner signing
 
-POST a required reason and optional comment to decline. Decline is terminal and all later signing commands are rejected.
+POST a required reason and optional comment to decline. The request remains pending until the matching signer approves it; only then is decline terminal and are later signing commands rejected.
 
 ## Poll after a partner decision
 
-Poll the document status after completion or a decision. When completion makes the document completed, both creator and signer identities can download the final PDF.
+Poll the returned human-review command status first. After it reports completed, poll document status. When signing makes the document completed, both creator and signer identities can download the final PDF.
 
 ## Signing-state recovery
 
@@ -75,6 +79,7 @@ function commandOperation(input: {
 	summary: string;
 	requestSchema: z.ZodType;
 	responseSchema: z.ZodType;
+	humanReview?: boolean;
 }) {
 	return {
 		operationId: input.operationId,
@@ -85,13 +90,33 @@ function commandOperation(input: {
 			required: true,
 			content: { "application/json": { schema: z.toJSONSchema(input.requestSchema) } },
 		},
-		responses: {
-			"200": {
-				description: "Command completed or exact result replayed",
-				content: { "application/json": { schema: z.toJSONSchema(input.responseSchema) } },
+		responses: input.humanReview
+			? humanReviewResponses()
+			: {
+					"200": {
+						description: "Command completed or exact result replayed",
+						content: { "application/json": { schema: z.toJSONSchema(input.responseSchema) } },
+					},
+					...errorResponses(),
+				},
+	};
+}
+
+function humanReviewResponses() {
+	return {
+		"202": {
+			description: "Protected action persisted pending matching-human review",
+			content: {
+				"application/json": { schema: z.toJSONSchema(PendingHumanReviewCommandResponseSchema) },
 			},
-			...errorResponses(),
 		},
+		"200": {
+			description: "Exact replay of a terminal human-review command",
+			content: {
+				"application/json": { schema: z.toJSONSchema(HumanReviewCommandStatusResponseSchema) },
+			},
+		},
+		...errorResponses(),
 	};
 }
 

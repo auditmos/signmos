@@ -9,7 +9,7 @@ Read this guide and [/openapi.json](/openapi.json) before acting. Signmos Agenti
 
 ## Secret handling
 
-Provide the token through the SIGNMOS_TOKEN environment variable. Never paste it into prompts, URLs, issue bodies, source control, or logs. Send it only in the Authorization: Bearer $SIGNMOS_TOKEN header. Anyone holding the token can send, sign, decline, cancel, and delete as the verified email.
+Provide the token through the SIGNMOS_TOKEN environment variable. Never paste it into prompts, URLs, issue bodies, source control, or logs. Send it only in the Authorization: Bearer $SIGNMOS_TOKEN header. Anyone holding the token can send and can request sign, decline, cancel, expire, or delete actions as the verified email; those protected actions require a matching human's approval before execution.
 
 ## Confirm identity
 
@@ -26,6 +26,14 @@ Each response reports creator, signer, or creator_and_signer plus server-derived
 ## Poll document status
 
 Use GET /api/v1/documents/{documentId}/status and follow machine fields such as retryable, allowedActions, and recoveryUrl. Do not infer state from prose or poll undocumented routes.
+
+## Wait for human review
+
+Sign/complete, decline, cancel, expire, and delete return HTTP 202 with pending_human_review, commandId, reviewUrl, statusUrl, expiresAt, and notificationStatus. They have no protected document side effect while pending. Tell the user that approval is required; do not claim success or attempt to bypass, automate, or impersonate the reviewer. Poll only the returned statusUrl with the exact personal token that created the command. An exact Idempotency-Key replay returns the same command and sends no duplicate notice.
+
+The server derives the reviewer from the authorized signer or creator role. The reviewer opens the current PDF and exact proposed payload in Signmos, then chooses Approve and execute, Reject request, or Not now. Review expires exactly 24 hours after creation and is invalidated if the source PDF, payload binding, personal token, or reviewer role changes. Handle HUMAN_REVIEW_REJECTED, HUMAN_REVIEW_EXPIRED, HUMAN_REVIEW_INVALIDATED, HUMAN_REVIEW_FORBIDDEN, HUMAN_REVIEW_ALREADY_DECIDED, and HUMAN_REVIEW_EXECUTION_FAILED as terminal or recovery states. notificationStatus failed leaves the command pending and available in My Documents; it never grants authority.
+
+Use Signmos only for authorized, lawful document workflows. Do not use agent actions for fraud, impersonation, deception, rights violations, prohibited high-stakes automated decisions, or to evade product safeguards.
 
 ## Inspect detail and history
 
@@ -61,7 +69,7 @@ GET the signing task and PATCH only assigned fields where the self-sign workflow
 
 ## Complete self-signing
 
-POST a typed or drawn signature to the completion command. The server controls the signing date. Poll status until the completed detail, history, and final PDF are available.
+POST a typed or drawn signature to the completion command. The server controls the signing date. Wait for matching-human approval and poll the returned command status; only a completed terminal result permits you to continue to detail, history, or final PDF.
 
 ## Create a two-party draft
 
@@ -77,7 +85,7 @@ Place explicit fields with recipientId or default fields with recipientIds for t
 
 ## Complete creator signing
 
-Use the same completion command with a typed or drawn creator signature before delivery. The server fixes the signing date and the response remains draft until send succeeds.
+Use the same completion command with a typed or drawn creator signature before delivery. The server fixes the signing date. Wait for the creator's human approval and a completed command result before sending.
 
 ## Send the partner invitation
 

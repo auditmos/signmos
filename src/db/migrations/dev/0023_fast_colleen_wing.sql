@@ -1,0 +1,1 @@
+ALTER TABLE "agentic_command_records" ADD COLUMN "document_title" text;

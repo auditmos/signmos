@@ -1,5 +1,7 @@
 # PRD: Agentic Mode And Bearer API
 
+> **Amended 2026-07-20 by issue #62:** `plans/human-review-prd.md` supersedes every statement below that permits immediate Agentic sign/complete, decline, cancel, expire, or delete. Those protected actions now require exact matching-human review; other operations retain their existing behavior.
+
 ## Problem Statement
 
 Signmos exposes most of its signing lifecycle through JSON endpoints, but the current contract is not safe or coherent for a user-controlled agent or future CLI. Creator operations mix a caller-supplied internal header, envelope-scoped sender tokens, signer tokens in URL paths, and My Documents cookies. Public onboarding also depends on browser Turnstile state. The existing agent smoke therefore proves that the domain can be driven through HTTP, but it does not provide a production-grade personal API identity.
@@ -143,7 +145,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
   - signer task resolution, assigned source/fields, completion, change request, and decline;
   - completed detail and final-PDF download.
 - Existing domain limits and transitions remain authoritative, including one source PDF under 10 MB, recipient limits, seven-day signing-link behavior where process links remain in use, field clearing after revision, fixed signing dates, and 90-day terminal-document retention.
-- High-impact operations execute immediately when requested. The server does not add a preview/confirmation protocol beyond explicit request bodies, authorization, lifecycle guards, and idempotency.
+- Sign/complete, decline, cancel, expire, and delete persist a 24-hour exact intent and require server-derived matching-human approval. Other authorized operations retain their existing lifecycle and idempotency behavior.
 - Agents poll server state and follow returned allowed actions. Webhooks are not part of v1.
 
 ### Audit, Abuse, And Observability
@@ -158,7 +160,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 
 - `/agent.md` and `/openapi.json` are accessible without authentication and contain no live credentials.
 - The platform-neutral prompt instructs an agent to read both resources, use `$SIGNMOS_TOKEN`, remain within the user’s goal and verified identity, follow allowed actions, use a fresh Idempotency-Key per intended mutation, and poll responsibly.
-- The guidance permits high-impact actions when they reasonably follow from the user’s stated goal; it does not mandate a separate confirmation immediately before each action.
+- The guidance permits protected actions only when they follow the user goal and requires the agent to disclose pending review, wait, and poll the exact command until the matching human decides.
 - The public guidance must explain that anyone holding the token can send, sign, decline, cancel, and delete as the verified email and must never place the secret in prompts, URLs, issue bodies, source control, or logs.
 
 ### Compatibility And Rollout
@@ -173,7 +175,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 - The first users are external individual pilot users, not internal-only operators or organizations.
 - Normalized email remains the authoritative personal identity for creator and signer authorization.
 - Users will tolerate one human Turnstile and email-verification step before receiving long-lived automation access.
-- Users understand and explicitly accept that possession of a full-access token permits immediate signing and destructive document actions as their verified email.
+- Users understand that a full-access token can request signing and destructive actions as their verified email, while execution still requires the matching human's exact review.
 - Personal/pilot automation means occasional document creation and moderate polling, not bulk envelope processing; batching and high-throughput guarantees are unnecessary in v1.
 - Documents may contain ordinary PII, but the feature remains a general-business pilot with no HIPAA, qualified-signature, certified trust-service, or other regulated-compliance claim.
 - Resend or the configured transactional-email boundary remains available for dedicated Agentic verification delivery.
@@ -183,7 +185,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 - Agent platforms can provide a secret through an environment variable or equivalent secure runtime mechanism.
 - Users prefer multiple named credentials over a single rotating credential and accept a five-active-token cap.
 - Users accept that active tokens do not expire automatically and that no security email is sent when a token is created or revoked.
-- Users accept goal-directed agent execution without a mandatory per-operation confirmation step.
+- Users accept goal-directed execution for ordinary operations and a mandatory exact human-review step for protected actions.
 - Public Markdown and OpenAPI are sufficient discovery mechanisms for v1; a standalone CLI, MCP server, SDK, and tailored platform prompts can be added later.
 - Polling with documented backoff and rate limits is sufficient for asynchronous status changes; webhooks are not required in v1.
 - Revoked non-secret token metadata may be retained for pilot security audit and is not user-deletable in v1.
@@ -203,7 +205,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 - **Envelope-scoped tokens** — rejected because they cannot support retained-document discovery, new document creation, or recurring personal automation.
 - **Coarse or fine-grained scopes** — rejected for v1 because the chosen model is full role-equivalent access for every token.
 - **Security emails for token creation/revocation** — rejected by product decision in favor of console metadata and audit records only.
-- **Two-step server confirmation for signing or destructive actions** — rejected because the desired automation model allows immediate goal-directed execution protected by authorization, lifecycle guards, and idempotency.
+- **Two-step server confirmation for signing or destructive actions** — adopted for sign/complete, decline, cancel, expire, and delete by the issue #62 human-review amendment; reviewer identity remains server-derived.
 - **Embedding the secret in the copy-ready prompt** — rejected because agent transcripts and prompt logs are poor secret stores.
 - **Platform-specific prompts** — rejected because one curl-oriented Markdown contract should work across capable agents.
 - **Markdown-only documentation** — rejected because exact schemas need a machine-readable drift-resistant contract.
@@ -261,7 +263,7 @@ Every numbered validation item maps directly to the user story with the same num
 40. **Public agent guidance:** HTTP test fetches `/agent.md` without auth and asserts workflows for create/list/prepare/send/sign/change/decline/control/download, role limits, idempotency, errors, polling, goal-directed execution, and secret handling.
 41. **OpenAPI source parity:** HTTP test fetches `/openapi.json` without auth; schema validation and route enumeration prove every `/api/v1` operation/security requirement exists. A drift test fails when a runtime route/schema changes without the published contract.
 42. **Prompt console:** UI test verifies the prompt is platform-neutral, links both public artifacts, references `$SIGNMOS_TOKEN`, contains no generated secret, and provides separate accessible copy controls for the prompt and secret/environment setup.
-43. **Full parity release smoke:** Maintain a checked capability matrix with one verified `/api/v1` operation and evidence item for every current UI document action. A runnable `pnpm agentic:smoke` command uses only a base URL, Bearer token, public docs, curl-compatible HTTP, and permitted email-link test fixtures to complete creator and signer lifecycles; it must exit zero.
+43. **Full parity release smoke:** Maintain a checked capability matrix with one verified `/api/v1` operation and evidence item for every current UI document action. A runnable `pnpm agentic:smoke` command uses a base URL, Bearer token, public docs, curl-compatible Agent HTTP, and a matching-human authenticated browser boundary for protected actions; it must prove pending-without-side-effect, explicit approval, originating-token polling, and final lifecycle results before exiting zero.
 44. **Browser compatibility:** Run existing sender, signer, completed-document, My Documents, finalization, retention, email, UI, and release contract suites unchanged, plus browser smoke evidence for all four landing choices and legacy flows.
 
 ### Major Component Done Criteria
@@ -293,10 +295,10 @@ Release evidence must enumerate every user story and numeric/security bound as v
 - Standalone CLI implementation, credential files, shell keychain integration, or installer packaging.
 - MCP server, language-specific SDKs, generated client libraries, or platform-specific Codex/Claude prompts.
 - Organizations, teams, workspaces, service accounts, delegated administrators, or tenant-wide credentials.
-- Per-token scopes, read-only credentials, envelope-scoped credentials, or configurable approval policies.
+- Per-token scopes, read-only credentials, envelope-scoped credentials, or configurable approval policies beyond the fixed issue #62 review set.
 - Automatic token expiry, refresh tokens, token rotation protocols, or token-management security emails.
 - Bearer-authorized token generation, listing, rename, or revocation.
-- Human approval or two-step confirmation protocols for send, sign, decline, cancel, or delete.
+- Human approval protocols for operations beyond sign/complete, decline, cancel, expire, and delete.
 - Webhooks, event streams, callbacks, or push delivery for agent lifecycle changes.
 - Bulk envelope creation, batch APIs, throughput SLAs, or high-volume automation guarantees.
 - Multi-document envelopes, templates, reusable recipient groups, reminders, billing, or analytics.
@@ -308,6 +310,6 @@ Release evidence must enumerate every user story and numeric/security bound as v
 ## Further Notes
 
 - This PRD supersedes the earlier assumption that “agent-ready” means an internal-header lifecycle smoke. The existing test remains useful as domain evidence but cannot satisfy the personal Bearer-authenticated release gate.
-- The security posture intentionally accepts a large credential blast radius: each long-lived token has full role-equivalent authority, may execute legally meaningful or destructive actions immediately, and sends no lifecycle security emails. The generation acknowledgment, one-time display, hash-only storage, five-token cap, role checks, audit attribution, redaction, and immediate revocation are therefore mandatory release criteria.
+- Each long-lived token retains broad role-equivalent request authority. Legally meaningful sign/decline and destructive cancel/expire/delete actions require matching-human review and a safe review notification; generation acknowledgment, one-time display, hash-only storage, five-token cap, role checks, audit attribution, redaction, and immediate token revocation remain mandatory.
 - The public agent contract should be designed as the durable boundary for a future CLI. The CLI should consume `/api/v1` and must not require privileged internal headers or browser-session translation.
 - Exact rate limits are deliberately absent until representative calibration is performed. Any implementation plan that inserts guessed capacity numbers violates this PRD’s validation strategy.

@@ -1,17 +1,21 @@
 import {
-	claimAgentCommand,
-	completeAgentCommand,
+	claimHumanReviewCommand,
 	fingerprintAgentCommand,
 	getAuthorizedAgentCreatorEnvelope,
+	inspectHumanReviewCommand,
 	recordAgentDocumentRead,
 } from "@/db/agentic-access";
 import {
 	AgentCreatorControlRequestSchema,
-	AgentCreatorControlResponseSchema,
 	AgentCreatorRetentionResponseSchema,
 	agentCreatorControlOperations,
 } from "@/db/agentic-access/creator-controls-schema";
-import { controlEnvelope, EnvelopeControlError, getEnvelopeRetentionStatus } from "@/db/envelope";
+import {
+	type EmailDeliveryEnv,
+	getEnvelopeAllowedActions,
+	getEnvelopeRetentionStatus,
+	getLatestSourcePdfDocument,
+} from "@/db/envelope";
 import { createAgentHono } from "@/hono/factory";
 import {
 	agentError,
@@ -22,6 +26,7 @@ import {
 	requestNow,
 	requiredIdempotencyKey,
 } from "./agent-v1-command-helpers";
+import { deliverHumanReviewNotification } from "./agent-v1-human-review-notification";
 
 const agentCreatorControlsEndpoint = createAgentHono();
 
@@ -30,51 +35,63 @@ agentCreatorControlsEndpoint.post(agentCreatorControlOperations.action.relativeP
 	const parsed = AgentCreatorControlRequestSchema.safeParse(await c.req.json().catch(() => null));
 	if (!documentId || !parsed.success) return c.json(invalidCreatorControlError(), 400);
 	const principal = c.get("agenticPrincipal");
-	const claim = await claimAgentCommand({
+	const idempotencyKey = requiredIdempotencyKey(c);
+	const requestFingerprint = await fingerprintAgentCommand({ documentId, ...parsed.data });
+	const priorReview = await inspectHumanReviewCommand({
 		principal,
-		idempotencyKey: requiredIdempotencyKey(c),
+		idempotencyKey,
 		operation: agentCreatorControlOperations.action.operationId,
-		requestFingerprint: await fingerprintAgentCommand({ documentId, ...parsed.data }),
+		requestFingerprint,
 	});
-	if (claim.state !== "execute") return commandClaimResponse(claim);
-	if (!(await getAuthorizedAgentCreatorEnvelope(principal, documentId))) {
-		return completeControlResponse(claim.recordId, documentId, 404, documentNotFoundError());
+	if (priorReview) return commandClaimResponse(priorReview);
+	const envelope = await getAuthorizedAgentCreatorEnvelope(principal, documentId);
+	if (!envelope) return c.json(documentNotFoundError(), 404);
+	if (
+		parsed.data.action !== "delete" &&
+		envelope.status !== "sent" &&
+		envelope.status !== "changes_requested"
+	) {
+		return c.json(controlBlockedError(documentId, envelope.status), 409);
 	}
-	try {
-		const result = await controlEnvelope(documentId, principal.email, parsed.data.action, {
-			documentsBucket: (c.env as (Env & { DOCUMENTS_BUCKET?: R2Bucket }) | undefined)
-				?.DOCUMENTS_BUCKET,
-		});
-		const body = AgentCreatorControlResponseSchema.parse({ data: result });
-		await recordAgentDocumentRead({
-			principal,
-			documentId,
-			eventType: controlAuditEvent(parsed.data.action),
-			requestIp: requestIp(c),
-		});
-		await completeAgentCommand({
-			recordId: claim.recordId,
-			status: 200,
-			body,
-			documentId,
-			now: requestNow(c),
-		});
-		return c.json(body);
-	} catch (error) {
-		if (!(error instanceof EnvelopeControlError)) throw error;
-		return completeControlResponse(
-			claim.recordId,
-			documentId,
-			409,
-			agentError({
-				code: "ENVELOPE_ACTION_BLOCKED",
-				message: error.message,
-				retryable: false,
-				allowedActions: error.allowedActions,
-				recoveryUrl: `/api/v1/documents/${documentId}/status`,
-			}),
-		);
+	if (parsed.data.action === "delete") {
+		const retention = await getEnvelopeRetentionStatus(documentId, requestNow(c));
+		if (!retention.retentionEligible) return c.json(deleteRetentionBlockedError(documentId), 409);
 	}
+	const source = await getLatestSourcePdfDocument(documentId);
+	if (!source) return c.json(documentNotFoundError(), 404);
+	const reviewClaim = await claimHumanReviewCommand({
+		principal,
+		idempotencyKey,
+		operation: agentCreatorControlOperations.action.operationId,
+		requestFingerprint,
+		documentId,
+		reviewer: { email: principal.email, role: "creator", fields: [] },
+		source: {
+			id: source.id,
+			version: source.version,
+			sha256: source.sha256,
+			originalFilename: source.originalFilename,
+		},
+		actionPayload: parsed.data,
+		actionPayloadDigest: await fingerprintAgentCommand(parsed.data),
+		baseUrl: emailDelivery(c).baseUrl,
+		now: requestNow(c),
+	});
+	if (reviewClaim.state !== "created") return commandClaimResponse(reviewClaim);
+	const response = await deliverHumanReviewNotification({
+		principal,
+		documentId,
+		intentAuditEvent: creatorControlIntentAuditEvent(parsed.data.action),
+		commandId: reviewClaim.commandId,
+		response: reviewClaim.response,
+		reviewerEmail: principal.email,
+		documentName: source.originalFilename,
+		actionLabel: controlReviewLabel(parsed.data.action),
+		agentName: principal.token.name,
+		consequence: controlReviewConsequence(parsed.data.action),
+		emailDelivery: emailDelivery(c),
+	});
+	return c.json(response, 202);
 });
 
 agentCreatorControlsEndpoint.get(
@@ -97,20 +114,54 @@ agentCreatorControlsEndpoint.get(
 	},
 );
 
-async function completeControlResponse(
-	recordId: string,
+function controlBlockedError(
 	documentId: string,
-	status: number,
-	body: unknown,
-): Promise<Response> {
-	await completeAgentCommand({ recordId, status, body, documentId });
-	return Response.json(body, { status });
+	status: Parameters<typeof getEnvelopeAllowedActions>[0],
+) {
+	return agentError({
+		code: "ENVELOPE_ACTION_BLOCKED",
+		message: "Envelope action is not allowed in the current state",
+		retryable: false,
+		allowedActions: getEnvelopeAllowedActions(status),
+		recoveryUrl: `/api/v1/documents/${documentId}/status`,
+	});
 }
 
-function controlAuditEvent(action: "cancel" | "expire" | "delete") {
-	if (action === "cancel") return "agentic.document.canceled" as const;
-	if (action === "expire") return "agentic.document.expired" as const;
-	return "agentic.document.deleted" as const;
+function deleteRetentionBlockedError(documentId: string) {
+	return agentError({
+		code: "ENVELOPE_ACTION_BLOCKED",
+		message: "The document is not yet eligible for deletion",
+		retryable: false,
+		allowedActions: ["get_retention"],
+		recoveryUrl: `/api/v1/documents/${documentId}/retention`,
+	});
+}
+
+function controlReviewLabel(action: "cancel" | "expire" | "delete") {
+	if (action === "cancel") return "Cancel document";
+	if (action === "expire") return "Expire document";
+	return "Delete document";
+}
+
+function creatorControlIntentAuditEvent(action: "cancel" | "expire" | "delete") {
+	if (action === "cancel") return "agentic.human_review.cancel_requested" as const;
+	if (action === "expire") return "agentic.human_review.expire_requested" as const;
+	return "agentic.human_review.delete_requested" as const;
+}
+
+function controlReviewConsequence(action: "cancel" | "expire" | "delete") {
+	if (action === "cancel")
+		return "This will stop outstanding signing and mark the document expired.";
+	if (action === "expire") return "This will expire the document and stop outstanding signing.";
+	return "This will permanently delete the document and its stored PDF files.";
+}
+
+function emailDelivery(c: { env?: Env; req: { url: string } }) {
+	return {
+		env: c.env as EmailDeliveryEnv | undefined,
+		baseUrl:
+			(c.env as EmailDeliveryEnv | undefined)?.APP_BASE_URL?.trim() || new URL(c.req.url).origin,
+	};
 }
 
 function invalidCreatorControlError() {

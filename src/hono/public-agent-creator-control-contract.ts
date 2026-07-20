@@ -6,6 +6,10 @@ import {
 	agentCreatorControlOperations,
 } from "@/db/agentic-access/creator-controls-schema";
 import {
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
+import {
 	AgentDocumentErrorSchema,
 	AgentV1AuthenticationErrorSchema,
 } from "@/db/agentic-access/schema";
@@ -23,7 +27,7 @@ export function buildAgentCreatorControlPaths() {
 		[agentCreatorControlOperations.action.publicPath]: {
 			post: {
 				operationId: agentCreatorControlOperations.action.operationId,
-				summary: "Cancel, expire, or delete a creator-owned document",
+				summary: "Request human-reviewed cancel, expire, or delete",
 				security: [{ bearerAuth: [] }],
 				parameters: [documentIdParameter, idempotencyKeyParameter()],
 				requestBody: {
@@ -34,7 +38,7 @@ export function buildAgentCreatorControlPaths() {
 						},
 					},
 				},
-				responses: successAndErrors(AgentCreatorControlResponseSchema),
+				responses: successAndErrors(AgentCreatorControlResponseSchema, true),
 			},
 		},
 		[agentCreatorControlOperations.retention.publicPath]: {
@@ -64,27 +68,23 @@ A revision clears every prior field and value and resets recipients for fresh si
 
 ## Cancel or expire
 
-POST cancel or expire only when current allowedActions permit it. Both stop outstanding signing and return the terminal expired status; exact retries reuse the same Idempotency-Key.
+POST cancel or expire only when current allowedActions permit it. The command remains pending with no lifecycle side effect until the matching creator approves it. After approval, both stop outstanding signing and return the terminal expired status; exact retries reuse the same Idempotency-Key.
 
 ## Delete and revoke
 
-Delete removes stored source/final artifacts and immediately removes the document from Bearer and My Documents catalogs. Creator, signer, process-link, history-session, detail, PDF, and action paths must all treat it as deleted or not found.
+Delete first requires retention eligibility and matching-creator human approval. After approval, it removes stored source/final artifacts and immediately removes the document from Bearer and My Documents catalogs. Creator, signer, process-link, history-session, detail, PDF, and action paths must all treat it as deleted or not found.
 
 ## Inspect retention
 
 Creators can GET the retention projection. Completed and expired documents become eligible exactly 90 days after the recorded terminal timestamp; signer-only and unrelated identities cannot use this creator route.
 `;
 
-function successAndErrors(responseSchema: z.ZodType) {
+function successAndErrors(responseSchema: z.ZodType, humanReview = false) {
 	const error = (description: string) => ({
 		description,
 		content: { "application/json": { schema: z.toJSONSchema(AgentDocumentErrorSchema) } },
 	});
-	return {
-		"200": {
-			description: "Authorized creator result or exact replay",
-			content: { "application/json": { schema: z.toJSONSchema(responseSchema) } },
-		},
+	const errors = {
 		"400": error("Invalid creator command"),
 		"401": {
 			description: "Missing, revoked, or invalid Bearer token",
@@ -95,6 +95,34 @@ function successAndErrors(responseSchema: z.ZodType) {
 		"404": error("Document is not creator-owned or was deleted"),
 		"409": error("Lifecycle or idempotency precondition failed"),
 		"429": agentRateLimitErrorResponse(),
+	};
+	if (humanReview) {
+		return {
+			"202": {
+				description: "Protected action persisted pending matching-human review",
+				content: {
+					"application/json": {
+						schema: z.toJSONSchema(PendingHumanReviewCommandResponseSchema),
+					},
+				},
+			},
+			"200": {
+				description: "Exact replay of a terminal human-review command",
+				content: {
+					"application/json": {
+						schema: z.toJSONSchema(HumanReviewCommandStatusResponseSchema),
+					},
+				},
+			},
+			...errors,
+		};
+	}
+	return {
+		"200": {
+			description: "Authorized creator result or exact replay",
+			content: { "application/json": { schema: z.toJSONSchema(responseSchema) } },
+		},
+		...errors,
 	};
 }
 

@@ -2,6 +2,7 @@ import { agenticApiTokens, agenticSecurityEvents } from "@/db/agentic-access";
 import { hashAgenticCredential } from "@/db/agentic-access/request";
 import { envelopeFields, fieldValues, signatureProfiles } from "@/db/envelope";
 import { apiHono } from "@/hono/api";
+import { approveAgentReview } from "./agent-human-review-test-helper";
 import {
 	agentSelfSignBucket,
 	agentSelfSignTables,
@@ -179,22 +180,29 @@ describe("agent self-sign lifecycle explicit field preparation", () => {
 			headers: headers("drawn-defaults"),
 			body: JSON.stringify({ page: 1 }),
 		});
-		const completed = await apiHono.request(
-			`/api/v1/documents/${documentId}/complete`,
+		const completed = await approveAgentReview(
+			await apiHono.request(
+				`/api/v1/documents/${documentId}/complete`,
+				{
+					method: "POST",
+					headers: headers("drawn-complete"),
+					body: JSON.stringify({
+						signature: {
+							kind: "drawn",
+							label: "Ada drawn",
+							svgPath: "M 10 10 L 80 30 L 140 12",
+						},
+						rememberSignature: true,
+						date: "2099-01-01",
+					}),
+				},
+				{ DOCUMENTS_BUCKET: bucket },
+			),
 			{
-				method: "POST",
-				headers: headers("drawn-complete"),
-				body: JSON.stringify({
-					signature: {
-						kind: "drawn",
-						label: "Ada drawn",
-						svgPath: "M 10 10 L 80 30 L 140 12",
-					},
-					rememberSignature: true,
-					date: "2099-01-01",
-				}),
+				email: "ada@example.com",
+				key: "drawn-complete-approval",
+				env: { DOCUMENTS_BUCKET: bucket } as Env,
 			},
-			{ DOCUMENTS_BUCKET: bucket },
 		);
 		expect(completed.status).toBe(200);
 		expect(selfSignRows(fieldValues)).toEqual(

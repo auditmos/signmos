@@ -9,12 +9,14 @@ import { Label } from "@/components/ui/label";
 
 interface HistoryRequestFormProps {
 	onBack: () => void;
+	returnTo?: string;
 	turnstileSiteKey: string;
 	testTurnstileToken: string;
 }
 
 export function HistoryRequestForm({
 	onBack,
+	returnTo,
 	turnstileSiteKey,
 	testTurnstileToken,
 }: HistoryRequestFormProps) {
@@ -34,7 +36,7 @@ export function HistoryRequestForm({
 					"content-type": "application/json",
 					"idempotency-key": idempotencyKey,
 				},
-				body: JSON.stringify(input),
+				body: JSON.stringify({ ...input, ...(returnTo ? { returnTo } : {}) }),
 			});
 			if (!response.ok) throw new Error("Unable to request My documents access");
 			idempotencyKeyRef.current = crypto.randomUUID();

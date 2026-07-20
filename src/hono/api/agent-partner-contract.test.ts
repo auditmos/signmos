@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
+import {
 	AgentPartnerChangeRequestSchema,
 	AgentPartnerChangeResponseSchema,
 	AgentPartnerDeclineRequestSchema,
-	AgentPartnerDeclineResponseSchema,
 } from "@/db/agentic-access/partner-signing-schema";
 import { publicAgentContractHono } from "@/hono/public-agent-contract";
 
@@ -35,29 +38,29 @@ describe("agent API contract partner decisions", () => {
 			}
 		}
 
-		for (const [path, requestSchema, responseSchema] of [
-			[
-				"/api/v1/documents/{documentId}/change-request",
-				AgentPartnerChangeRequestSchema,
-				AgentPartnerChangeResponseSchema,
-			],
-			[
-				"/api/v1/documents/{documentId}/decline",
-				AgentPartnerDeclineRequestSchema,
-				AgentPartnerDeclineResponseSchema,
-			],
-		] as const) {
-			const operation = document.paths[path]?.post as {
-				requestBody?: { content?: Record<string, { schema?: unknown }> };
-				responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
-			};
-			expect(operation.requestBody?.content?.["application/json"]?.schema).toEqual(
-				z.toJSONSchema(requestSchema),
-			);
-			expect(operation.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
-				z.toJSONSchema(responseSchema),
-			);
-		}
+		const changeRequest = document.paths["/api/v1/documents/{documentId}/change-request"]?.post as {
+			requestBody?: { content?: Record<string, { schema?: unknown }> };
+			responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+		};
+		expect(changeRequest.requestBody?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(AgentPartnerChangeRequestSchema),
+		);
+		expect(changeRequest.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(AgentPartnerChangeResponseSchema),
+		);
+		const decline = document.paths["/api/v1/documents/{documentId}/decline"]?.post as {
+			requestBody?: { content?: Record<string, { schema?: unknown }> };
+			responses?: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+		};
+		expect(decline.requestBody?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(AgentPartnerDeclineRequestSchema),
+		);
+		expect(decline.responses?.["202"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(PendingHumanReviewCommandResponseSchema),
+		);
+		expect(decline.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(HumanReviewCommandStatusResponseSchema),
+		);
 		const serialized = JSON.stringify(document);
 		for (const code of [
 			"AGENT_SIGNING_WRONG_IDENTITY",

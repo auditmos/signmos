@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
 	AgentCreatorControlRequestSchema,
-	AgentCreatorControlResponseSchema,
 	AgentCreatorRetentionResponseSchema,
 } from "@/db/agentic-access/creator-controls-schema";
+import {
+	HumanReviewCommandStatusResponseSchema,
+	PendingHumanReviewCommandResponseSchema,
+} from "@/db/agentic-access/human-review-schema";
 import { publicAgentContractHono } from "@/hono/public-agent-contract";
 
 describe("agent API contract revision and creator controls", () => {
@@ -29,8 +32,11 @@ describe("agent API contract revision and creator controls", () => {
 		expect(action.requestBody?.content?.["application/json"]?.schema).toEqual(
 			z.toJSONSchema(AgentCreatorControlRequestSchema),
 		);
+		expect(action.responses?.["202"]?.content?.["application/json"]?.schema).toEqual(
+			z.toJSONSchema(PendingHumanReviewCommandResponseSchema),
+		);
 		expect(action.responses?.["200"]?.content?.["application/json"]?.schema).toEqual(
-			z.toJSONSchema(AgentCreatorControlResponseSchema),
+			z.toJSONSchema(HumanReviewCommandStatusResponseSchema),
 		);
 
 		const retention = document.paths["/api/v1/documents/{documentId}/retention"]?.get as {

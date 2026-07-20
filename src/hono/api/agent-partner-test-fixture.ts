@@ -1,6 +1,8 @@
 import { agenticApiTokens } from "@/db/agentic-access";
 import { hashAgenticCredential } from "@/db/agentic-access/request";
 import { envelopeRecipients } from "@/db/envelope";
+import { hashHistoryCredential } from "@/db/history-access/request";
+import { historySessions } from "@/db/history-access/table";
 import { apiHono } from "@/hono/api";
 import {
 	agentSelfSignBucket,
@@ -125,7 +127,31 @@ export async function createSentTwoPartyFixture(input: {
 			date: "2099-12-31",
 		}),
 	});
-	assertStatus(creatorComplete, 200, "complete creator fields");
+	assertStatus(creatorComplete, 202, "queue creator field completion review");
+	const creatorReview = (await creatorComplete.json()) as { data: { reviewUrl: string } };
+	const rawSession = `${input.keyPrefix}-creator-review-session`;
+	rows(historySessions).push({
+		id: crypto.randomUUID(),
+		linkId: crypto.randomUUID(),
+		email: "creator@example.com",
+		sessionHash: await hashHistoryCredential(rawSession),
+		status: "active",
+		expiresAt: new Date(state.now.getTime() + 60 * 60 * 1000),
+		revokedAt: null,
+		createdAt: state.now,
+	});
+	const reviewId = new URL(creatorReview.data.reviewUrl).pathname.split("/").at(-1);
+	const creatorApproval = await apiHono.request(`/api/history/human-reviews/${reviewId}/decision`, {
+		method: "POST",
+		headers: {
+			cookie: `signmos_history_session=${rawSession}`,
+			"content-type": "application/json",
+			origin: "http://localhost",
+			"x-now": state.now.toISOString(),
+		},
+		body: JSON.stringify({ decision: "approve" }),
+	});
+	assertStatus(creatorApproval, 200, "approve creator field completion review");
 
 	const send = await apiHono.request(
 		`/api/v1/documents/${documentId}/send`,

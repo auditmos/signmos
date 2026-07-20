@@ -154,6 +154,7 @@ export const AgentDocumentHistoryResponseSchema = z.object({
 const agentDocumentErrorCodes = [
 	"AGENT_INVALID_DOCUMENT_QUERY",
 	"AGENT_DOCUMENT_NOT_FOUND",
+	"AGENT_COMMAND_NOT_FOUND",
 	"AGENT_FINAL_PDF_NOT_READY",
 	"AGENT_FINAL_PDF_UNAVAILABLE",
 	"IDEMPOTENCY_KEY_REQUIRED",
