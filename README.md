@@ -6,6 +6,12 @@ Signmos is a lightweight e-signature workflow built on TanStack Start, Hono, Clo
 
 The legal posture is basic e-signature intent. Signmos records signer intent, timestamps, document hashes, field values, and immutable audit events, but it is not a certified trust-service platform.
 
+## OpenAI Build Week: Codex Workflow
+
+Signmos predates OpenAI Build Week. During the event, the existing product was meaningfully extended with Agentic mode: verified personal API onboarding, revocable tokens, a role-authorized Bearer document lifecycle, public agent/OpenAPI contracts, and measured release evidence.
+
+The workflow used Codex with GPT-5.6 for a structured product/security decision interview followed by implementation of issues #43–#51 as TDD vertical slices. The human participant selected and confirmed the product tradeoffs, approved the architecture and issue plan, set the completion gates, steered continuation and documentation, and retained the release and submission decisions. The privacy-safe [Codex collaboration evidence](./plans/evidence/openai-build-week-codex.md) maps the primary build thread to the qualifying commits, explains specific contributions and attribution, and keeps the required `/feedback` Session ID private.
+
 ## Current Capabilities
 
 - Choose self-signing, signing with another person, My Documents, or Agentic mode from the four-choice unselected task chooser at `/`.
