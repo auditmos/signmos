@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/auditmos/signmos/compare/v1.7.0...v1.8.0) (2026-07-20)
+
+
+### Features
+
+* **ui:** refine landing task chooser ([b54cb3f](https://github.com/auditmos/signmos/commit/b54cb3fdfb8bf1346bb2a2d1e117425014b82842))
+
 # [1.7.0](https://github.com/auditmos/signmos/compare/v1.6.0...v1.7.0) (2026-07-18)
 
 
