@@ -138,8 +138,9 @@ describe("production deployment", () => {
 			"pnpm|unset|exec wrangler deploy --config dist/server/wrangler.json --dry-run\n",
 		);
 		expect(commands).not.toContain("wrangler secret bulk");
+		expect(commands).not.toContain(" --yes");
 		expect(commands).toMatch(
-			/pnpm\|unset\|exec wrangler deploy --config dist\/server\/wrangler\.json --secrets-file \/.*\/production\.vars --yes --message git:07c2b1c000000000000000000000000000000000\n/,
+			/pnpm\|unset\|exec wrangler deploy --config dist\/server\/wrangler\.json --secrets-file \/.*\/production\.vars --message git:07c2b1c000000000000000000000000000000000\n/,
 		);
 		for (const url of [
 			"https://signmos.com/",

@@ -164,7 +164,6 @@ printf 'Publishing production candidate %s with validated Worker secrets\n' "$ca
 pnpm exec wrangler deploy \
 	--config dist/server/wrangler.json \
 	--secrets-file "$production_vars_file" \
-	--yes \
 	--message "git:$candidate_sha"
 
 printf 'Checking public production endpoints\n'
