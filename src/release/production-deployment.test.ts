@@ -64,6 +64,9 @@ function runDeploymentScript(
  * - A real deploy must come from a clean Git commit, build with
  *   CLOUDFLARE_ENV=production, validate required remote secret names, and prove
  *   the generated configuration with a Wrangler dry run before publishing.
+ * - The live code and complete validated dotenv secret set are uploaded in one
+ *   Wrangler deploy operation. No secret command may create an intermediate
+ *   production version before the candidate code is published.
  * - Tests do not deploy or inspect secret values; command boundaries are faked.
  */
 describe("production deployment", () => {
@@ -105,7 +108,7 @@ describe("production deployment", () => {
 		);
 	});
 
-	it("syncs validated production secrets, deploys the exact SHA, and checks public endpoints", () => {
+	it("deploys validated production secrets with the exact code version and checks public endpoints", () => {
 		const { commands, result } = runDeploymentScript("--deploy", {
 			productionVars: [
 				'CLOUDFLARE_ENV="production"',
@@ -134,10 +137,9 @@ describe("production deployment", () => {
 		expect(commands).toContain(
 			"pnpm|unset|exec wrangler deploy --config dist/server/wrangler.json --dry-run\n",
 		);
-		expect(commands).toContain("pnpm|unset|exec wrangler secret bulk");
-		expect(commands).toContain("--config wrangler.jsonc --env production\n");
-		expect(commands).toContain(
-			"pnpm|unset|exec wrangler deploy --config dist/server/wrangler.json --yes --message git:07c2b1c000000000000000000000000000000000\n",
+		expect(commands).not.toContain("wrangler secret bulk");
+		expect(commands).toMatch(
+			/pnpm\|unset\|exec wrangler deploy --config dist\/server\/wrangler\.json --secrets-file \/.*\/production\.vars --yes --message git:07c2b1c000000000000000000000000000000000\n/,
 		);
 		for (const url of [
 			"https://signmos.com/",
@@ -171,6 +173,8 @@ describe("production deployment", () => {
 			'APP_BASE_URL="https://signmos.com"',
 			"./scripts/deploy-production.sh --dry-run",
 			"./scripts/deploy-production.sh --deploy",
+			"`--secrets-file`",
+			"one Worker version",
 			"production debug fallback links remain disabled",
 			"https://signmos.com/agent.md",
 			"https://signmos.com/openapi.json",

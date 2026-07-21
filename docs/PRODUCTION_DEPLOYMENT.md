@@ -45,8 +45,9 @@ APP_BASE_URL="https://signmos.com"
 
 Cloudflare account credentials belong in the operator environment or CI secret
 store, never `.production.vars`. The deploy script passes the vars file to
-Wrangler without printing values. Because `--deploy` synchronizes Worker
-secrets, review the local file before approving that command.
+Wrangler through `--secrets-file` without printing values. Review the complete
+local file before approving `--deploy`; Wrangler uploads the candidate code and
+validated secret set together in one Worker version.
 
 ## Build and deployment
 
@@ -68,9 +69,9 @@ Commit the final candidate and ensure `git status --short` is empty. Then run:
 
 The live path refuses a dirty tree, validates the local production variables,
 checks Cloudflare authentication and the production R2 bucket, builds and dry
-runs first, synchronizes named Worker secrets without printing their values,
-deploys with a `git:<full-sha>` message, and checks the three public endpoints.
-It prints the exact deployed SHA for retention in issue #61.
+runs first, then publishes the code and named secrets atomically with a
+`git:<full-sha>` message before checking the three public endpoints. It prints
+the exact deployed SHA for retention in issue #61.
 
 Production uses real email verification and Turnstile. The normal API/UI never
 returns verification shortcuts, and production debug fallback links remain disabled.

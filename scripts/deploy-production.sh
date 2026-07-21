@@ -160,12 +160,10 @@ if [[ "$mode" == "--dry-run" ]]; then
 	exit 0
 fi
 
-printf 'Syncing named production Worker secrets without printing values\n'
-pnpm exec wrangler secret bulk "$production_vars_file" --config wrangler.jsonc --env production
-
-printf 'Publishing production candidate %s\n' "$candidate_sha"
+printf 'Publishing production candidate %s with validated Worker secrets\n' "$candidate_sha"
 pnpm exec wrangler deploy \
 	--config dist/server/wrangler.json \
+	--secrets-file "$production_vars_file" \
 	--yes \
 	--message "git:$candidate_sha"
 
