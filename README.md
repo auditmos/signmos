@@ -431,6 +431,8 @@ Generate staging/production migrations with the corresponding `db:generate:*` sc
 | `pnpm build` | Production build. |
 | `pnpm serve` | Preview production build locally. |
 | `pnpm deploy` | Build and deploy to Cloudflare Workers. |
+| `./scripts/deploy-production.sh --dry-run` | Build the production Cloudflare environment and validate its generated deployment config without changing remote state. |
+| `./scripts/deploy-production.sh --deploy` | Guarded clean-commit deployment to `signmos.com`; follow the [production deployment runbook](./docs/PRODUCTION_DEPLOYMENT.md). |
 | `pnpm cf-typegen` | Generate Cloudflare `Env` types. |
 | `pnpm test` / `pnpm test:watch` / `pnpm test:coverage` | Vitest. |
 | `pnpm agentic:smoke` | Preflight public docs/identity, queue a live protected self-sign command, pause for matching-human browser approval, poll its terminal result, then run retained lifecycle tests. Requires `SIGNMOS_TOKEN`; optional `SIGNMOS_BASE_URL`. The completed smoke document remains under normal retention controls. |

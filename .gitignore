@@ -17,6 +17,7 @@ count.txt
 
 # wrangler vars
 .dev.vars
+.dev.vars.*
 .staging.vars
 .production.vars
 .wrangler/

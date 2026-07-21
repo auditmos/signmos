@@ -51,6 +51,14 @@
 		},
 		"production": {
 			"name": "signmos-production",
+			"workers_dev": false,
+			"preview_urls": false,
+			"routes": [
+				{
+					"pattern": "signmos.com",
+					"custom_domain": true
+				}
+			],
 			"r2_buckets": [
 				{
 					"binding": "DOCUMENTS_BUCKET",
