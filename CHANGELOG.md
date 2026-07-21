@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/auditmos/signmos/compare/v1.9.0...v1.9.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* deploy production secrets atomically ([#61](https://github.com/auditmos/signmos/issues/61)) ([db3766c](https://github.com/auditmos/signmos/commit/db3766c00f2ec9562854ec3f11e6ecbe4154ac5e))
+
 # [1.9.0](https://github.com/auditmos/signmos/compare/v1.8.0...v1.9.0) (2026-07-20)
 
 
