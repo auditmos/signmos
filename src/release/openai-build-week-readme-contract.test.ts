@@ -12,8 +12,9 @@ const read = (path: string) => readFileSync(resolve(path), "utf8");
  *   review as the meaningful Build Week product slices.
  * - The judge quick path targets desktop Chromium, the browser family used by
  *   retained smokes. Other browsers are not claimed without evidence.
- * - No stable public demo URL is asserted until #61 verifies one; that external
- *   dependency remains an explicit unverified #58 row.
+ * - The verified public judge origin is `https://signmos.com`; the README names
+ *   its public Agent guide and OpenAPI contract without treating endpoint
+ *   availability as proof that the pending #61 end-to-end smokes passed.
  * - All sample names/content are synthetic, but judges use inboxes they control
  *   because production verification links are delivered by email.
  */
@@ -71,7 +72,11 @@ describe("OpenAI Build Week README release contract", () => {
 		expect(sample.getPageCount()).toBe(1);
 		for (const phrase of [
 			"### Judge quick path",
-			"Public demo status",
+			"Work and Productivity",
+			"https://signmos.com",
+			"https://signmos.com/agent.md",
+			"https://signmos.com/openapi.json",
+			"do not need to provision",
 			"#61",
 			"desktop Chromium",
 			"./public/signmos-build-week-sample.pdf",
@@ -90,6 +95,10 @@ describe("OpenAI Build Week README release contract", () => {
 		]) {
 			expect(readme, phrase).toContain(phrase);
 		}
+		expect(readme).not.toContain("a stable HTTPS judge deployment is not yet verified");
+		expect(readme).not.toContain(
+			"This README will name the exact candidate URL only after that gate passes",
+		);
 	});
 
 	it("documents reproducible local setup, services, bindings, and every template variable", () => {

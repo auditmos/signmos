@@ -8,6 +8,8 @@ The legal posture is basic e-signature intent. Signmos records signer intent, ti
 
 ## OpenAI Build Week Submission
 
+**Track:** Work and Productivity
+
 ### Scope and pre-window baseline
 
 Signmos predates the 2026-07-13 Submission Period; the whole application was not created during Build Week. The last repository commit before that window was [`a47990b`](https://github.com/auditmos/signmos/commit/a47990b462fc4ffa58def01f051f4215b07722d8) on 2026-07-11. The existing signing lifecycle, PDF handling, email verification, and Cloudflare/Neon architecture at that baseline are pre-existing work.
@@ -42,13 +44,13 @@ In Agentic mode, protected `sign/complete, decline, cancel, expire, and delete` 
 
 ### Judge quick path
 
-**Public demo status:** a stable HTTPS judge deployment is not yet verified. [Issue #61](https://github.com/auditmos/signmos/issues/61) owns that release gate; `auditmos.com` is the company site and must not be mistaken for the Signmos demo. This README will name the exact candidate URL only after that gate passes.
+**Public demo:** [https://signmos.com](https://signmos.com). The production origin serves Signmos directly; its root, public [Agent operating guide](https://signmos.com/agent.md), and [OpenAPI 3.1 contract](https://signmos.com/openapi.json) were verified on 2026-07-21. Full live human and Agentic workflow smokes remain tracked by [issue #61](https://github.com/auditmos/signmos/issues/61) and are still required before final submission.
 
-The supported judging target is desktop Chromium with JavaScript, cookies, PDF viewing, and Cloudflare Turnstile enabled. The retained browser smokes use that platform; this candidate does not claim verified mobile or cross-browser support. Use the [one-page synthetic sample PDF](./public/signmos-build-week-sample.pdf), whose fictional participants are **Alex Example** and **Jordan Sample**. Enter only synthetic content and an inbox you control. No shared test account is required or available; passwordless links are sent by email, and the two-party path needs a second inbox or an address alias you also control.
+The supported judging target is desktop Chromium with JavaScript, cookies, PDF viewing, and Cloudflare Turnstile enabled. The retained browser smokes use that platform; this candidate does not claim verified mobile or cross-browser support. Judges using the public demo do not need to provision Cloudflare, Neon, R2, Resend, Turnstile, or other paid infrastructure. Use the [one-page synthetic sample PDF](./public/signmos-build-week-sample.pdf), whose fictional participants are **Alex Example** and **Jordan Sample**. Enter only synthetic content and an inbox you control. No shared test account is required or available; passwordless links are sent by email, and the two-party path needs a second inbox or an address alias you also control.
 
 #### Human flow
 
-1. Open the verified judge URL and choose **Sign by myself**.
+1. Open [https://signmos.com](https://signmos.com) and choose **Sign by myself**.
 2. Enter a synthetic name and an inbox you control, complete Turnstile, and open the emailed verification link.
 3. Upload the sample PDF, review or place the signature/date fields, use a typed or drawn signature, and complete signing.
 4. Download the completed PDF. Return to the chooser, select **My Documents**, verify the same email, and confirm that the retained document can be found and downloaded.
@@ -57,7 +59,7 @@ The supported judging target is desktop Chromium with JavaScript, cookies, PDF v
 #### Agentic flow
 
 1. Choose **Agentic mode**, verify an email address, create a named personal token, and copy its one-time secret without sharing it or committing it.
-2. Export the secret as `SIGNMOS_TOKEN`, read `/agent.md` and `/openapi.json` at the verified judge origin, then call `GET /api/v1/me` and follow the documented self-sign flow with the sample PDF. Every mutation needs a fresh `Idempotency-Key`.
+2. Export the secret as `SIGNMOS_TOKEN`, read the public [Agent operating guide](https://signmos.com/agent.md) and [OpenAPI contract](https://signmos.com/openapi.json), then call `GET https://signmos.com/api/v1/me` and follow the documented self-sign flow with the sample PDF. Every mutation needs a fresh `Idempotency-Key`.
 3. Request the protected completion command and confirm that the API returns `202 pending_human_review` with a `statusUrl`; it must not complete immediately.
 4. From the emailed link or **My Documents**, verify as the matching signer, review the exact current PDF and action, then choose **Approve and execute**.
 5. Poll the original `statusUrl` with the same token, confirm execution, and download the final PDF through the documented API.
@@ -461,7 +463,7 @@ pnpm build
 
 The test suite includes lifecycle API smoke coverage, PDF finalization assertions, field editor and signer UI tests, My Documents credential/catalog/recovery/security coverage, Agentic authorization/idempotency/rate-limit/redaction/OpenAPI coverage, and release/docs contract checks.
 
-The candidate-specific [`src/release/openai-build-week-readme-contract.test.ts`](./src/release/openai-build-week-readme-contract.test.ts) protects the pre-window baseline, qualifying evidence map, attribution and legal disclosures, judge fixture and walkthroughs, setup inventory, relative README links, and documented project scripts. It intentionally does not turn an unverified deployment into a passing URL claim; #61 remains the live deployment gate.
+The candidate-specific [`src/release/openai-build-week-readme-contract.test.ts`](./src/release/openai-build-week-readme-contract.test.ts) protects the pre-window baseline, qualifying evidence map, attribution and legal disclosures, verified production origin and public contracts, judge fixture and walkthroughs, setup inventory, relative README links, and documented project scripts. Passing that repository contract is not evidence that a live workflow completed; #61 remains the end-to-end production gate.
 
 ## Development Notes
 
