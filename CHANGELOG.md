@@ -1,3 +1,10 @@
+## [1.9.2](https://github.com/auditmos/signmos/compare/v1.9.1...v1.9.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* remove unsupported Wrangler deploy flag ([#61](https://github.com/auditmos/signmos/issues/61)) ([858e750](https://github.com/auditmos/signmos/commit/858e750ccaa126c8184404a38d58cf004d6c4736))
+
 ## [1.9.1](https://github.com/auditmos/signmos/compare/v1.9.0...v1.9.1) (2026-07-21)
 
 
