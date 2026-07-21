@@ -26,6 +26,7 @@ export const Route = createRootRouteWithContext<{
 			...seo({
 				title: "Signmos | No-Account PDF Signatures",
 				description: "Start a no-account PDF signature envelope and verify by email.",
+				image: "/signmos-og.png",
 			}),
 		],
 		links: [
@@ -47,7 +48,7 @@ export const Route = createRootRouteWithContext<{
 				sizes: "16x16",
 				href: "/favicon-16x16.png",
 			},
-			{ rel: "manifest", href: "/site.webmanifest", color: "#fffff" },
+			{ rel: "manifest", href: "/manifest.json" },
 			{ rel: "icon", href: "/favicon.ico" },
 		],
 	}),
