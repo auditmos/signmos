@@ -1,3 +1,10 @@
+## [1.9.4](https://github.com/auditmos/signmos/compare/v1.9.3...v1.9.4) (2026-07-22)
+
+
+### Bug Fixes
+
+* add token selection to agent prompt ([254d708](https://github.com/auditmos/signmos/commit/254d708c491bf5817ecdd41b2c5b5707da729034))
+
 ## [1.9.3](https://github.com/auditmos/signmos/compare/v1.9.2...v1.9.3) (2026-07-22)
 
 
