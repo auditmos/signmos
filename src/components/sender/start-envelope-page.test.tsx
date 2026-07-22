@@ -65,6 +65,24 @@ describe("StartEnvelopePage", () => {
 		expect(screen.getByRole("button", { name: "Agentic mode" })).toBeTruthy();
 	});
 
+	it.each([
+		"Sign by myself",
+		"Sign with someone else",
+		"My documents",
+		"Agentic mode",
+	])("shows the task chooser return action as an outlined button for %s", (choiceLabel) => {
+		// Assumptions for this UI consistency slice:
+		// - My Documents and Agentic mode establish the intended outlined-button treatment.
+		// - All four tasks keep the same button name and chooser-reset behavior.
+		// - This slice does not change where each form places the return action.
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: choiceLabel }));
+
+		const backButton = screen.getByRole("button", { name: "Back to task choices" });
+		expect(backButton.classList.contains("border")).toBe(true);
+	});
+
 	it("requests My documents access with email only", async () => {
 		const fetchMock = vi.fn(
 			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),

@@ -1,6 +1,5 @@
 import { useForm } from "@tanstack/react-form";
 import {
-	ArrowLeft,
 	ArrowRight,
 	Bot,
 	FileSignature,
@@ -229,11 +228,10 @@ export function StartEnvelopePage({
 					>
 						<Button
 							type="button"
-							variant="ghost"
+							variant="outline"
 							onClick={returnToTaskChooser}
-							className="-ml-3 mb-4 cursor-pointer text-muted-foreground"
+							className="mb-4 cursor-pointer"
 						>
-							<ArrowLeft aria-hidden="true" className="size-4" />
 							Back to task choices
 						</Button>
 						<div className="space-y-5">
