@@ -6,7 +6,7 @@
 
 Signmos exposes most of its signing lifecycle through JSON endpoints, but the current contract is not safe or coherent for a user-controlled agent or future CLI. Creator operations mix a caller-supplied internal header, envelope-scoped sender tokens, signer tokens in URL paths, and My Documents cookies. Public onboarding also depends on browser Turnstile state. The existing agent smoke therefore proves that the domain can be driven through HTTP, but it does not provide a production-grade personal API identity.
 
-A verified Signmos user should be able to authorize an agent once, give it a standard Bearer credential, and let it perform every document action the same email identity could perform through the UI. The credential must remain understandable and revocable for a non-technical user, avoid appearing in URLs or prompts without explicit user selection, preserve role authorization, and produce audit evidence that distinguishes agent activity from browser activity.
+A verified Signmos user should be able to authorize an agent once, give it a standard Bearer credential, and let it perform every document action the same email identity could perform through the UI. The credential must remain understandable and revocable for a non-technical user, avoid appearing in URLs or prompts unless the user generates or enters it for that purpose, preserve role authorization, and produce audit evidence that distinguishes agent activity from browser activity.
 
 Without this feature, agents must imitate browser sessions or use unsafe internal headers, API documentation can drift from runtime behavior, and a future CLI has no durable authentication or compatibility boundary.
 
@@ -16,7 +16,7 @@ Add a fourth **Agentic mode** choice to the landing page. A user enters an email
 
 Expose a stable `/api/v1` contract authenticated consistently with `Authorization: Bearer <token>`. A token represents one normalized verified email and has full role-equivalent document authority: it can create documents and act on documents where that email is currently authorized as creator or signer. It cannot manage tokens. Every mutation requires an idempotency key, every request re-checks authorization and revocation, and agent activity records the email plus safe token identity metadata.
 
-Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schemas. The Agentic console presents a platform-neutral, copy-ready prompt with absolute production URLs. It references `$SIGNMOS_TOKEN` by default and, only after explicit selection, can substitute the newly generated one-time-visible token without making older secrets recoverable. V1 uses polling rather than webhooks and targets personal/pilot automation rather than bulk envelope processing.
+Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schemas. The Agentic console presents a platform-neutral, copy-ready prompt with absolute production URLs. It references `$SIGNMOS_TOKEN` until a newly generated one-time-visible token is automatically selected or the user enters a saved full token in browser-only state; older secrets remain unrecoverable from Signmos. V1 uses polling rather than webhooks and targets personal/pilot automation rather than bulk envelope processing.
 
 ## User Stories
 
@@ -61,7 +61,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 39. As a user, I want raw verification credentials, management sessions, and Bearer secrets excluded from URLs, responses after creation, logs, errors, audit events, analytics, and email content, so that operational systems do not leak reusable authority.
 40. As an agent, I want unauthenticated `/agent.md` guidance with workflows, safety expectations, error recovery, polling, and curl examples, so that I can operate Signmos from a single public entry point.
 41. As an API client, I want unauthenticated `/openapi.json` generated from the same schemas used at runtime, so that exact endpoints and request/response types cannot silently drift from implementation.
-42. As a user, I want the Agentic console to provide a platform-neutral copy-ready prompt and an explicit selector for the newly generated token, so that I can choose whether to onboard Codex, Claude, or another trusted agent with the token already substituted.
+42. As a user, I want the Agentic console to automatically select a newly generated token and provide always-visible prompt-source controls, so that I can onboard Codex, Claude, or another trusted agent with a new or saved full token already substituted.
 43. As a product owner, I want a capability matrix and runnable Bearer-authenticated curl smoke proving every current UI document action has an API equivalent, so that “agentic friendly” is an evidenced release property rather than a documentation claim.
 44. As an existing browser user, I want current sender, signer, completed-link, and My Documents flows to keep working during the `/api/v1` rollout, so that the new public contract does not break the pilot UI.
 
@@ -98,7 +98,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 6. **Agentic Token Console**
    - Adds the fourth landing task and a dedicated email-verification experience.
    - Shows active/revoked token metadata, token generation with explicit authority acknowledgment, one-time secret display, independent revocation, and the five-token cap.
-   - Provides separate copy controls for the secret/environment setup and a platform-neutral prompt that references `$SIGNMOS_TOKEN` until the user explicitly selects the newly generated token for substitution.
+   - Provides separate copy controls for the secret/environment setup plus always-visible prompt-source controls that automatically select a new token, accept a saved full token in browser-only state, or restore `$SIGNMOS_TOKEN`.
 
 7. **Parity And Security Release Contract**
    - Maintains an explicit mapping from every current UI document capability to an authenticated `/api/v1` operation and test.
@@ -161,7 +161,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 - `/agent.md` and `/openapi.json` are accessible without authentication and contain no live credentials.
 - The platform-neutral prompt uses absolute `https://signmos.com/agent.md` and `https://signmos.com/openapi.json` resource URLs, instructs an agent to use the selected token or `$SIGNMOS_TOKEN`, remain within the user’s goal and verified identity, follow allowed actions, use a fresh Idempotency-Key per intended mutation, and poll responsibly.
 - The guidance permits protected actions only when they follow the user goal and requires the agent to disclose pending review, wait, and poll the exact command until the matching human decides.
-- The public guidance must explain that anyone holding the token can send, sign, decline, cancel, and delete as the verified email; environment-variable setup is preferred, private prompt insertion requires explicit console selection, and the secret must never appear in URLs, issue bodies, source control, or logs.
+- The public guidance must explain that anyone holding the token can send, sign, decline, cancel, and delete as the verified email; environment-variable setup is preferred, a new token is automatically selected for the private prompt, a saved full token may be pasted in browser-only state, and the secret must never appear in URLs, issue bodies, source control, or logs.
 
 ### Compatibility And Rollout
 
@@ -206,7 +206,7 @@ Publish unauthenticated `/agent.md` operating guidance and `/openapi.json` schem
 - **Coarse or fine-grained scopes** — rejected for v1 because the chosen model is full role-equivalent access for every token.
 - **Security emails for token creation/revocation** — rejected by product decision in favor of console metadata and audit records only.
 - **Two-step server confirmation for signing or destructive actions** — adopted for sign/complete, decline, cancel, expire, and delete by the issue #62 human-review amendment; reviewer identity remains server-derived.
-- **Embedding the secret in the copy-ready prompt by default** — rejected because agent transcripts and prompt logs are poor secret stores; explicit selection of the one-time-visible token is supported for a trusted private agent.
+- **Recovering existing raw tokens for prompt selection** — rejected because only hashes and safe metadata are persisted; users may paste a full token from their saved copy without making it recoverable from Signmos.
 - **Platform-specific prompts** — rejected because one curl-oriented Markdown contract should work across capable agents.
 - **Markdown-only documentation** — rejected because exact schemas need a machine-readable drift-resistant contract.
 - **OpenAPI-only documentation** — rejected because agents also need workflow, safety, retry, and lifecycle guidance.
@@ -262,7 +262,7 @@ Every numbered validation item maps directly to the user story with the same num
 39. **Credential redaction:** Security tests instrument responses, headers, redirects, logs, audit rows, analytics hooks, email payloads, and public artifacts and fail on raw access-link/session/Bearer values or Authorization/Cookie leakage.
 40. **Public agent guidance:** HTTP test fetches `/agent.md` without auth and asserts workflows for create/list/prepare/send/sign/change/decline/control/download, role limits, idempotency, errors, polling, goal-directed execution, and secret handling.
 41. **OpenAPI source parity:** HTTP test fetches `/openapi.json` without auth; schema validation and route enumeration prove every `/api/v1` operation/security requirement exists. A drift test fails when a runtime route/schema changes without the published contract.
-42. **Prompt console:** UI test verifies the prompt is platform-neutral, uses both absolute production artifact URLs, references `$SIGNMOS_TOKEN` by default, substitutes only the explicitly selected one-time-visible token, restores the placeholder when unchecked, and provides accessible prompt and secret/environment copy controls.
+42. **Prompt console:** UI tests verify the prompt is platform-neutral, uses both absolute production artifact URLs, references `$SIGNMOS_TOKEN` before a full token is available, automatically selects and substitutes a newly generated token, accepts a saved full token in a password field, restores the environment-variable source on request, and clears browser-only secrets on reload.
 43. **Full parity release smoke:** Maintain a checked capability matrix with one verified `/api/v1` operation and evidence item for every current UI document action. A runnable `pnpm agentic:smoke` command uses a base URL, Bearer token, public docs, curl-compatible Agent HTTP, and a matching-human authenticated browser boundary for protected actions; it must prove pending-without-side-effect, explicit approval, originating-token polling, and final lifecycle results before exiting zero.
 44. **Browser compatibility:** Run existing sender, signer, completed-document, My Documents, finalization, retention, email, UI, and release contract suites unchanged, plus browser smoke evidence for all four landing choices and legacy flows.
 

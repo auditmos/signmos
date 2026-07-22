@@ -116,7 +116,7 @@ describe("agent API contract release", () => {
 			"Retry-After",
 			"exponential backoff",
 			"stay within the user goal",
-			"only after you explicitly select it",
+			"automatically selects a newly generated token",
 		]) {
 			expect(guidance, phrase).toContain(phrase);
 		}

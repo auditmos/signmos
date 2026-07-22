@@ -16,12 +16,12 @@ function renderConsole() {
 }
 
 describe("agent token console", () => {
-	it("places an explicitly selected one-time token in the absolute-URL agent prompt", async () => {
+	it("automatically selects a newly generated token in always-visible prompt controls", async () => {
 		// Issue #44 console assumptions before RED:
 		// - TanStack Form owns name/acknowledgment validation; Query owns the mutation.
 		// - The secret is held only in immediate component state and disappears on reload/unmount.
-		// - Only the newly generated, explicitly selected token can be placed in the prompt.
-		// - Unchecking the token restores the non-secret environment-variable placeholder.
+		// - A newly generated token becomes the selected prompt source automatically.
+		// - Always-visible radio controls can switch between that token and the environment variable.
 		const secret = `signmos_${"a".repeat(43)}`;
 		const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
 			if ((init?.method ?? "GET") === "GET") {
@@ -54,6 +54,14 @@ describe("agent token console", () => {
 		const view = renderConsole();
 		expect(document.body.textContent).toContain("send, sign, decline, cancel, and delete");
 		await screen.findByText(/no agentic tokens yet/i);
+		expect(screen.getByRole("group", { name: "Token used in Agent prompt" })).toBeTruthy();
+		expect(
+			(
+				screen.getByRole("radio", {
+					name: "Use environment variable ($SIGNMOS_TOKEN)",
+				}) as HTMLInputElement
+			).checked,
+		).toBe(true);
 		fireEvent.change(screen.getByLabelText("Token name"), {
 			target: { value: "Laptop agent" },
 		});
@@ -73,16 +81,15 @@ describe("agent token console", () => {
 		);
 		expect(await screen.findByText(secret)).toBeTruthy();
 		const promptElement = screen.getByTestId("agent-prompt");
-		expect(promptElement.textContent).toContain("$SIGNMOS_TOKEN");
-		expect(promptElement.textContent).not.toContain(secret);
-
-		fireEvent.click(screen.getByLabelText("Use Laptop agent in Agent prompt"));
 		const prompt = promptElement.textContent ?? "";
 		expect(prompt).toContain(
 			"Read https://signmos.com/agent.md and https://signmos.com/openapi.json",
 		);
 		expect(prompt).toContain(secret);
 		expect(prompt).not.toContain("$SIGNMOS_TOKEN");
+		expect(
+			(screen.getByRole("radio", { name: "Use Laptop agent" }) as HTMLInputElement).checked,
+		).toBe(true);
 		expect(prompt).not.toMatch(/Codex|Claude/i);
 		expect(screen.getByRole("link", { name: "Open Agent guide" }).getAttribute("href")).toBe(
 			"https://signmos.com/agent.md",
@@ -97,9 +104,13 @@ describe("agent token console", () => {
 		expect(writeText).toHaveBeenNthCalledWith(1, `export SIGNMOS_TOKEN='${secret}'`);
 		expect(writeText).toHaveBeenNthCalledWith(2, prompt);
 
-		fireEvent.click(screen.getByLabelText("Use Laptop agent in Agent prompt"));
+		fireEvent.click(
+			screen.getByRole("radio", { name: "Use environment variable ($SIGNMOS_TOKEN)" }),
+		);
 		expect(promptElement.textContent).toContain("$SIGNMOS_TOKEN");
 		expect(promptElement.textContent).not.toContain(secret);
+		fireEvent.click(screen.getByRole("radio", { name: "Use Laptop agent" }));
+		expect(promptElement.textContent).toContain(secret);
 
 		view.unmount();
 		renderConsole();
@@ -124,6 +135,52 @@ describe("agent token console", () => {
 			new Response(JSON.stringify({ data: { activeLimit: 5, tokens: [] } }), { status: 200 }),
 		);
 		await screen.findByText(/no agentic tokens yet/i);
+	});
+
+	it("uses a saved full token when only existing token metadata can be loaded", async () => {
+		// Existing-token assumptions before RED:
+		// - Listing responses expose only safe metadata and cannot recover the raw token.
+		// - A full token pasted by the user stays in browser-only component state.
+		// - Typing a full token selects it as the prompt source without persisting it.
+		const savedSecret = `signmos_${"c".repeat(43)}`;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							data: {
+								activeLimit: 5,
+								tokens: [
+									{
+										id: "30000000-0000-4000-8000-000000000001",
+										name: "Existing agent",
+										hint: "signmos_…cccc",
+										createdAt: "2026-07-17T08:00:00.000Z",
+										lastUsedAt: null,
+										status: "active",
+										revokedAt: null,
+									},
+								],
+							},
+						}),
+						{ status: 200 },
+					),
+			),
+		);
+
+		renderConsole();
+		await screen.findByText("1 of 5 active");
+		expect(screen.getByText(/existing tokens cannot be recovered/i)).toBeTruthy();
+		const fullTokenInput = screen.getByLabelText("Full token");
+		expect((fullTokenInput as HTMLInputElement).type).toBe("password");
+		fireEvent.change(fullTokenInput, { target: { value: savedSecret } });
+
+		expect(
+			(screen.getByRole("radio", { name: "Use a saved full token" }) as HTMLInputElement).checked,
+		).toBe(true);
+		expect(screen.getByTestId("agent-prompt").textContent).toContain(savedSecret);
+		expect(screen.getByTestId("agent-prompt").textContent).not.toContain("$SIGNMOS_TOKEN");
 	});
 
 	it("enforces the visible limit and confirms independent revocation", async () => {

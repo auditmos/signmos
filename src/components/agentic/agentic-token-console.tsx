@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 const agentGuideUrl = "https://signmos.com/agent.md";
 const openApiUrl = "https://signmos.com/openapi.json";
 const tokenQueryKey = ["agentic-tokens"] as const;
+type PromptTokenSource = "environment" | "generated" | "saved";
 
 interface AgenticTokenMetadata {
 	id: string;
@@ -44,7 +45,8 @@ class AgenticConsoleError extends Error {
 export function AgenticTokenConsole() {
 	const queryClient = useQueryClient();
 	const [copyStatus, setCopyStatus] = useState("");
-	const [includeGeneratedToken, setIncludeGeneratedToken] = useState(false);
+	const [promptTokenSource, setPromptTokenSource] = useState<PromptTokenSource>("environment");
+	const [savedPromptToken, setSavedPromptToken] = useState("");
 	const [pendingRevoke, setPendingRevoke] = useState<AgenticTokenMetadata | null>(null);
 	const listing = useQuery({
 		queryKey: tokenQueryKey,
@@ -72,7 +74,7 @@ export function AgenticTokenConsole() {
 			return body.data;
 		},
 		onSuccess: () => {
-			setIncludeGeneratedToken(false);
+			setPromptTokenSource("generated");
 			return queryClient.invalidateQueries({ queryKey: tokenQueryKey });
 		},
 	});
@@ -103,7 +105,9 @@ export function AgenticTokenConsole() {
 	});
 	const activeCount = listing.data?.tokens.filter((token) => token.status === "active").length ?? 0;
 	const atLimit = listing.data ? activeCount >= listing.data.activeLimit : true;
-	const agentPrompt = buildAgentPrompt(generation.data?.secret, includeGeneratedToken);
+	const agentPrompt = buildAgentPrompt(
+		resolvePromptToken(promptTokenSource, generation.data?.secret, savedPromptToken),
+	);
 
 	async function copy(value: string, successMessage: string) {
 		try {
@@ -196,15 +200,6 @@ export function AgenticTokenConsole() {
 							<code className="block overflow-wrap-anywhere rounded bg-muted p-3 font-mono text-sm">
 								{generation.data.secret}
 							</code>
-							<label className="flex items-start gap-3 text-sm text-foreground">
-								<input
-									type="checkbox"
-									checked={includeGeneratedToken}
-									onChange={(event) => setIncludeGeneratedToken(event.target.checked)}
-									className="mt-0.5 size-4 rounded border-input"
-								/>
-								<span>Use {generation.data.token.name} in Agent prompt</span>
-							</label>
 							<Button
 								type="button"
 								variant="outline"
@@ -222,6 +217,63 @@ export function AgenticTokenConsole() {
 					<h2 id="agent-prompt-title" className="text-lg font-semibold">
 						Agent prompt
 					</h2>
+					<fieldset className="space-y-2 rounded-md border p-4">
+						<legend className="px-1 text-sm font-medium">Token used in Agent prompt</legend>
+						<label className="flex items-start gap-3 text-sm text-foreground">
+							<input
+								type="radio"
+								name="agent-prompt-token-source"
+								checked={promptTokenSource === "environment"}
+								onChange={() => setPromptTokenSource("environment")}
+								className="mt-0.5 size-4 border-input"
+							/>
+							<span>Use environment variable ($SIGNMOS_TOKEN)</span>
+						</label>
+						{generation.data ? (
+							<label className="flex items-start gap-3 text-sm text-foreground">
+								<input
+									type="radio"
+									name="agent-prompt-token-source"
+									checked={promptTokenSource === "generated"}
+									onChange={() => setPromptTokenSource("generated")}
+									className="mt-0.5 size-4 border-input"
+								/>
+								<span>Use {generation.data.token.name}</span>
+							</label>
+						) : (
+							<p className="text-sm text-muted-foreground">
+								Generate a new token to select its one-time secret here.
+							</p>
+						)}
+						<label className="flex items-start gap-3 text-sm text-foreground">
+							<input
+								type="radio"
+								name="agent-prompt-token-source"
+								checked={promptTokenSource === "saved"}
+								onChange={() => setPromptTokenSource("saved")}
+								className="mt-0.5 size-4 border-input"
+							/>
+							<span>Use a saved full token</span>
+						</label>
+						<div className="space-y-2 pl-7">
+							<Label htmlFor="agent-prompt-full-token">Full token</Label>
+							<Input
+								id="agent-prompt-full-token"
+								type="password"
+								autoComplete="off"
+								spellCheck={false}
+								value={savedPromptToken}
+								onChange={(event) => {
+									setSavedPromptToken(event.target.value);
+									setPromptTokenSource("saved");
+								}}
+							/>
+							<p className="text-sm text-muted-foreground">
+								Existing tokens cannot be recovered from Signmos. Paste the full token you saved, or
+								generate a new token above.
+							</p>
+						</div>
+					</fieldset>
 					<pre
 						data-testid="agent-prompt"
 						className="whitespace-pre-wrap text-sm text-muted-foreground"
@@ -285,8 +337,18 @@ export function AgenticTokenConsole() {
 	);
 }
 
-function buildAgentPrompt(secret: string | undefined, includeSecret: boolean): string {
-	const token = includeSecret && secret ? secret : "$SIGNMOS_TOKEN";
+function resolvePromptToken(
+	source: PromptTokenSource,
+	generatedToken: string | undefined,
+	savedToken: string,
+): string | undefined {
+	if (source === "generated") return generatedToken;
+	if (source === "saved") return savedToken.trim() || undefined;
+	return undefined;
+}
+
+function buildAgentPrompt(secret: string | undefined): string {
+	const token = secret ?? "$SIGNMOS_TOKEN";
 	return `Read ${agentGuideUrl} and ${openApiUrl}. Use ${token} only in the Authorization Bearer header. Confirm the verified identity before acting, remain within the user's stated goal, and never place the token in URLs, logs, issues, or source control. Sign/complete, decline, cancel, expire, and delete return pending human review: tell the user, poll the returned command URL, and never claim execution before a completed terminal result.`;
 }
 
