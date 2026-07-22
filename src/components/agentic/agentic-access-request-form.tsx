@@ -65,72 +65,74 @@ export function AgenticAccessRequestForm({
 		<form
 			aria-label="Request Agentic access"
 			onSubmit={submitForm}
-			className="space-y-5 rounded-lg border bg-card p-5 shadow-sm"
+			className="rounded-lg border bg-card p-5 shadow-sm"
 		>
-			<form.Field
-				name="email"
-				validators={{
-					onSubmit: ({ value }) =>
-						isValidEmail(value) ? undefined : "Enter a valid email address",
-				}}
-			>
-				{(field) => (
-					<div className="space-y-2">
-						<Label htmlFor="agentic-email">Email</Label>
-						<Input
-							id="agentic-email"
-							name={field.name}
-							type="email"
-							autoComplete="email"
-							value={field.state.value}
-							onBlur={field.handleBlur}
-							onChange={(event) => field.handleChange(event.target.value)}
-							aria-invalid={field.state.meta.errors.length > 0}
-						/>
-						{field.state.meta.errors.length > 0 ? (
-							<p role="alert" className="text-sm text-destructive">
-								Enter a valid email address
-							</p>
-						) : null}
-					</div>
-				)}
-			</form.Field>
+			<Button type="button" variant="outline" onClick={onBack} className="mb-4 cursor-pointer">
+				Back to task choices
+			</Button>
+			<div className="space-y-5">
+				<form.Field
+					name="email"
+					validators={{
+						onSubmit: ({ value }) =>
+							isValidEmail(value) ? undefined : "Enter a valid email address",
+					}}
+				>
+					{(field) => (
+						<div className="space-y-2">
+							<Label htmlFor="agentic-email">Email</Label>
+							<Input
+								id="agentic-email"
+								name={field.name}
+								type="email"
+								autoComplete="email"
+								value={field.state.value}
+								onBlur={field.handleBlur}
+								onChange={(event) => field.handleChange(event.target.value)}
+								aria-invalid={field.state.meta.errors.length > 0}
+							/>
+							{field.state.meta.errors.length > 0 ? (
+								<p role="alert" className="text-sm text-destructive">
+									Enter a valid email address
+								</p>
+							) : null}
+						</div>
+					)}
+				</form.Field>
 
-			{turnstileSiteKey ? <TurnstileWidget siteKey={turnstileSiteKey} /> : null}
-			{!hasTurnstileConfig ? (
-				<Alert role="alert" variant="destructive">
-					<AlertTitle>Turnstile is not configured</AlertTitle>
-					<AlertDescription>Agentic access is unavailable right now.</AlertDescription>
-				</Alert>
-			) : null}
-			{turnstileError ? (
-				<Alert role="alert" variant="destructive">
-					<AlertTitle>Complete the security check</AlertTitle>
-					<AlertDescription>{turnstileError}</AlertDescription>
-				</Alert>
-			) : null}
-			{requestMutation.isSuccess ? (
-				<Alert role="status">
-					<AlertTitle>Check your email</AlertTitle>
-					<AlertDescription>
-						If the request can be completed, a secure single-use link is on its way.
-					</AlertDescription>
-				</Alert>
-			) : null}
-			{requestMutation.isError ? (
-				<Alert role="alert" variant="destructive">
-					<AlertTitle>Request failed</AlertTitle>
-					<AlertDescription>Unable to request Agentic access.</AlertDescription>
-				</Alert>
-			) : null}
+				{turnstileSiteKey ? <TurnstileWidget siteKey={turnstileSiteKey} /> : null}
+				{!hasTurnstileConfig ? (
+					<Alert role="alert" variant="destructive">
+						<AlertTitle>Turnstile is not configured</AlertTitle>
+						<AlertDescription>Agentic access is unavailable right now.</AlertDescription>
+					</Alert>
+				) : null}
+				{turnstileError ? (
+					<Alert role="alert" variant="destructive">
+						<AlertTitle>Complete the security check</AlertTitle>
+						<AlertDescription>{turnstileError}</AlertDescription>
+					</Alert>
+				) : null}
+				{requestMutation.isSuccess ? (
+					<Alert role="status">
+						<AlertTitle>Check your email</AlertTitle>
+						<AlertDescription>
+							If the request can be completed, a secure single-use link is on its way.
+						</AlertDescription>
+					</Alert>
+				) : null}
+				{requestMutation.isError ? (
+					<Alert role="alert" variant="destructive">
+						<AlertTitle>Request failed</AlertTitle>
+						<AlertDescription>Unable to request Agentic access.</AlertDescription>
+					</Alert>
+				) : null}
 
-			<div className="flex flex-wrap gap-3">
-				<Button type="submit" disabled={requestMutation.isPending || !hasTurnstileConfig}>
-					{requestMutation.isPending ? "Requesting..." : "Email me an Agentic link"}
-				</Button>
-				<Button type="button" variant="outline" onClick={onBack}>
-					Back to task choices
-				</Button>
+				<div className="flex flex-wrap gap-3">
+					<Button type="submit" disabled={requestMutation.isPending || !hasTurnstileConfig}>
+						{requestMutation.isPending ? "Requesting..." : "Email me an Agentic link"}
+					</Button>
+				</div>
 			</div>
 		</form>
 	);
