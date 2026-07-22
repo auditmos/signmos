@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type HistoryStartSigningMode = "only_me" | "me_and_another_signer";
+export type HistoryStartSigningMode = "only_me" | "me_and_another_signer";
 
 export interface HistorySessionIdentity {
 	email: string;
@@ -15,6 +15,7 @@ export interface HistorySessionIdentity {
 
 interface HistoryEnvelopeStartProps {
 	identity: HistorySessionIdentity;
+	initialSigningMode?: HistoryStartSigningMode;
 	onStarted?: (redirectUrl: string) => void;
 }
 
@@ -36,9 +37,10 @@ const defaultOnStarted = (redirectUrl: string) => window.location.assign(redirec
 
 export function HistoryEnvelopeStart({
 	identity,
+	initialSigningMode,
 	onStarted = defaultOnStarted,
 }: HistoryEnvelopeStartProps) {
-	const [open, setOpen] = useState(false);
+	const [open, setOpen] = useState(Boolean(initialSigningMode));
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 	const mutation = useMutation({
 		mutationFn: async (values: { name: string; signingMode: HistoryStartSigningMode }) => {
@@ -64,7 +66,7 @@ export function HistoryEnvelopeStart({
 	const form = useForm({
 		defaultValues: {
 			name: identity.suggestedName ?? "",
-			signingMode: "" as "" | HistoryStartSigningMode,
+			signingMode: initialSigningMode ?? ("" as const),
 		},
 		onSubmit: ({ value }) => {
 			if (!value.signingMode) return;

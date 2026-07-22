@@ -27,11 +27,15 @@ function IndexPage() {
 			? requestedReturnTo
 			: undefined;
 	const initialTask =
-		requestedTask === "my-documents"
-			? "my_documents"
-			: requestedTask === "agentic"
-				? "agentic"
-				: undefined;
+		requestedTask === "only-me"
+			? "only_me"
+			: requestedTask === "with-someone"
+				? "me_and_another_signer"
+				: requestedTask === "my-documents"
+					? "my_documents"
+					: requestedTask === "agentic"
+						? "agentic"
+						: undefined;
 	return (
 		<StartEnvelopePage
 			initialTask={initialTask}

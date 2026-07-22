@@ -10,6 +10,7 @@ import historyCreatorEndpoint from "@/hono/api/history-creator";
 import historyEnvelopeStartEndpoint from "@/hono/api/history-envelope-start";
 import historyHumanReviewEndpoint from "@/hono/api/history-human-review";
 import historySigningEndpoint from "@/hono/api/history-signing";
+import modeNavigationEndpoint from "@/hono/api/mode-navigation";
 import signingEndpoint from "@/hono/api/signing";
 import { createHono } from "./factory";
 
@@ -23,6 +24,7 @@ apiHono.route("/history", historyCreatorEndpoint);
 apiHono.route("/history", historyEnvelopeStartEndpoint);
 apiHono.route("/history", historyHumanReviewEndpoint);
 apiHono.route("/history", historySigningEndpoint);
+apiHono.route("/navigate", modeNavigationEndpoint);
 apiHono.route("/clients", clientsEndpoint);
 apiHono.route("/envelopes", envelopesEndpoint);
 apiHono.route("/envelopes", envelopePreparationEndpoint);

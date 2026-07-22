@@ -1,24 +1,32 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { ProductModeNavigation } from "@/components/navigation/product-mode-navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	type CatalogGroup,
+	type CatalogRole,
+	type CatalogStatus,
+	groupOptions,
+	historyActionLabel,
+	historyGroupLabel,
+	historyRoleLabel,
+	historyStatusLabel,
+	roleOptions,
+	statusOptions,
+} from "./history-catalog-labels";
+import { HistoryCatalogLink } from "./history-catalog-link";
 import { HistoryCreatorControls } from "./history-creator-controls";
-import { HistoryEnvelopeStart, type HistorySessionIdentity } from "./history-envelope-start";
+import {
+	HistoryEnvelopeStart,
+	type HistorySessionIdentity,
+	type HistoryStartSigningMode,
+} from "./history-envelope-start";
 import { HistoryHumanReviewQueue } from "./history-human-review-queue";
 
-type CatalogRole = "creator" | "signer" | "creator_and_signer";
-type CatalogGroup = "drafts" | "needs_my_action" | "waiting_on_others" | "completed" | "closed";
-type CatalogStatus =
-	| "awaiting_verification"
-	| "draft"
-	| "changes_requested"
-	| "sent"
-	| "completed"
-	| "declined"
-	| "expired";
 interface HistoryDocumentRow {
 	envelopeId: string;
 	title: string;
@@ -61,7 +69,10 @@ type HistoryLoadResult =
 			pagination: CatalogPagination;
 	  }
 	| { state: "recovery"; recoveryUrl: string; expired: boolean };
-type HistoryDocumentsPageProps = { onSignedOut?: (recoveryUrl: string) => void };
+type HistoryDocumentsPageProps = {
+	initialSigningMode?: HistoryStartSigningMode;
+	onSignedOut?: (recoveryUrl: string) => void;
+};
 interface CatalogFilterValues {
 	search: string;
 	role: "" | CatalogRole;
@@ -80,6 +91,7 @@ const initialCatalogRequest: CatalogRequest = {
 };
 
 export function HistoryDocumentsPage({
+	initialSigningMode,
 	onSignedOut = defaultOnSignedOut,
 }: HistoryDocumentsPageProps) {
 	const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -131,6 +143,7 @@ export function HistoryDocumentsPage({
 	return (
 		<main className="min-h-dvh bg-background px-6 py-10">
 			<section className="mx-auto max-w-3xl space-y-6">
+				<ProductModeNavigation activeMode="my_documents" />
 				<div className="flex flex-wrap items-start justify-between gap-4">
 					<div>
 						<p className="text-sm font-medium text-primary">Signmos</p>
@@ -145,7 +158,12 @@ export function HistoryDocumentsPage({
 					Completed and expired documents are retained for 90 days unless deleted earlier. My
 					documents is not permanent storage.
 				</p>
-				{catalog?.identity ? <HistoryEnvelopeStart identity={catalog.identity} /> : null}
+				{catalog?.identity ? (
+					<HistoryEnvelopeStart
+						identity={catalog.identity}
+						initialSigningMode={initialSigningMode}
+					/>
+				) : null}
 				<HistoryHumanReviewQueue />
 				<CatalogFilters onApply={applyFilters} />
 
@@ -321,7 +339,7 @@ function CatalogRows({ items }: { items: HistoryDocumentRow[] }) {
 						) : null}
 						<div className="flex flex-wrap gap-4 text-sm">
 							{item.allowedActions.includes("resume") || item.allowedActions.includes("review") ? (
-								<CatalogLink
+								<HistoryCatalogLink
 									href={`/my-documents/${encodeURIComponent(item.envelopeId)}/manage`}
 									label={
 										item.allowedActions.includes("resume") ? "Resume preparation" : "Review status"
@@ -329,14 +347,16 @@ function CatalogRows({ items }: { items: HistoryDocumentRow[] }) {
 								/>
 							) : null}
 							{item.allowedActions.includes("sign") ? (
-								<CatalogLink
+								<HistoryCatalogLink
 									href={`/my-documents/${encodeURIComponent(item.envelopeId)}/sign`}
 									label="Review and sign"
 								/>
 							) : null}
-							{item.detailUrl ? <CatalogLink href={item.detailUrl} label="View details" /> : null}
+							{item.detailUrl ? (
+								<HistoryCatalogLink href={item.detailUrl} label="View details" />
+							) : null}
 							{item.downloadUrl ? (
-								<CatalogLink href={item.downloadUrl} label="Download PDF" />
+								<HistoryCatalogLink href={item.downloadUrl} label="Download PDF" />
 							) : null}
 						</div>
 						<HistoryCreatorControls
@@ -392,20 +412,9 @@ function CatalogRecovery({
 			</AlertTitle>
 			<AlertDescription>
 				<p>Request a new secure link to continue.</p>
-				<CatalogLink href={recovery.recoveryUrl} label="Request a new link" />
+				<HistoryCatalogLink href={recovery.recoveryUrl} label="Request a new link" />
 			</AlertDescription>
 		</Alert>
-	);
-}
-
-function CatalogLink({ href, label }: { href: string; label: string }) {
-	return (
-		<a
-			className="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-			href={href}
-		>
-			{label}
-		</a>
 	);
 }
 
@@ -433,45 +442,6 @@ function buildCatalogUrl(request: CatalogRequest): string {
 	if (request.status) query.set("status", request.status);
 	query.set("page", String(request.page));
 	return `/api/history/documents?${query.toString()}`;
-}
-
-const roleOptions = [
-	["creator", "Creator"],
-	["signer", "Signer"],
-	["creator_and_signer", "Creator and signer"],
-] as const;
-const groupOptions = [
-	["drafts", "Drafts"],
-	["needs_my_action", "Needs my action"],
-	["waiting_on_others", "Waiting on others"],
-	["completed", "Completed"],
-	["closed", "Closed"],
-] as const;
-const statusOptions = [
-	["awaiting_verification", "Awaiting verification"],
-	["draft", "Draft"],
-	["changes_requested", "Changes requested"],
-	["sent", "Sent"],
-	["completed", "Completed"],
-	["declined", "Declined"],
-	["expired", "Expired"],
-] as const;
-
-function historyRoleLabel(role: CatalogRole): string {
-	if (role === "creator_and_signer") return "Creator and signer";
-	return role === "creator" ? "Creator" : "Signer";
-}
-
-function historyGroupLabel(group: CatalogGroup): string {
-	return groupOptions.find(([value]) => value === group)?.[1] ?? group;
-}
-
-function historyStatusLabel(status: CatalogStatus): string {
-	return statusOptions.find(([value]) => value === status)?.[1] ?? status;
-}
-
-function historyActionLabel(action: string): string {
-	return action.replaceAll("_", " ");
 }
 
 function isHistoryDocumentsResponse(value: unknown): value is HistoryDocumentsResponse {

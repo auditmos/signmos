@@ -107,6 +107,10 @@ describe("StartEnvelopePage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: choiceLabel }));
 
+		expect(screen.getByRole("navigation", { name: "Signmos options" })).toBeTruthy();
+		expect(screen.getByRole("link", { name: choiceLabel }).getAttribute("aria-current")).toBe(
+			"page",
+		);
 		const backButton = screen.getByRole("button", { name: "Back to task choices" });
 		expect(backButton.classList.contains("border")).toBe(true);
 		expect(backButton.closest("form")?.firstElementChild).toBe(backButton);

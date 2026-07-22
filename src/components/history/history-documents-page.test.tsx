@@ -48,6 +48,10 @@ describe("HistoryDocumentsPage", () => {
 		);
 
 		expect(await screen.findByRole("heading", { name: "My documents" })).toBeTruthy();
+		expect(screen.getByRole("navigation", { name: "Signmos options" })).toBeTruthy();
+		expect(screen.getByRole("link", { name: "My documents" }).getAttribute("aria-current")).toBe(
+			"page",
+		);
 		expect(await screen.findByRole("button", { name: "Start a new document" })).toBeTruthy();
 		expect(await screen.findByText("Completed document")).toBeTruthy();
 		expect(screen.getByRole("article").textContent).toContain("Completed");

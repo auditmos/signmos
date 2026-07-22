@@ -11,6 +11,10 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AgenticAccessRequestForm } from "@/components/agentic/agentic-access-request-form";
 import { HistoryRequestForm } from "@/components/history/history-request-form";
+import {
+	type ProductMode,
+	ProductModeNavigation,
+} from "@/components/navigation/product-mode-navigation";
 import { readTurnstileToken, TurnstileWidget } from "@/components/turnstile-widget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,14 +23,14 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 interface StartEnvelopePageProps {
-	initialTask?: "my_documents" | "agentic";
+	initialTask?: ProductMode;
 	historyReturnTo?: string;
 	turnstileSiteKey?: string;
 	testTurnstileToken?: string;
 }
 
 type SigningMode = "only_me" | "me_and_another_signer";
-type LandingTask = SigningMode | "my_documents" | "agentic";
+type LandingTask = ProductMode;
 
 const landingTaskHistoryStateKey = "signmosLandingTask";
 
@@ -235,6 +239,11 @@ export function StartEnvelopePage({
 					isTaskChooserVisible ? "max-w-3xl gap-10" : "lg:grid-cols-[1fr_420px] lg:items-start",
 				)}
 			>
+				{activeTask ? (
+					<div className="lg:col-span-2">
+						<ProductModeNavigation activeMode={activeTask} />
+					</div>
+				) : null}
 				<div
 					className={cn(isTaskChooserVisible ? "mx-auto max-w-2xl text-center" : "pt-8 lg:pt-20")}
 				>
