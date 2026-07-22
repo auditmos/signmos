@@ -1,3 +1,10 @@
+## [1.9.5](https://github.com/auditmos/signmos/compare/v1.9.4...v1.9.5) (2026-07-22)
+
+
+### Bug Fixes
+
+* expose agent prompt token controls ([85e88ba](https://github.com/auditmos/signmos/commit/85e88ba27c83ab032309797467fce42ee7119022))
+
 ## [1.9.4](https://github.com/auditmos/signmos/compare/v1.9.3...v1.9.4) (2026-07-22)
 
 
