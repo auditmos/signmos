@@ -14,6 +14,7 @@ export interface HistorySessionIdentity {
 }
 
 interface HistoryEnvelopeStartProps {
+	collapsible?: boolean;
 	identity: HistorySessionIdentity;
 	initialSigningMode?: HistoryStartSigningMode;
 	onStarted?: (redirectUrl: string) => void;
@@ -36,11 +37,12 @@ interface HistoryEnvelopeStartError {
 const defaultOnStarted = (redirectUrl: string) => window.location.assign(redirectUrl);
 
 export function HistoryEnvelopeStart({
+	collapsible = true,
 	identity,
 	initialSigningMode,
 	onStarted = defaultOnStarted,
 }: HistoryEnvelopeStartProps) {
-	const [open, setOpen] = useState(Boolean(initialSigningMode));
+	const [open, setOpen] = useState(Boolean(initialSigningMode) || !collapsible);
 	const idempotencyKey = useMemo(() => crypto.randomUUID(), []);
 	const mutation = useMutation({
 		mutationFn: async (values: { name: string; signingMode: HistoryStartSigningMode }) => {
@@ -79,7 +81,7 @@ export function HistoryEnvelopeStart({
 		void form.handleSubmit();
 	}
 
-	if (!open) {
+	if (!open && collapsible) {
 		return (
 			<Button type="button" onClick={() => setOpen(true)}>
 				Start a new document
@@ -153,9 +155,11 @@ export function HistoryEnvelopeStart({
 				<Button type="submit" disabled={mutation.isPending}>
 					{mutation.isPending ? "Starting…" : "Start and upload PDF"}
 				</Button>
-				<Button type="button" variant="outline" onClick={() => setOpen(false)}>
-					Cancel
-				</Button>
+				{collapsible ? (
+					<Button type="button" variant="outline" onClick={() => setOpen(false)}>
+						Cancel
+					</Button>
+				) : null}
 			</div>
 		</form>
 	);

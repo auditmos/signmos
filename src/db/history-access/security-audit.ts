@@ -6,6 +6,7 @@ export const historySecurityEventTypes = [
 	"history.link.redeemed",
 	"history.link.expired",
 	"history.link.revoked",
+	"history.session.bridged",
 	"history.session.expired",
 	"history.session.revoked",
 	"history.completed.opened",
@@ -58,6 +59,7 @@ export async function recordHistoryEnvelopeSecurityEvent(input: {
 		| "history.link.redeemed"
 		| "history.link.expired"
 		| "history.link.revoked"
+		| "history.session.bridged"
 		| "history.session.expired"
 		| "history.session.revoked"
 	>;

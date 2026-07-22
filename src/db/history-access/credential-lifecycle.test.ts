@@ -1,5 +1,6 @@
 import { apiHono } from "@/hono/api";
 import {
+	createHistorySessionFromVerifiedIdentity,
 	inspectHistoryAccessLink,
 	redeemHistoryAccessLink,
 	resolveHistorySessionState,
@@ -71,6 +72,45 @@ describe("history credential and session security lifecycle", () => {
 		state.links = [];
 		state.sessions = [];
 		state.events = [];
+	});
+
+	it("bridges a verified Agentic identity without extending its shorter expiry", async () => {
+		// Reverse-bridge assumptions before RED:
+		// - Agentic email verification may open signing and document modes without another email.
+		// - The new history session cannot outlive the source Agentic management session.
+		// - Raw bridge and session credentials remain absent from persistence and audit rows.
+		const result = await createHistorySessionFromVerifiedIdentity({
+			email: " Agent@Example.COM ",
+			verifiedUntil: new Date("2026-07-22T12:10:00.000Z"),
+			now: new Date("2026-07-22T12:00:00.000Z"),
+			requestIp: "203.0.113.11",
+		});
+
+		expect(result.expiresAt).toEqual(new Date("2026-07-22T12:10:00.000Z"));
+		expect(state.links).toEqual([
+			expect.objectContaining({
+				email: "agent@example.com",
+				credentialHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+				status: "consumed",
+			}),
+		]);
+		expect(state.sessions).toEqual([
+			expect.objectContaining({
+				email: "agent@example.com",
+				status: "active",
+				expiresAt: new Date("2026-07-22T12:10:00.000Z"),
+			}),
+		]);
+		expect(state.events).toEqual([
+			expect.objectContaining({
+				email: "agent@example.com",
+				eventType: "history.session.bridged",
+				requestIp: "203.0.113.11",
+			}),
+		]);
+		expect(JSON.stringify([state.links, state.sessions, state.events])).not.toContain(
+			result.rawSession,
+		);
 	});
 
 	it("observes link expiry once and records no raw credential", async () => {

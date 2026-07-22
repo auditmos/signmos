@@ -1,10 +1,55 @@
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db/setup";
-import { hashAgenticCredential } from "./request";
+import { hashAgenticCredential, normalizeAgenticEmail } from "./request";
 import { appendAgenticSecurityEvent } from "./security-audit";
 import { agenticAccessLinks, agenticManagementSessions } from "./table";
 
 const agenticManagementSessionTtlMs = 15 * 60 * 1000;
+
+export async function createAgenticManagementSessionFromVerifiedIdentity(input: {
+	email: string;
+	now?: Date;
+	requestIp?: string;
+}): Promise<{ rawSession: string; expiresAt: Date }> {
+	const db = getDb();
+	const email = normalizeAgenticEmail(input.email);
+	const now = input.now ?? new Date();
+	const bridgeSeed = crypto.randomUUID();
+	const [link] = await db
+		.insert(agenticAccessLinks)
+		.values({
+			email,
+			credentialHash: await hashAgenticCredential(bridgeSeed),
+			status: "consumed",
+			expiresAt: now,
+			activatedAt: now,
+			consumedAt: now,
+		})
+		.returning();
+	if (!link) throw new Error("Agentic identity bridge was not created");
+
+	const rawSession = crypto.randomUUID();
+	const expiresAt = new Date(now.getTime() + agenticManagementSessionTtlMs);
+	const [session] = await db
+		.insert(agenticManagementSessions)
+		.values({
+			linkId: link.id,
+			email,
+			sessionHash: await hashAgenticCredential(rawSession),
+			status: "active",
+			expiresAt,
+		})
+		.returning();
+	if (!session) throw new Error("Agentic management session was not created");
+	await appendAgenticSecurityEvent({
+		linkId: link.id,
+		sessionId: session.id,
+		email,
+		eventType: "agentic.session.bridged",
+		requestIp: input.requestIp,
+	});
+	return { rawSession, expiresAt };
+}
 
 export type AgenticLinkInspection =
 	| { state: "confirm"; expiresAt: string }

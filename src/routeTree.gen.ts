@@ -16,6 +16,7 @@ import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as EnvelopeFieldsRouteImport } from './routes/envelope-fields'
 import { Route as ManualSigningSmokeRouteImport } from './routes/manual-signing-smoke'
 import { Route as MyDocumentsRouteImport } from './routes/my-documents'
+import { Route as NewDocumentRouteImport } from './routes/new-document'
 import { Route as SourcePdfUploadRouteImport } from './routes/source-pdf-upload'
 import { Route as CompletedDocumentsTokenRouteImport } from './routes/completed-documents.$token'
 import { Route as HistoryAccessCredentialRouteImport } from './routes/history-access.$credential'
@@ -62,6 +63,11 @@ const ManualSigningSmokeRoute = ManualSigningSmokeRouteImport.update({
 const MyDocumentsRoute = MyDocumentsRouteImport.update({
   id: '/my-documents',
   path: '/my-documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NewDocumentRoute = NewDocumentRouteImport.update({
+  id: '/new-document',
+  path: '/new-document',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SourcePdfUploadRoute = SourcePdfUploadRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/my-documents': typeof MyDocumentsRouteWithChildren
+  '/new-document': typeof NewDocumentRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/clients': typeof ClientsRoute
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
+  '/new-document': typeof NewDocumentRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/envelope-fields': typeof EnvelopeFieldsRoute
   '/manual-signing-smoke': typeof ManualSigningSmokeRoute
   '/my-documents': typeof MyDocumentsRouteWithChildren
+  '/new-document': typeof NewDocumentRoute
   '/source-pdf-upload': typeof SourcePdfUploadRoute
   '/completed-documents/$token': typeof CompletedDocumentsTokenRoute
   '/history-access/$credential': typeof HistoryAccessCredentialRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/envelope-fields'
     | '/manual-signing-smoke'
     | '/my-documents'
+    | '/new-document'
     | '/source-pdf-upload'
     | '/completed-documents/$token'
     | '/history-access/$credential'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/clients'
     | '/envelope-fields'
     | '/manual-signing-smoke'
+    | '/new-document'
     | '/source-pdf-upload'
     | '/completed-documents/$token'
     | '/history-access/$credential'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/envelope-fields'
     | '/manual-signing-smoke'
     | '/my-documents'
+    | '/new-document'
     | '/source-pdf-upload'
     | '/completed-documents/$token'
     | '/history-access/$credential'
@@ -264,6 +276,7 @@ export interface RootRouteChildren {
   EnvelopeFieldsRoute: typeof EnvelopeFieldsRoute
   ManualSigningSmokeRoute: typeof ManualSigningSmokeRoute
   MyDocumentsRoute: typeof MyDocumentsRouteWithChildren
+  NewDocumentRoute: typeof NewDocumentRoute
   SourcePdfUploadRoute: typeof SourcePdfUploadRoute
   CompletedDocumentsTokenRoute: typeof CompletedDocumentsTokenRoute
   HistoryAccessCredentialRoute: typeof HistoryAccessCredentialRoute
@@ -322,6 +335,13 @@ declare module '@tanstack/react-router' {
       path: '/my-documents'
       fullPath: '/my-documents'
       preLoaderRoute: typeof MyDocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/new-document': {
+      id: '/new-document'
+      path: '/new-document'
+      fullPath: '/new-document'
+      preLoaderRoute: typeof NewDocumentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/source-pdf-upload': {
@@ -450,6 +470,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnvelopeFieldsRoute: EnvelopeFieldsRoute,
   ManualSigningSmokeRoute: ManualSigningSmokeRoute,
   MyDocumentsRoute: MyDocumentsRouteWithChildren,
+  NewDocumentRoute: NewDocumentRoute,
   SourcePdfUploadRoute: SourcePdfUploadRoute,
   CompletedDocumentsTokenRoute: CompletedDocumentsTokenRoute,
   HistoryAccessCredentialRoute: HistoryAccessCredentialRoute,

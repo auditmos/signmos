@@ -1,10 +1,60 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { getDb } from "@/db/setup";
-import { hashHistoryCredential } from "./request";
+import { hashHistoryCredential, normalizeHistoryEmail } from "./request";
 import { appendHistorySecurityEvent } from "./security-audit";
 import { historyAccessLinks, historySessions } from "./table";
 
 const historySessionTtlMs = 8 * 60 * 60 * 1000;
+
+export async function createHistorySessionFromVerifiedIdentity(input: {
+	email: string;
+	verifiedUntil: Date;
+	now?: Date;
+	requestIp?: string;
+}): Promise<{ rawSession: string; expiresAt: Date }> {
+	const db = getDb();
+	const email = normalizeHistoryEmail(input.email);
+	const now = input.now ?? new Date();
+	const expiresAt = new Date(
+		Math.min(input.verifiedUntil.getTime(), now.getTime() + historySessionTtlMs),
+	);
+	if (expiresAt <= now) throw new Error("Verified identity already expired");
+
+	const bridgeSeed = crypto.randomUUID();
+	const [link] = await db
+		.insert(historyAccessLinks)
+		.values({
+			email,
+			credentialHash: await hashHistoryCredential(bridgeSeed),
+			status: "consumed",
+			expiresAt: now,
+			activatedAt: now,
+			consumedAt: now,
+		})
+		.returning();
+	if (!link) throw new Error("History identity bridge was not created");
+
+	const rawSession = crypto.randomUUID();
+	const [session] = await db
+		.insert(historySessions)
+		.values({
+			linkId: link.id,
+			email,
+			sessionHash: await hashHistoryCredential(rawSession),
+			status: "active",
+			expiresAt,
+		})
+		.returning();
+	if (!session) throw new Error("History session was not created");
+	await appendHistorySecurityEvent({
+		linkId: link.id,
+		sessionId: session.id,
+		email,
+		eventType: "history.session.bridged",
+		requestIp: input.requestIp,
+	});
+	return { rawSession, expiresAt };
+}
 
 export type HistoryLinkInspection =
 	| { state: "confirm"; expiresAt: string }

@@ -32,6 +32,7 @@ describe("My documents release security-audit contract", () => {
 			"history.link.redeemed",
 			"history.link.expired",
 			"history.link.revoked",
+			"history.session.bridged",
 			"history.session.expired",
 			"history.session.revoked",
 			"history.completed.opened",

@@ -7,6 +7,7 @@ export {
 	fingerprintAgentCommand,
 } from "./command-authority";
 export {
+	createAgenticManagementSessionFromVerifiedIdentity,
 	inspectAgenticAccessLink,
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,

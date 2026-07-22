@@ -1,5 +1,6 @@
 import { apiHono } from "@/hono/api";
 import {
+	createAgenticManagementSessionFromVerifiedIdentity,
 	inspectAgenticAccessLink,
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,
@@ -83,6 +84,45 @@ describe("agentic onboarding credential lifecycle", () => {
 		state.links = [];
 		state.sessions = [];
 		state.events = [];
+	});
+
+	it("bridges a verified product identity into a separate short Agentic session", async () => {
+		// Cross-mode identity assumptions before RED:
+		// - A verified My Documents identity may open Agentic mode without another email.
+		// - Agentic token management still receives its own fixed 15-minute session.
+		// - The bridge seed and raw session are never persisted in plaintext.
+		const now = new Date("2026-07-22T12:00:00.000Z");
+		const result = await createAgenticManagementSessionFromVerifiedIdentity({
+			email: " Owner@Example.COM ",
+			now,
+			requestIp: "203.0.113.10",
+		});
+
+		expect(result.expiresAt).toEqual(new Date("2026-07-22T12:15:00.000Z"));
+		expect(state.links).toEqual([
+			expect.objectContaining({
+				email: "owner@example.com",
+				credentialHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+				status: "consumed",
+			}),
+		]);
+		expect(state.sessions).toEqual([
+			expect.objectContaining({
+				email: "owner@example.com",
+				status: "active",
+				expiresAt: new Date("2026-07-22T12:15:00.000Z"),
+			}),
+		]);
+		expect(state.events).toEqual([
+			expect.objectContaining({
+				email: "owner@example.com",
+				eventType: "agentic.session.bridged",
+				requestIp: "203.0.113.10",
+			}),
+		]);
+		expect(JSON.stringify([state.links, state.sessions, state.events])).not.toContain(
+			result.rawSession,
+		);
 	});
 
 	it("is scanner-safe and atomically redeems exactly once before 30 minutes", async () => {
