@@ -1,3 +1,13 @@
+## [1.9.3](https://github.com/auditmos/signmos/compare/v1.9.2...v1.9.3) (2026-07-22)
+
+
+### Bug Fixes
+
+* align task chooser back button placement ([e4e5bdb](https://github.com/auditmos/signmos/commit/e4e5bdb13cbfe62c04bc3c11d5f73730081f6173))
+* sync landing choices with browser history ([bf5b65d](https://github.com/auditmos/signmos/commit/bf5b65d6de7dd9a4c8bad243a6be4029b7ebac78))
+* tailor landing copy to selected task ([33b69c9](https://github.com/auditmos/signmos/commit/33b69c91bc02dc97e0cae6a28af5aa5624fec3bf))
+* unify task chooser back buttons ([7bac22c](https://github.com/auditmos/signmos/commit/7bac22c3d1880e759e30431b138cc8336190993a))
+
 ## [1.9.2](https://github.com/auditmos/signmos/compare/v1.9.1...v1.9.2) (2026-07-21)
 
 
