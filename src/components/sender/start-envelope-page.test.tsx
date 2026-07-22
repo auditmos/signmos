@@ -70,6 +70,34 @@ describe("StartEnvelopePage", () => {
 		"Sign with someone else",
 		"My documents",
 		"Agentic mode",
+	])("returns to the task chooser when browser history goes back from %s", (choiceLabel) => {
+		// Browser-history assumptions before RED:
+		// - Selecting any task from the chooser adds one same-page history entry.
+		// - Popping back to the original entry restores the chooser without leaving `/`.
+		// - Direct task links supplied through initialTask are intentionally unchanged.
+		window.history.replaceState(null, "", "/");
+		const initialHistoryLength = window.history.length;
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: choiceLabel }));
+		expect(window.history.length).toBe(initialHistoryLength + 1);
+
+		fireEvent.popState(window, { state: null });
+
+		expect(
+			screen.getByRole("heading", { level: 1, name: "Sign a PDF without an account" }),
+		).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Sign by myself" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Sign with someone else" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "My documents" })).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Agentic mode" })).toBeTruthy();
+	});
+
+	it.each([
+		"Sign by myself",
+		"Sign with someone else",
+		"My documents",
+		"Agentic mode",
 	])("shows the task chooser return action first in the card for %s", (choiceLabel) => {
 		// Assumptions for this UI consistency slice:
 		// - My Documents and Agentic mode establish the intended outlined-button treatment.

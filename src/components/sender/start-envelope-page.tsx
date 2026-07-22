@@ -8,7 +8,7 @@ import {
 	Send,
 	UsersRound,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AgenticAccessRequestForm } from "@/components/agentic/agentic-access-request-form";
 import { HistoryRequestForm } from "@/components/history/history-request-form";
 import { readTurnstileToken, TurnstileWidget } from "@/components/turnstile-widget";
@@ -27,6 +27,8 @@ interface StartEnvelopePageProps {
 
 type SigningMode = "only_me" | "me_and_another_signer";
 type LandingTask = SigningMode | "my_documents" | "agentic";
+
+const landingTaskHistoryStateKey = "signmosLandingTask";
 
 const landingTaskChoices = [
 	{
@@ -146,7 +148,18 @@ export function StartEnvelopePage({
 		onSubmit: ({ value }) => submitStart(value, pendingTurnstileTokenRef.current),
 	});
 
+	useEffect(() => {
+		function handlePopState(event: PopStateEvent) {
+			setActiveTask(readLandingTaskHistoryState(event.state) ?? initialTask ?? null);
+			setState({ status: "idle" });
+		}
+
+		window.addEventListener("popstate", handlePopState);
+		return () => window.removeEventListener("popstate", handlePopState);
+	}, [initialTask]);
+
 	function chooseTask(task: LandingTask) {
+		pushLandingTaskHistoryState(task);
 		if (task === "only_me" || task === "me_and_another_signer") {
 			form.setFieldValue("signingMode", task);
 		}
@@ -201,6 +214,9 @@ export function StartEnvelopePage({
 	function returnToTaskChooser() {
 		setActiveTask(null);
 		setState({ status: "idle" });
+		if (readLandingTaskHistoryState(window.history.state) !== null) {
+			window.history.back();
+		}
 	}
 
 	const isTaskChooserVisible = activeTask === null;
@@ -341,6 +357,31 @@ function getLandingTaskHeroContent(activeTask: LandingTask | null): {
 } {
 	if (activeTask === null) return taskChooserHeroContent;
 	return landingTaskHeroContent[activeTask];
+}
+
+function pushLandingTaskHistoryState(task: LandingTask) {
+	const currentState: unknown = window.history.state;
+	const preservedState = isRecord(currentState) ? currentState : {};
+	window.history.pushState({ ...preservedState, [landingTaskHistoryStateKey]: task }, "");
+}
+
+function readLandingTaskHistoryState(state: unknown): LandingTask | null {
+	if (!isRecord(state)) return null;
+	const task = state[landingTaskHistoryStateKey];
+	return isLandingTask(task) ? task : null;
+}
+
+function isLandingTask(value: unknown): value is LandingTask {
+	return (
+		value === "only_me" ||
+		value === "me_and_another_signer" ||
+		value === "my_documents" ||
+		value === "agentic"
+	);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function LandingTaskPanel({
