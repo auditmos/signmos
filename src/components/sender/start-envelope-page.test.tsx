@@ -84,6 +84,43 @@ describe("StartEnvelopePage", () => {
 		expect(backButton.closest("form")?.firstElementChild).toBe(backButton);
 	});
 
+	it.each([
+		{
+			choiceLabel: "Sign by myself",
+			heading: "Sign a PDF by yourself",
+			description:
+				"Enter your details, verify your email, then upload, prepare, and sign your document.",
+		},
+		{
+			choiceLabel: "Sign with someone else",
+			heading: "Sign a PDF with someone else",
+			description:
+				"Enter your details, verify your email, then upload your document and add the other signer.",
+		},
+		{
+			choiceLabel: "My documents",
+			heading: "Access your documents",
+			description: "Enter your email to receive a secure link to view and manage your PDFs.",
+		},
+		{
+			choiceLabel: "Agentic mode",
+			heading: "Connect Signmos to an agent",
+			description: "Verify your email to create and manage personal API tokens for your agent.",
+		},
+	])("shows task-specific hero copy for $choiceLabel", ({ choiceLabel, heading, description }) => {
+		// Assumptions for this content slice:
+		// - The Signmos brand label remains unchanged for every selected task.
+		// - The selected task controls both the main heading and its supporting sentence.
+		// - Returning to the chooser continues to restore the generic landing copy.
+		renderStartEnvelopePage({ testTurnstileToken: "test-pass" });
+
+		fireEvent.click(screen.getByRole("button", { name: choiceLabel }));
+
+		expect(screen.getByText("Signmos")).toBeTruthy();
+		expect(screen.getByRole("heading", { level: 1, name: heading })).toBeTruthy();
+		expect(screen.getByText(description)).toBeTruthy();
+	});
+
 	it("requests My documents access with email only", async () => {
 		const fetchMock = vi.fn(
 			async () => new Response(JSON.stringify({ data: { status: "accepted" } }), { status: 202 }),

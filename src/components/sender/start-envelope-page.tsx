@@ -60,6 +60,32 @@ const landingTaskChoices = [
 	icon: LucideIcon;
 }>;
 
+const landingTaskHeroContent = {
+	only_me: {
+		heading: "Sign a PDF by yourself",
+		description:
+			"Enter your details, verify your email, then upload, prepare, and sign your document.",
+	},
+	me_and_another_signer: {
+		heading: "Sign a PDF with someone else",
+		description:
+			"Enter your details, verify your email, then upload your document and add the other signer.",
+	},
+	my_documents: {
+		heading: "Access your documents",
+		description: "Enter your email to receive a secure link to view and manage your PDFs.",
+	},
+	agentic: {
+		heading: "Connect Signmos to an agent",
+		description: "Verify your email to create and manage personal API tokens for your agent.",
+	},
+} as const satisfies Record<LandingTask, { heading: string; description: string }>;
+
+const taskChooserHeroContent = {
+	heading: "Sign a PDF without an account",
+	description: "Choose how you’d like to get started.",
+} as const;
+
 type StartFormValues = {
 	signingMode: SigningMode;
 	name: string;
@@ -178,6 +204,7 @@ export function StartEnvelopePage({
 	}
 
 	const isTaskChooserVisible = activeTask === null;
+	const activeTaskHeroContent = getLandingTaskHeroContent(activeTask);
 
 	return (
 		<main
@@ -197,9 +224,7 @@ export function StartEnvelopePage({
 				>
 					<p className="text-sm font-medium text-primary">Signmos</p>
 					<h1 className="mt-4 max-w-2xl text-balance text-4xl font-semibold text-foreground sm:text-5xl">
-						{isTaskChooserVisible
-							? "Sign a PDF without an account"
-							: "Start a PDF signature envelope"}
+						{activeTaskHeroContent.heading}
 					</h1>
 					<p
 						className={cn(
@@ -207,9 +232,7 @@ export function StartEnvelopePage({
 							isTaskChooserVisible && "mx-auto",
 						)}
 					>
-						{isTaskChooserVisible
-							? "Choose how you’d like to get started."
-							: "Enter your sender details, verify your email, then upload and prepare the document."}
+						{activeTaskHeroContent.description}
 					</p>
 				</div>
 
@@ -310,6 +333,14 @@ export function StartEnvelopePage({
 			</section>
 		</main>
 	);
+}
+
+function getLandingTaskHeroContent(activeTask: LandingTask | null): {
+	heading: string;
+	description: string;
+} {
+	if (activeTask === null) return taskChooserHeroContent;
+	return landingTaskHeroContent[activeTask];
 }
 
 function LandingTaskPanel({
