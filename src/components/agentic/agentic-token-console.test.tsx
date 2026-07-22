@@ -16,11 +16,12 @@ function renderConsole() {
 }
 
 describe("agent token console", () => {
-	it("acknowledges full authority and keeps the one-time secret separate from the prompt", async () => {
+	it("places an explicitly selected one-time token in the absolute-URL agent prompt", async () => {
 		// Issue #44 console assumptions before RED:
 		// - TanStack Form owns name/acknowledgment validation; Query owns the mutation.
 		// - The secret is held only in immediate component state and disappears on reload/unmount.
-		// - Token setup and the platform-neutral prompt have separate accessible copy controls.
+		// - Only the newly generated, explicitly selected token can be placed in the prompt.
+		// - Unchecking the token restores the non-secret environment-variable placeholder.
 		const secret = `signmos_${"a".repeat(43)}`;
 		const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
 			if ((init?.method ?? "GET") === "GET") {
@@ -71,17 +72,23 @@ describe("agent token console", () => {
 			}),
 		);
 		expect(await screen.findByText(secret)).toBeTruthy();
-		const prompt = screen.getByTestId("agent-prompt").textContent ?? "";
-		expect(prompt).toContain("$SIGNMOS_TOKEN");
-		expect(prompt).toContain("/agent.md");
-		expect(prompt).toContain("/openapi.json");
-		expect(prompt).not.toContain(secret);
+		const promptElement = screen.getByTestId("agent-prompt");
+		expect(promptElement.textContent).toContain("$SIGNMOS_TOKEN");
+		expect(promptElement.textContent).not.toContain(secret);
+
+		fireEvent.click(screen.getByLabelText("Use Laptop agent in Agent prompt"));
+		const prompt = promptElement.textContent ?? "";
+		expect(prompt).toContain(
+			"Read https://signmos.com/agent.md and https://signmos.com/openapi.json",
+		);
+		expect(prompt).toContain(secret);
+		expect(prompt).not.toContain("$SIGNMOS_TOKEN");
 		expect(prompt).not.toMatch(/Codex|Claude/i);
 		expect(screen.getByRole("link", { name: "Open Agent guide" }).getAttribute("href")).toBe(
-			"/agent.md",
+			"https://signmos.com/agent.md",
 		);
 		expect(screen.getByRole("link", { name: "OpenAPI schema" }).getAttribute("href")).toBe(
-			"/openapi.json",
+			"https://signmos.com/openapi.json",
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Copy token setup" }));
@@ -89,6 +96,10 @@ describe("agent token console", () => {
 		await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
 		expect(writeText).toHaveBeenNthCalledWith(1, `export SIGNMOS_TOKEN='${secret}'`);
 		expect(writeText).toHaveBeenNthCalledWith(2, prompt);
+
+		fireEvent.click(screen.getByLabelText("Use Laptop agent in Agent prompt"));
+		expect(promptElement.textContent).toContain("$SIGNMOS_TOKEN");
+		expect(promptElement.textContent).not.toContain(secret);
 
 		view.unmount();
 		renderConsole();

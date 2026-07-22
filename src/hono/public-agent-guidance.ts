@@ -9,7 +9,7 @@ Read this guide and [/openapi.json](/openapi.json) before acting. Signmos Agenti
 
 ## Secret handling
 
-Provide the token through the SIGNMOS_TOKEN environment variable. Never paste it into prompts, URLs, issue bodies, source control, or logs. Send it only in the Authorization: Bearer $SIGNMOS_TOKEN header. Anyone holding the token can send and can request sign, decline, cancel, expire, or delete actions as the verified email; those protected actions require a matching human's approval before execution.
+Prefer providing the token through the SIGNMOS_TOKEN environment variable. The authenticated Agentic console can place a newly generated token in a private agent prompt only after you explicitly select it. Never place it in URLs, issue bodies, source control, or logs. Send it only in the Authorization: Bearer $SIGNMOS_TOKEN header. Anyone holding the token can send and can request sign, decline, cancel, expire, or delete actions as the verified email; those protected actions require a matching human's approval before execution.
 
 ## Confirm identity
 

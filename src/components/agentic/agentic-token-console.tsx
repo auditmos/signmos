@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const agentPrompt =
-	"Read /agent.md and /openapi.json. Use $SIGNMOS_TOKEN only in the Authorization Bearer header. Confirm the verified identity before acting, remain within the user's stated goal, and never place the token in prompts, URLs, logs, issues, or source control. Sign/complete, decline, cancel, expire, and delete return pending human review: tell the user, poll the returned command URL, and never claim execution before a completed terminal result.";
+const agentGuideUrl = "https://signmos.com/agent.md";
+const openApiUrl = "https://signmos.com/openapi.json";
 const tokenQueryKey = ["agentic-tokens"] as const;
 
 interface AgenticTokenMetadata {
@@ -44,6 +44,7 @@ class AgenticConsoleError extends Error {
 export function AgenticTokenConsole() {
 	const queryClient = useQueryClient();
 	const [copyStatus, setCopyStatus] = useState("");
+	const [includeGeneratedToken, setIncludeGeneratedToken] = useState(false);
 	const [pendingRevoke, setPendingRevoke] = useState<AgenticTokenMetadata | null>(null);
 	const listing = useQuery({
 		queryKey: tokenQueryKey,
@@ -70,7 +71,10 @@ export function AgenticTokenConsole() {
 			}
 			return body.data;
 		},
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: tokenQueryKey }),
+		onSuccess: () => {
+			setIncludeGeneratedToken(false);
+			return queryClient.invalidateQueries({ queryKey: tokenQueryKey });
+		},
 	});
 	const revocation = useMutation({
 		mutationFn: async (token: AgenticTokenMetadata) => {
@@ -99,6 +103,7 @@ export function AgenticTokenConsole() {
 	});
 	const activeCount = listing.data?.tokens.filter((token) => token.status === "active").length ?? 0;
 	const atLimit = listing.data ? activeCount >= listing.data.activeLimit : true;
+	const agentPrompt = buildAgentPrompt(generation.data?.secret, includeGeneratedToken);
 
 	async function copy(value: string, successMessage: string) {
 		try {
@@ -191,6 +196,15 @@ export function AgenticTokenConsole() {
 							<code className="block overflow-wrap-anywhere rounded bg-muted p-3 font-mono text-sm">
 								{generation.data.secret}
 							</code>
+							<label className="flex items-start gap-3 text-sm text-foreground">
+								<input
+									type="checkbox"
+									checked={includeGeneratedToken}
+									onChange={(event) => setIncludeGeneratedToken(event.target.checked)}
+									className="mt-0.5 size-4 rounded border-input"
+								/>
+								<span>Use {generation.data.token.name} in Agent prompt</span>
+							</label>
 							<Button
 								type="button"
 								variant="outline"
@@ -215,10 +229,10 @@ export function AgenticTokenConsole() {
 						{agentPrompt}
 					</pre>
 					<nav aria-label="Agent API resources" className="flex flex-wrap gap-4 text-sm">
-						<a className="font-medium text-primary underline" href="/agent.md">
+						<a className="font-medium text-primary underline" href={agentGuideUrl}>
 							Open Agent guide
 						</a>
-						<a className="font-medium text-primary underline" href="/openapi.json">
+						<a className="font-medium text-primary underline" href={openApiUrl}>
 							OpenAPI schema
 						</a>
 					</nav>
@@ -269,6 +283,11 @@ export function AgenticTokenConsole() {
 			) : null}
 		</main>
 	);
+}
+
+function buildAgentPrompt(secret: string | undefined, includeSecret: boolean): string {
+	const token = includeSecret && secret ? secret : "$SIGNMOS_TOKEN";
+	return `Read ${agentGuideUrl} and ${openApiUrl}. Use ${token} only in the Authorization Bearer header. Confirm the verified identity before acting, remain within the user's stated goal, and never place the token in URLs, logs, issues, or source control. Sign/complete, decline, cancel, expire, and delete return pending human review: tell the user, poll the returned command URL, and never claim execution before a completed terminal result.`;
 }
 
 function TokenListing({

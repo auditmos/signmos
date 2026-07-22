@@ -116,7 +116,7 @@ describe("agent API contract release", () => {
 			"Retry-After",
 			"exponential backoff",
 			"stay within the user goal",
-			"Never paste it into prompts",
+			"only after you explicitly select it",
 		]) {
 			expect(guidance, phrase).toContain(phrase);
 		}
