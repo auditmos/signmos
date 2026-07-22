@@ -3,6 +3,8 @@ import { apiHono } from "@/hono/api";
 const navigationMocks = vi.hoisted(() => ({
 	bridgeAgentic: vi.fn(),
 	bridgeHistory: vi.fn(),
+	revokeAgentic: vi.fn(),
+	revokeHistory: vi.fn(),
 	resolveHistory: vi.fn(),
 	resolveAgentic: vi.fn(),
 }));
@@ -12,6 +14,7 @@ vi.mock("@/db/history-access", async (importOriginal) => {
 	return {
 		...actual,
 		createHistorySessionFromVerifiedIdentity: navigationMocks.bridgeHistory,
+		revokeHistorySession: navigationMocks.revokeHistory,
 		resolveHistorySessionState: navigationMocks.resolveHistory,
 	};
 });
@@ -21,6 +24,7 @@ vi.mock("@/db/agentic-access", async (importOriginal) => {
 	return {
 		...actual,
 		createAgenticManagementSessionFromVerifiedIdentity: navigationMocks.bridgeAgentic,
+		revokeAgenticManagementSession: navigationMocks.revokeAgentic,
 		resolveAgenticManagementSession: navigationMocks.resolveAgentic,
 	};
 });
@@ -29,6 +33,8 @@ describe("product mode navigation", () => {
 	beforeEach(() => {
 		navigationMocks.bridgeAgentic.mockReset();
 		navigationMocks.bridgeHistory.mockReset();
+		navigationMocks.revokeAgentic.mockReset();
+		navigationMocks.revokeHistory.mockReset();
 		navigationMocks.resolveHistory.mockReset();
 		navigationMocks.resolveAgentic.mockReset();
 		navigationMocks.resolveHistory.mockResolvedValue({
@@ -57,6 +63,36 @@ describe("product mode navigation", () => {
 				expiresAt: new Date(input.now.getTime() + 10 * 60 * 1000),
 			}),
 		);
+	});
+
+	it("signs out of both product sessions and clears both cookies", async () => {
+		// Shared endpoint assumptions before RED:
+		// - One same-origin action ends both verified browser sessions, even if one cookie is absent.
+		// - Both cookies are cleared so cross-mode bridging cannot silently authenticate again.
+		// - Missing or expired sessions remain an idempotent successful sign-out.
+		const response = await apiHono.request("/api/navigate/sign-out", {
+			method: "POST",
+			headers: {
+				cookie:
+					"signmos_history_session=history-session; signmos_agentic_management=agentic-session",
+				origin: "http://localhost",
+			},
+		});
+
+		expect(response.status).toBe(204);
+		expect(navigationMocks.revokeHistory).toHaveBeenCalledWith(
+			"history-session",
+			expect.any(Date),
+			"unknown",
+		);
+		expect(navigationMocks.revokeAgentic).toHaveBeenCalledWith(
+			"agentic-session",
+			expect.any(Date),
+			"unknown",
+		);
+		const cookies = response.headers.get("set-cookie") ?? "";
+		expect(cookies).toMatch(/signmos_history_session=;.*Max-Age=0/i);
+		expect(cookies).toMatch(/signmos_agentic_management=;.*Max-Age=0/i);
 	});
 
 	it.each([

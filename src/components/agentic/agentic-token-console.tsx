@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ProductModeNavigation } from "@/components/navigation/product-mode-navigation";
+import { AuthenticatedProductNavigation } from "@/components/navigation/product-mode-navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,7 +122,7 @@ export function AgenticTokenConsole() {
 	return (
 		<main className="min-h-dvh bg-background px-6 py-10">
 			<section className="mx-auto max-w-2xl space-y-6">
-				<ProductModeNavigation activeMode="agentic" />
+				<AuthenticatedProductNavigation activeMode="agentic" />
 				<div className="space-y-2">
 					<p className="text-sm font-medium text-primary">Signmos Agentic mode</p>
 					<h1 className="text-3xl font-semibold text-foreground">Create an Agentic token</h1>

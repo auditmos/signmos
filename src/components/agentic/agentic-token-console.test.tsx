@@ -56,6 +56,7 @@ describe("agent token console", () => {
 		expect(screen.getByRole("link", { name: "Agentic mode" }).getAttribute("aria-current")).toBe(
 			"page",
 		);
+		expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
 		expect(document.body.textContent).toContain("send, sign, decline, cancel, and delete");
 		await screen.findByText(/no agentic tokens yet/i);
 		expect(screen.getByRole("group", { name: "Token used in Agent prompt" })).toBeTruthy();

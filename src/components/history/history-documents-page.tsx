@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { ProductModeNavigation } from "@/components/navigation/product-mode-navigation";
+import { AuthenticatedProductNavigation } from "@/components/navigation/product-mode-navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,7 +95,6 @@ export function HistoryDocumentsPage({
 	onSignedOut = defaultOnSignedOut,
 }: HistoryDocumentsPageProps) {
 	const recoveryHeadingRef = useRef<HTMLHeadingElement>(null);
-	const signedOutStatusRef = useRef<HTMLOutputElement>(null);
 	const catalogStatusRef = useRef<HTMLOutputElement>(null);
 	const focusCatalogResultRef = useRef(false);
 	const [catalogRequest, setCatalogRequest] = useState(initialCatalogRequest);
@@ -103,26 +102,12 @@ export function HistoryDocumentsPage({
 		queryKey: ["history-documents", catalogRequest],
 		queryFn: () => fetchHistoryCatalog(catalogRequest),
 	});
-	const signOut = useMutation({
-		mutationFn: async () => {
-			const response = await fetch("/api/history/session/sign-out", {
-				method: "POST",
-				credentials: "same-origin",
-			});
-			if (!response.ok) throw new Error("Unable to sign out");
-			return "/?task=my-documents";
-		},
-		onSuccess: (url) => onSignedOut(url),
-	});
 	const recovery = isHistoryRecoveryLoad(documentsQuery.data) ? documentsQuery.data : null;
 	const catalog = isHistoryDocumentsLoad(documentsQuery.data) ? documentsQuery.data : null;
 
 	useEffect(() => {
 		if (recovery) recoveryHeadingRef.current?.focus();
 	}, [recovery]);
-	useEffect(() => {
-		if (signOut.isSuccess) signedOutStatusRef.current?.focus();
-	}, [signOut.isSuccess]);
 	useEffect(() => {
 		if (catalog && focusCatalogResultRef.current) {
 			catalogStatusRef.current?.focus();
@@ -143,15 +128,10 @@ export function HistoryDocumentsPage({
 	return (
 		<main className="min-h-dvh bg-background px-6 py-10">
 			<section className="mx-auto max-w-3xl space-y-6">
-				<ProductModeNavigation activeMode="my_documents" />
-				<div className="flex flex-wrap items-start justify-between gap-4">
-					<div>
-						<p className="text-sm font-medium text-primary">Signmos</p>
-						<h1 className="mt-3 text-3xl font-semibold text-foreground">My documents</h1>
-					</div>
-					<Button type="button" variant="outline" onClick={() => signOut.mutate()}>
-						{signOut.isPending ? "Signing out..." : "Sign out"}
-					</Button>
+				<AuthenticatedProductNavigation activeMode="my_documents" onSignedOut={onSignedOut} />
+				<div>
+					<p className="text-sm font-medium text-primary">Signmos</p>
+					<h1 className="mt-3 text-3xl font-semibold text-foreground">My documents</h1>
 				</div>
 
 				<p className="text-muted-foreground text-sm">
@@ -172,16 +152,11 @@ export function HistoryDocumentsPage({
 						Loading your documents…
 					</output>
 				) : null}
-				{documentsQuery.isError || signOut.isError ? (
+				{documentsQuery.isError ? (
 					<Alert role="alert" variant="destructive">
 						<AlertTitle>Unable to load My documents</AlertTitle>
 						<AlertDescription>Request a new secure link and try again.</AlertDescription>
 					</Alert>
-				) : null}
-				{signOut.isSuccess ? (
-					<output ref={signedOutStatusRef} tabIndex={-1} className="block text-muted-foreground">
-						Signed out. Redirecting to request a new link…
-					</output>
 				) : null}
 				{recovery ? <CatalogRecovery recovery={recovery} headingRef={recoveryHeadingRef} /> : null}
 				{catalog ? (

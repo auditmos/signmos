@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { ProductModeNavigation } from "./product-mode-navigation";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { AuthenticatedProductNavigation, ProductModeNavigation } from "./product-mode-navigation";
 
 describe("ProductModeNavigation", () => {
 	it("offers all four sibling modes and identifies the current view", () => {
@@ -27,5 +28,30 @@ describe("ProductModeNavigation", () => {
 		expect(screen.getByRole("link", { name: "Agentic mode" }).getAttribute("href")).toBe(
 			"/api/navigate/agentic",
 		);
+	});
+
+	it("offers one shared sign-out action for authenticated product views", async () => {
+		// Authenticated-navigation assumptions before RED:
+		// - Sign out is adjacent to the four sibling modes on every authenticated mode view.
+		// - The shared endpoint ends both product sessions, then returns to this mode's email entry.
+		// - Signed-out navigation continues using ProductModeNavigation without this action.
+		const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const onSignedOut = vi.fn();
+		const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+		render(
+			<QueryClientProvider client={queryClient}>
+				<AuthenticatedProductNavigation activeMode="agentic" onSignedOut={onSignedOut} />
+			</QueryClientProvider>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+		await waitFor(() =>
+			expect(fetchMock).toHaveBeenCalledWith("/api/navigate/sign-out", {
+				method: "POST",
+				credentials: "same-origin",
+			}),
+		);
+		expect(onSignedOut).toHaveBeenCalledWith("/?task=agentic");
 	});
 });

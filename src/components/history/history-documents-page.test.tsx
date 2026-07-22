@@ -98,7 +98,7 @@ describe("HistoryDocumentsPage", () => {
 
 	it("signs out through the protected session mutation and announces success", async () => {
 		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-			if (String(input).endsWith("/session/sign-out")) return new Response(null, { status: 204 });
+			if (String(input).endsWith("/navigate/sign-out")) return new Response(null, { status: 204 });
 			return new Response(
 				JSON.stringify({
 					data: {
@@ -121,7 +121,7 @@ describe("HistoryDocumentsPage", () => {
 
 		fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
 		await waitFor(() => expect(onSignedOut).toHaveBeenCalledWith("/?task=my-documents"));
-		expect(fetchMock).toHaveBeenLastCalledWith("/api/history/session/sign-out", {
+		expect(fetchMock).toHaveBeenLastCalledWith("/api/navigate/sign-out", {
 			method: "POST",
 			credentials: "same-origin",
 		});

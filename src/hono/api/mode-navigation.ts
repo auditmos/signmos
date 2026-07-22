@@ -1,11 +1,13 @@
-import { getCookie, setCookie } from "hono/cookie";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import {
 	createAgenticManagementSessionFromVerifiedIdentity,
 	resolveAgenticManagementSession,
+	revokeAgenticManagementSession,
 } from "@/db/agentic-access";
 import {
 	createHistorySessionFromVerifiedIdentity,
 	resolveHistorySessionState,
+	revokeHistorySession,
 } from "@/db/history-access";
 import { createHono } from "@/hono/factory";
 import { getRequestIp } from "./envelope-route-helpers";
@@ -33,6 +35,32 @@ interface NavigationResult {
 }
 
 const modeNavigationEndpoint = createHono();
+
+modeNavigationEndpoint.post("/sign-out", async (c) => {
+	if (c.req.header("origin") !== new URL(c.req.url).origin) {
+		return c.json({ error: { code: "INVALID_ORIGIN", message: "Use Signmos to sign out" } }, 403);
+	}
+	const now = new Date();
+	const requestIp = getRequestIp(c.req.header("cf-connecting-ip"), c.req.header("x-forwarded-for"));
+	await Promise.all([
+		revokeHistorySession(getCookie(c, "signmos_history_session") ?? "", now, requestIp),
+		revokeAgenticManagementSession(
+			getCookie(c, "signmos_agentic_management") ?? "",
+			now,
+			requestIp,
+		),
+	]);
+	for (const cookieName of ["signmos_history_session", "signmos_agentic_management"] as const) {
+		deleteCookie(c, cookieName, {
+			path: "/",
+			httpOnly: true,
+			secure: true,
+			sameSite: "Lax",
+		});
+	}
+	c.header("Cache-Control", "private, no-store");
+	return c.body(null, 204);
+});
 
 modeNavigationEndpoint.get("/:mode", async (c) => {
 	const mode = c.req.param("mode");

@@ -14,6 +14,7 @@ export async function appendAgenticSecurityEvent(input: {
 		| "agentic.link.redeemed"
 		| "agentic.session.bridged"
 		| "agentic.session.expired"
+		| "agentic.session.revoked"
 		| "agentic.token.created"
 		| "agentic.token.revoked"
 		| "agentic.identity.read"

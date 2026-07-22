@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ProductModeNavigation } from "@/components/navigation/product-mode-navigation";
+import { AuthenticatedProductNavigation } from "@/components/navigation/product-mode-navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
 	HistoryEnvelopeStart,
@@ -32,7 +32,7 @@ export function HistorySigningStartPage({ signingMode }: { signingMode: HistoryS
 	return (
 		<main className="min-h-dvh bg-background px-6 py-10">
 			<section className="mx-auto max-w-3xl space-y-8">
-				<ProductModeNavigation activeMode={signingMode} />
+				<AuthenticatedProductNavigation activeMode={signingMode} />
 				<div>
 					<p className="text-sm font-medium text-primary">Signmos</p>
 					<h1 className="mt-3 text-balance text-3xl font-semibold text-foreground">

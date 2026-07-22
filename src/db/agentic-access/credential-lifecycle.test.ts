@@ -4,6 +4,7 @@ import {
 	inspectAgenticAccessLink,
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,
+	revokeAgenticManagementSession,
 } from "./credential-authority";
 import { hashAgenticCredential } from "./request";
 import { agenticAccessLinks, agenticManagementSessions, agenticSecurityEvents } from "./table";
@@ -202,6 +203,48 @@ describe("agentic onboarding credential lifecycle", () => {
 		await expect(
 			resolveAgenticManagementSession(rawSession, new Date("2026-07-17T08:15:00.000Z")),
 		).resolves.toEqual({ state: "expired" });
+	});
+
+	it("revokes only the presented Agentic management session and audits sign-out", async () => {
+		// Shared sign-out assumptions before RED:
+		// - Signing out invalidates the current Agentic management session server-side.
+		// - Other active sessions for the same email remain valid.
+		// - Audit records never contain the raw session credential.
+		const rawSession = "raw-current-agentic-management-session";
+		state.sessions.push(
+			{
+				id: "20000000-0000-4000-8000-000000000001",
+				linkId: "10000000-0000-4000-8000-000000000001",
+				email: "agent@example.com",
+				sessionHash: await hashAgenticCredential(rawSession),
+				status: "active",
+				expiresAt: new Date("2026-07-17T09:15:00.000Z"),
+			},
+			{
+				id: "20000000-0000-4000-8000-000000000002",
+				linkId: "10000000-0000-4000-8000-000000000002",
+				email: "agent@example.com",
+				sessionHash: await hashAgenticCredential("raw-other-agentic-management-session"),
+				status: "active",
+				expiresAt: new Date("2026-07-17T09:15:00.000Z"),
+			},
+		);
+
+		await expect(
+			revokeAgenticManagementSession(
+				rawSession,
+				new Date("2026-07-17T09:00:00.000Z"),
+				"203.0.113.10",
+			),
+		).resolves.toBe(true);
+		expect(state.sessions.map((session) => session.status)).toEqual(["revoked", "active"]);
+		expect(state.events).toEqual([
+			expect.objectContaining({
+				sessionId: "20000000-0000-4000-8000-000000000001",
+				eventType: "agentic.session.revoked",
+			}),
+		]);
+		expect(JSON.stringify(state.events)).not.toContain(rawSession);
 	});
 
 	it("requires explicit same-origin redemption and issues an isolated secure cookie", async () => {

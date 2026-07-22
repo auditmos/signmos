@@ -195,3 +195,38 @@ export async function resolveAgenticManagementSession(
 		session: { id: session.id, email: session.email, expiresAt: session.expiresAt },
 	};
 }
+
+export async function revokeAgenticManagementSession(
+	rawSession: string,
+	now = new Date(),
+	requestIp?: string,
+): Promise<boolean> {
+	const sessionHash = await hashAgenticCredential(rawSession);
+	const db = getDb();
+	const rows = await db
+		.select()
+		.from(agenticManagementSessions)
+		.where(eq(agenticManagementSessions.sessionHash, sessionHash))
+		.limit(1);
+	const session = rows.find((candidate) => candidate.sessionHash === sessionHash);
+	if (!session || session.status !== "active" || session.expiresAt <= now) return false;
+	const revoked = await db
+		.update(agenticManagementSessions)
+		.set({ status: "revoked" })
+		.where(
+			and(
+				eq(agenticManagementSessions.id, session.id),
+				eq(agenticManagementSessions.status, "active"),
+			),
+		)
+		.returning();
+	if (revoked.length === 0) return false;
+	await appendAgenticSecurityEvent({
+		linkId: session.linkId,
+		sessionId: session.id,
+		email: session.email,
+		eventType: "agentic.session.revoked",
+		requestIp,
+	});
+	return true;
+}

@@ -11,6 +11,7 @@ export {
 	inspectAgenticAccessLink,
 	redeemAgenticAccessLink,
 	resolveAgenticManagementSession,
+	revokeAgenticManagementSession,
 } from "./credential-authority";
 export {
 	getAgentDocumentDetail,
