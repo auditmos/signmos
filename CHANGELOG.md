@@ -1,3 +1,16 @@
+# [1.10.0](https://github.com/auditmos/signmos/compare/v1.9.5...v1.10.0) (2026-07-22)
+
+
+### Bug Fixes
+
+* preserve identity across product modes ([b43cdc0](https://github.com/auditmos/signmos/commit/b43cdc0cd872b1a0705125ad350ce4a2a4d4a59e))
+* share sign out across product modes ([54f1e1e](https://github.com/auditmos/signmos/commit/54f1e1ebe0d6bcf06303763bf1347d5759590acb))
+
+
+### Features
+
+* add session-aware mode navigation ([7b99a88](https://github.com/auditmos/signmos/commit/7b99a8804ef1b38cee9d9d02bf24c5344343fca5))
+
 ## [1.9.5](https://github.com/auditmos/signmos/compare/v1.9.4...v1.9.5) (2026-07-22)
 
 
